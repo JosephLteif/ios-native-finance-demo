@@ -34,6 +34,7 @@ struct ContentView: View {
         }
         .task {
             store.processDueScheduledTransactions()
+            await FinanceIntentIndexing.shared.refresh()
         }
     }
 

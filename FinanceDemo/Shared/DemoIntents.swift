@@ -39,6 +39,7 @@ struct AddDemoExpenseIntent: AppIntent {
             )
         }
 
+        await FinanceIntentIndexing.shared.refresh()
         WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
         let balance = storage.widgetSnapshot().balanceSummary
         return .result(
@@ -83,6 +84,7 @@ struct AddDemoIncomeIntent: AppIntent {
             )
         }
 
+        await FinanceIntentIndexing.shared.refresh()
         WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
         let balance = storage.widgetSnapshot().balanceSummary
         return .result(
@@ -107,6 +109,7 @@ struct ResetDemoDataIntent: AppIntent {
             )
         }
 
+        await FinanceIntentIndexing.shared.refresh()
         WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
         let balance = storage.widgetSnapshot().balanceSummary
         return .result(
@@ -169,7 +172,7 @@ struct GetCategoriesIntent: AppIntent {
 
 struct GetAccountsIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Pocket Ledger Accounts"
-    static let description = IntentDescription("Returns all Pocket Ledger accounts with their currency and type.")
+    static let description = IntentDescription("Returns all Pocket Ledger accounts with their current balance, currency, and type.")
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<[FinanceAccountEntity]> & ProvidesDialog {
@@ -181,12 +184,20 @@ struct GetAccountsIntent: AppIntent {
             )
         }
 
-        let accounts = storage.load().accounts
+        let data = storage.load()
+        let accounts = data.accounts
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            .map(FinanceAccountEntity.init)
+            .map {
+                FinanceAccountEntity(
+                    account: $0,
+                    balance: financeAccountBalance(for: $0, in: data)
+                )
+            }
         let summary = accounts.isEmpty
             ? "Pocket Ledger has no accounts yet."
-            : "Pocket Ledger has " + String(accounts.count) + " accounts: " + accounts.map { $0.name }.joined(separator: ", ") + "."
+            : "Pocket Ledger has " + String(accounts.count) + " accounts: " + accounts.map {
+                "\($0.name) (\($0.balance))"
+            }.joined(separator: ", ") + "."
 
         return .result(
             value: accounts,
@@ -498,6 +509,7 @@ struct AddLedgerTransactionIntent: AppIntent {
             )
         }
 
+        await FinanceIntentIndexing.shared.refresh()
         WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
         let summary = financeTransactionSummary(transaction)
         return .result(
@@ -525,23 +537,6 @@ private func financeMoney(
 
 private func financePositiveDecimal(_ value: Decimal) -> Decimal? {
     value > 0 ? value : nil
-}
-
-private func financeAccountBalance(for account: Account, in data: FinanceData) -> Money {
-    var minorUnits = account.openingBalance.minorUnits
-
-    for transaction in data.transactions {
-        for movement in transaction.outflows where movement.accountID == account.id {
-            guard movement.money.currency == account.currency else { continue }
-            minorUnits -= movement.money.minorUnits
-        }
-        for movement in transaction.inflows where movement.accountID == account.id {
-            guard movement.money.currency == account.currency else { continue }
-            minorUnits += movement.money.minorUnits
-        }
-    }
-
-    return Money(currency: account.currency, minorUnits: minorUnits)
 }
 
 private func financeTransactionSummary(_ transaction: LedgerTransaction) -> String {

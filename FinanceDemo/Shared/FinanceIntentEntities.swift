@@ -1,34 +1,57 @@
 import AppIntents
+import CoreSpotlight
 import Foundation
 
-struct FinanceAccountEntity: AppEntity, Hashable, Sendable {
+struct FinanceAccountEntity: IndexedEntity, Hashable, Sendable {
     let id: UUID
-    let name: String
-    let currency: String
-    let accountType: String
+    @Property(title: "Account name") var name: String
+    @Property(title: "Currency") var currency: String
+    @Property(title: "Account type") var accountType: String
+    @Property(title: "Current balance") var balance: String
 
     init(account: Account) {
+        self.init(account: account, balance: account.openingBalance)
+    }
+
+    init(account: Account, balance: Money) {
         id = account.id
         name = account.name
         currency = account.currency.rawValue
         accountType = account.type.displayName
+        self.balance = balance.formatted
     }
 
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(
             title: "\(name)",
-            subtitle: "\(currency) · \(accountType)"
+            subtitle: "\(currency) · \(accountType) · \(balance)"
         )
+    }
+
+    var attributeSet: CSSearchableItemAttributeSet {
+        let attributes = CSSearchableItemAttributeSet(itemContentType: "public.text")
+        attributes.title = name
+        attributes.contentDescription = "\(name), \(accountType), \(currency), balance \(balance)"
+        attributes.keywords = [name, currency, accountType, balance]
+        return attributes
     }
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Account"
     static let defaultQuery = FinanceAccountQuery()
+
+    static func == (lhs: FinanceAccountEntity, rhs: FinanceAccountEntity) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }
 
-struct FinanceCategoryEntity: AppEntity, Hashable, Sendable {
+struct FinanceCategoryEntity: IndexedEntity, Hashable, Sendable {
     let id: UUID
-    let name: String
-    let path: String
+    @Property(title: "Category name") var name: String
+    @Property(title: "Category path") var path: String
 
     init(category: LedgerCategory, categories: [LedgerCategory]) {
         id = category.id
@@ -40,15 +63,36 @@ struct FinanceCategoryEntity: AppEntity, Hashable, Sendable {
         DisplayRepresentation(title: "\(path)", subtitle: "Category")
     }
 
+    var attributeSet: CSSearchableItemAttributeSet {
+        let attributes = CSSearchableItemAttributeSet(itemContentType: "public.text")
+        attributes.title = path
+        attributes.contentDescription = "Pocket Ledger category \(path)"
+        attributes.keywords = [name, path]
+        return attributes
+    }
+
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Category"
     static let defaultQuery = FinanceCategoryQuery()
+
+    static func == (lhs: FinanceCategoryEntity, rhs: FinanceCategoryEntity) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
 }
 
-struct FinanceAccountQuery: EntityStringQuery, Sendable {
+struct FinanceAccountQuery: EntityStringQuery, IndexedEntityQuery, Sendable {
     func entities(for identifiers: [FinanceAccountEntity.ID]) async throws -> [FinanceAccountEntity] {
-        let accounts = FinanceStorage(context: "app-intent").load().accounts
+        let data = FinanceStorage(context: "app-intent").load()
         return identifiers.compactMap { identifier in
-            accounts.first(where: { $0.id == identifier }).map(FinanceAccountEntity.init)
+            data.accounts.first(where: { $0.id == identifier }).map {
+                FinanceAccountEntity(
+                    account: $0,
+                    balance: financeAccountBalance(for: $0, in: data)
+                )
+            }
         }
     }
 
@@ -70,15 +114,33 @@ struct FinanceAccountQuery: EntityStringQuery, Sendable {
     }
 
     private func allEntities() -> [FinanceAccountEntity] {
-        FinanceStorage(context: "app-intent")
-            .load()
-            .accounts
+        let data = FinanceStorage(context: "app-intent").load()
+        return data.accounts
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            .map(FinanceAccountEntity.init)
+            .map {
+                FinanceAccountEntity(
+                    account: $0,
+                    balance: financeAccountBalance(for: $0, in: data)
+                )
+            }
+    }
+
+    func reindexEntities(
+        for identifiers: [FinanceAccountEntity.ID],
+        indexDescription: CSSearchableIndexDescription
+    ) async throws {
+        let entities = try await entities(for: identifiers)
+        try await CSSearchableIndex(name: financeIntentSearchIndexName)
+            .indexAppEntities(entities, priority: 80)
+    }
+
+    func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
+        try await CSSearchableIndex(name: financeIntentSearchIndexName)
+            .indexAppEntities(allEntities(), priority: 80)
     }
 }
 
-struct FinanceCategoryQuery: EntityStringQuery, Sendable {
+struct FinanceCategoryQuery: EntityStringQuery, IndexedEntityQuery, Sendable {
     func entities(for identifiers: [FinanceCategoryEntity.ID]) async throws -> [FinanceCategoryEntity] {
         let data = FinanceStorage(context: "app-intent").load()
         return identifiers.compactMap { identifier in
@@ -109,6 +171,20 @@ struct FinanceCategoryQuery: EntityStringQuery, Sendable {
         return data.categories
             .map { FinanceCategoryEntity(category: $0, categories: data.categories) }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    func reindexEntities(
+        for identifiers: [FinanceCategoryEntity.ID],
+        indexDescription: CSSearchableIndexDescription
+    ) async throws {
+        let entities = try await entities(for: identifiers)
+        try await CSSearchableIndex(name: financeIntentSearchIndexName)
+            .indexAppEntities(entities, priority: 60)
+    }
+
+    func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
+        try await CSSearchableIndex(name: financeIntentSearchIndexName)
+            .indexAppEntities(allEntities(), priority: 60)
     }
 }
 
@@ -170,4 +246,21 @@ func financeCategoryPath(for categoryID: UUID, in categories: [LedgerCategory]) 
     }
 
     return names.isEmpty ? "Uncategorized" : names.joined(separator: " / ")
+}
+
+func financeAccountBalance(for account: Account, in data: FinanceData) -> Money {
+    var minorUnits = account.openingBalance.minorUnits
+
+    for transaction in data.transactions {
+        for movement in transaction.outflows where movement.accountID == account.id {
+            guard movement.money.currency == account.currency else { continue }
+            minorUnits -= movement.money.minorUnits
+        }
+        for movement in transaction.inflows where movement.accountID == account.id {
+            guard movement.money.currency == account.currency else { continue }
+            minorUnits += movement.money.minorUnits
+        }
+    }
+
+    return Money(currency: account.currency, minorUnits: minorUnits)
 }

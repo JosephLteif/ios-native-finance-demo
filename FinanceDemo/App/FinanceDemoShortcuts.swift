@@ -71,5 +71,32 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             shortTitle: "Get Account Balance",
             systemImageName: "chart.bar.xaxis"
         )
+        AppShortcut(
+            intent: GetTransactionHistoryIntent(),
+            phrases: [
+                "Show my transactions for \(\.$period) in \(.applicationName)",
+                "Show my \(\.$category) transactions for \(\.$period) in \(.applicationName)"
+            ],
+            shortTitle: "Get Transaction History",
+            systemImageName: "clock.arrow.circlepath"
+        )
+        AppShortcut(
+            intent: GetSpendingSummaryIntent(),
+            phrases: [
+                "How much did I spend \(\.$period) in \(.applicationName)",
+                "How much did I spend on \(\.$category) \(\.$period) in \(.applicationName)"
+            ],
+            shortTitle: "Get Spending Summary",
+            systemImageName: "chart.bar.doc.horizontal"
+        )
+        AppShortcut(
+            intent: GenerateBudgetSummaryIntent(),
+            phrases: [
+                "Summarize my Pocket Ledger budget in \(.applicationName)",
+                "Give me a budget summary in \(.applicationName)"
+            ],
+            shortTitle: "Summarize Budget",
+            systemImageName: "sparkles"
+        )
     }
 }
