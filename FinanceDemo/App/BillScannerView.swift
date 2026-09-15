@@ -122,7 +122,7 @@ private enum BillOCRService {
         }.value
 
         let analysis = await FoundationModelService.analyzeReceipt(text: visionResult.text)
-        let aiItems = analysis.items.compactMap { item in
+        let aiItems: [BillLineItem] = analysis.items.compactMap { item -> BillLineItem? in
             let unitPriceText = item.unitPriceText.flatMap {
                 BillScannerParser.validAmountText($0, currency: visionResult.currency)
             }
