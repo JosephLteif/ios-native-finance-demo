@@ -22,7 +22,7 @@ targets:
       - path: FinanceDemo/Services
       - path: FinanceDemo/Shared
     resources:
-      - path: FinanceDemo/Resources
+      - path: FinanceDemo/Resources/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo
