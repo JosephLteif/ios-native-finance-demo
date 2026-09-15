@@ -72,14 +72,14 @@ Both the main app and the widget declare only this entitlement:
 
 `com.apple.security.application-groups = [group.com.josephlteif.financedemo]`
 
-The app uses `UserDefaults(suiteName: "group.com.josephlteif.financedemo")` and checks the App Group container URL. It never silently falls back to ordinary `UserDefaults`.
+The app uses `UserDefaults(suiteName: "group.com.josephlteif.financedemo")` when the App Group is authorized. If signing does not authorize the group, the main app and App Intents use ordinary app storage so the demo and Siri actions remain usable; the widget still requires the shared App Group.
 
 The Diagnostics card reports either:
 
 - `Shared App Group: WORKING`
 - `Shared App Group: UNAVAILABLE`
 
-When unavailable, the app uses process-local diagnostic state only and labels it as unavailable. OSLog contexts distinguish `main-app`, `widget`, and `app-intent` so device logs can show whether the app, widget, or intent can reach the shared container.
+When unavailable, the app labels the widget's shared container as unavailable and reports the main app's local fallback separately. OSLog contexts distinguish `main-app`, `widget`, and `app-intent` so device logs can show which storage path each process can reach.
 
 Third-party free signing is the highest-risk part of this proof of concept: it may strip, reject, or fail to preserve App Group capabilities. A successful GitHub build proves compilation and embedding only; it does not prove App Groups work on the physical iPhone.
 

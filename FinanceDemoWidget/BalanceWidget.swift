@@ -15,7 +15,8 @@ struct BalanceTimelineProvider: TimelineProvider {
                 lastTransactionDescription: "Starting balance",
                 lastUpdated: .now,
                 lastWidgetRefresh: nil,
-                appGroupAvailable: true
+                appGroupAvailable: true,
+                appStorageAvailable: true
             )
         )
     }
@@ -99,4 +100,3 @@ struct BalanceWidgetBundle: WidgetBundle {
         BalanceWidget()
     }
 }
-

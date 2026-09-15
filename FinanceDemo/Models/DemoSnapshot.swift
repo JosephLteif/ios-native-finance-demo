@@ -6,6 +6,7 @@ struct DemoSnapshot: Equatable, Sendable {
     let lastUpdated: Date
     let lastWidgetRefresh: Date?
     let appGroupAvailable: Bool
+    let appStorageAvailable: Bool
 
     var balanceText: String {
         let absoluteCents = abs(balanceCents)
@@ -33,4 +34,3 @@ struct DemoSnapshot: Equatable, Sendable {
         appGroupAvailable ? "WORKING" : "UNAVAILABLE"
     }
 }
-

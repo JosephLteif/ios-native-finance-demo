@@ -26,36 +26,36 @@ final class DemoStore: ObservableObject {
     }
 
     func addExpense() {
-        let shared = storage.recordTransaction(deltaCents: -500, description: "Added $5 expense")
+        let saved = storage.recordTransaction(deltaCents: -500, description: "Added $5 expense")
         requestWidgetReload()
         refreshSnapshot()
         foundationModelResult = nil
         foundationModelInput = nil
-        lastActionStatus = shared ? "Expense saved to the shared App Group." : "Expense kept only as diagnostic process-local state."
+        lastActionStatus = saved ? savedStorageMessage("Expense saved") : "Expense could not be saved."
     }
 
     func addIncome() {
-        let shared = storage.recordTransaction(deltaCents: 10_000, description: "Added $100 income")
+        let saved = storage.recordTransaction(deltaCents: 10_000, description: "Added $100 income")
         requestWidgetReload()
         refreshSnapshot()
         foundationModelResult = nil
         foundationModelInput = nil
-        lastActionStatus = shared ? "Income saved to the shared App Group." : "Income kept only as diagnostic process-local state."
+        lastActionStatus = saved ? savedStorageMessage("Income saved") : "Income could not be saved."
     }
 
     func resetDemo() {
-        let shared = storage.resetDemoData()
+        let saved = storage.resetDemoData()
         requestWidgetReload()
         refreshSnapshot()
         foundationModelResult = nil
         foundationModelInput = nil
-        lastActionStatus = shared ? "Demo data reset to $1,000 in the shared App Group." : "Demo data reset only in diagnostic process-local state."
+        lastActionStatus = saved ? savedStorageMessage("Demo data reset to $1,000") : "Demo data could not be saved."
     }
 
     func refreshWidget() {
-        let shared = requestWidgetReload()
+        let saved = requestWidgetReload()
         refreshSnapshot()
-        lastActionStatus = shared ? "Widget reload requested and timestamp shared." : "Widget reload requested, but the App Group is unavailable."
+        lastActionStatus = saved ? "Widget reload requested." : "Widget reload requested, but no app storage is available."
     }
 
     func testNotification() async {
@@ -80,9 +80,16 @@ final class DemoStore: ObservableObject {
         snapshot = storage.snapshot()
     }
 
+    private func savedStorageMessage(_ action: String) -> String {
+        if storage.isAppGroupAvailable {
+            return "\(action) in the shared App Group."
+        }
+        return "\(action) in local app storage. Widgets still need App Group signing."
+    }
+
     @discardableResult
     private func requestWidgetReload() -> Bool {
-        let shared = storage.markWidgetReloadRequested()
+        let shared = storage.isAppGroupAvailable && storage.markWidgetReloadRequested()
         WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
         return shared
     }

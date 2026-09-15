@@ -13,11 +13,13 @@ final class DemoSharedStorage: @unchecked Sendable {
 
     private let context: String
     private let defaults: UserDefaults?
+    private let fallbackDefaults: UserDefaults?
     private let containerURL: URL?
     private let logger = Logger(subsystem: "com.josephlteif.financedemo", category: "SharedStorage")
 
-    // These values are deliberately process-local. They are never used as a silent
-    // replacement for the App Group container when the entitlement is unavailable.
+    // The widget has no safe fallback because its container cannot see the main app's
+    // ordinary defaults. The main app and App Intents can use the app's own defaults
+    // until the App Group entitlement is available.
     private var localBalanceCents = 100_000
     private var localLastTransactionDescription = "Starting balance"
     private var localLastUpdated = Date()
@@ -26,16 +28,17 @@ final class DemoSharedStorage: @unchecked Sendable {
     init(context: String) {
         self.context = context
         defaults = UserDefaults(suiteName: Self.appGroupIdentifier)
+        fallbackDefaults = context == "widget" ? nil : UserDefaults.standard
         containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
         )
 
-        if isAppGroupAvailable {
-            seedSharedDefaultsIfNeeded()
+        if let storageDefaults {
+            seedDefaultsIfNeeded(storageDefaults)
         }
 
         logger.info(
-            "context=\(context, privacy: .public) app_group=\(self.isAppGroupAvailable ? "WORKING" : "UNAVAILABLE", privacy: .public)"
+            "context=\(context, privacy: .public) app_group=\(self.isAppGroupAvailable ? "WORKING" : "UNAVAILABLE", privacy: .public) storage=\(self.storageDefaults == nil ? "UNAVAILABLE" : (self.isAppGroupAvailable ? "APP_GROUP" : "LOCAL_APP"), privacy: .public)"
         )
     }
 
@@ -43,15 +46,20 @@ final class DemoSharedStorage: @unchecked Sendable {
         defaults != nil && containerURL != nil
     }
 
+    var isAppStorageAvailable: Bool {
+        storageDefaults != nil
+    }
+
     func snapshot() -> DemoSnapshot {
-        guard isAppGroupAvailable, let defaults else {
-            logger.warning("context=\(self.context, privacy: .public) using process-local diagnostic state")
+        guard let defaults = storageDefaults else {
+            logger.warning("context=\(self.context, privacy: .public) using in-memory diagnostic state")
             return DemoSnapshot(
                 balanceCents: localBalanceCents,
                 lastTransactionDescription: localLastTransactionDescription,
                 lastUpdated: localLastUpdated,
                 lastWidgetRefresh: localLastWidgetRefresh,
-                appGroupAvailable: false
+                appGroupAvailable: false,
+                appStorageAvailable: false
             )
         }
 
@@ -61,14 +69,15 @@ final class DemoSharedStorage: @unchecked Sendable {
             lastTransactionDescription: defaults.string(forKey: Key.lastTransactionDescription) ?? "Starting balance",
             lastUpdated: Date(timeIntervalSince1970: defaults.double(forKey: Key.lastUpdated)),
             lastWidgetRefresh: lastWidgetRefreshValue > 0 ? Date(timeIntervalSince1970: lastWidgetRefreshValue) : nil,
-            appGroupAvailable: true
+            appGroupAvailable: isAppGroupAvailable,
+            appStorageAvailable: true
         )
     }
 
     @discardableResult
     func recordTransaction(deltaCents: Int, description: String) -> Bool {
         let startingBalanceCents: Int
-        if isAppGroupAvailable, let defaults, defaults.object(forKey: Key.balanceCents) != nil {
+        if let defaults = storageDefaults, defaults.object(forKey: Key.balanceCents) != nil {
             startingBalanceCents = defaults.integer(forKey: Key.balanceCents)
         } else {
             startingBalanceCents = localBalanceCents
@@ -78,15 +87,15 @@ final class DemoSharedStorage: @unchecked Sendable {
         localLastTransactionDescription = description
         localLastUpdated = Date()
 
-        guard isAppGroupAvailable, let defaults else {
-            logger.error("context=\(self.context, privacy: .public) transaction_not_shared=true")
+        guard let defaults = storageDefaults else {
+            logger.error("context=\(self.context, privacy: .public) transaction_not_saved=true")
             return false
         }
 
         defaults.set(localBalanceCents, forKey: Key.balanceCents)
         defaults.set(description, forKey: Key.lastTransactionDescription)
         defaults.set(localLastUpdated.timeIntervalSince1970, forKey: Key.lastUpdated)
-        logger.info("context=\(self.context, privacy: .public) transaction_shared=true")
+        logger.info("context=\(self.context, privacy: .public) transaction_saved=true")
         return true
     }
 
@@ -97,8 +106,8 @@ final class DemoSharedStorage: @unchecked Sendable {
         localLastUpdated = Date()
         localLastWidgetRefresh = nil
 
-        guard isAppGroupAvailable, let defaults else {
-            logger.error("context=\(self.context, privacy: .public) reset_not_shared=true")
+        guard let defaults = storageDefaults else {
+            logger.error("context=\(self.context, privacy: .public) reset_not_saved=true")
             return false
         }
 
@@ -106,7 +115,7 @@ final class DemoSharedStorage: @unchecked Sendable {
         defaults.set(localLastTransactionDescription, forKey: Key.lastTransactionDescription)
         defaults.set(localLastUpdated.timeIntervalSince1970, forKey: Key.lastUpdated)
         defaults.removeObject(forKey: Key.lastWidgetRefresh)
-        logger.info("context=\(self.context, privacy: .public) reset_shared=true")
+        logger.info("context=\(self.context, privacy: .public) reset_saved=true")
         return true
     }
 
@@ -115,19 +124,17 @@ final class DemoSharedStorage: @unchecked Sendable {
         let now = Date()
         localLastWidgetRefresh = now
 
-        guard isAppGroupAvailable, let defaults else {
-            logger.error("context=\(self.context, privacy: .public) widget_reload_shared=false")
+        guard let defaults = storageDefaults else {
+            logger.error("context=\(self.context, privacy: .public) widget_reload_saved=false")
             return false
         }
 
         defaults.set(now.timeIntervalSince1970, forKey: Key.lastWidgetRefresh)
-        logger.info("context=\(self.context, privacy: .public) widget_reload_shared=true")
+        logger.info("context=\(self.context, privacy: .public) widget_reload_saved=true")
         return true
     }
 
-    private func seedSharedDefaultsIfNeeded() {
-        guard let defaults else { return }
-
+    private func seedDefaultsIfNeeded(_ defaults: UserDefaults) {
         if defaults.object(forKey: Key.balanceCents) == nil {
             defaults.set(100_000, forKey: Key.balanceCents)
         }
@@ -137,5 +144,12 @@ final class DemoSharedStorage: @unchecked Sendable {
         if defaults.object(forKey: Key.lastUpdated) == nil {
             defaults.set(Date().timeIntervalSince1970, forKey: Key.lastUpdated)
         }
+    }
+
+    private var storageDefaults: UserDefaults? {
+        if isAppGroupAvailable {
+            return defaults
+        }
+        return fallbackDefaults
     }
 }

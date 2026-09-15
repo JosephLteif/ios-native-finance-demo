@@ -25,7 +25,7 @@ struct ContentView: View {
 
     private var balanceCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Finance Native Demo")
+            Text("Finance Demo")
                 .font(.title2.weight(.semibold))
             Text(store.snapshot.balanceText)
                 .font(.system(size: 48, weight: .bold, design: .rounded))
@@ -119,8 +119,8 @@ struct ContentView: View {
             )
             diagnosticRow(
                 title: "Main app storage",
-                value: store.snapshot.appGroupAvailable ? "WORKING" : "UNAVAILABLE",
-                tint: store.snapshot.appGroupAvailable ? .green : .red
+                value: mainStorageStatusText,
+                tint: store.snapshot.appStorageAvailable ? .green : .red
             )
             diagnosticRow(
                 title: "Last widget update",
@@ -128,7 +128,7 @@ struct ContentView: View {
                 tint: .primary
             )
             diagnosticRow(title: "Current iOS", value: store.iosVersion, tint: .primary)
-            Text("Widget and App Intent logs use separate contexts so shared-storage failures can be distinguished in device logs.")
+            Text("The app and Siri can use local app storage when App Group signing is unavailable; widgets still require the shared App Group.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -158,7 +158,7 @@ struct ContentView: View {
     private var shortcutsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             cardTitle("Siri & Shortcuts", systemImage: "waveform")
-            Text("These App Shortcuts are registered automatically and can be used in Shortcuts or by asking Siri:")
+            Text("These App Shortcuts are registered automatically. Say the phrase with the app name, for example: “Get my demo balance in Finance Demo.”")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             shortcutRow("Get my finance demo balance")
@@ -201,6 +201,13 @@ struct ContentView: View {
     private func shortcutRow(_ phrase: String) -> some View {
         Label(phrase, systemImage: "mic")
             .font(.subheadline)
+    }
+
+    private var mainStorageStatusText: String {
+        if store.snapshot.appGroupAvailable {
+            return "WORKING"
+        }
+        return store.snapshot.appStorageAvailable ? "LOCAL FALLBACK" : "UNAVAILABLE"
     }
 
     private func formattedDate(_ date: Date?) -> String? {
