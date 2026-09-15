@@ -40,13 +40,18 @@ struct ScheduledTransactionsView: View {
                     scheduledTransaction: editingSchedule
                 )
             }
-            .confirmationDialog("Delete scheduled transaction?", item: $scheduleToDelete) { schedule in
+            .confirmationDialog("Delete scheduled transaction?", isPresented: isShowingDeleteConfirmation) {
                 Button("Delete", role: .destructive) {
-                    _ = store.deleteScheduledTransaction(id: schedule.id)
+                    if let scheduleToDelete {
+                        _ = store.deleteScheduledTransaction(id: scheduleToDelete.id)
+                    }
+                    self.scheduleToDelete = nil
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: { schedule in
-                Text(schedule.note)
+                Button("Cancel", role: .cancel) {
+                    scheduleToDelete = nil
+                }
+            } message: {
+                Text(scheduleToDelete?.note ?? "")
             }
         }
     }
@@ -58,6 +63,17 @@ struct ScheduledTransactionsView: View {
             }
             return lhs.nextRunDate < rhs.nextRunDate
         }
+    }
+
+    private var isShowingDeleteConfirmation: Binding<Bool> {
+        Binding(
+            get: { scheduleToDelete != nil },
+            set: { isPresented in
+                if !isPresented {
+                    scheduleToDelete = nil
+                }
+            }
+        )
     }
 
     private var screenHeader: some View {

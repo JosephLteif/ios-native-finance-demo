@@ -443,7 +443,7 @@ struct BillScannerView: View {
             PhotosPicker(
                 selection: $selectedPhoto,
                 matching: .images,
-                photoLibrary: .shared
+                photoLibrary: .shared()
             ) {
                 Label("Choose photo", systemImage: "photo")
                     .frame(maxWidth: .infinity)

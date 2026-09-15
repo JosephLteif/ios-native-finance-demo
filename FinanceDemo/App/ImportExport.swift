@@ -537,7 +537,7 @@ enum FinanceImportParser {
 
                 let sourceHint = spreadsheetCurrencyHint(for: source)
                 let destinationHint = spreadsheetCurrencyHint(for: destination)
-                let primaryCurrency = parseCurrency(currency, default: .usd)
+                let primaryCurrency = spreadsheetCurrencyHint(for: currency) ?? .usd
                 let usdAmount = usdIndex.map { cell(canonicalRow, $0) } ?? ""
                 let hasCrossCurrencyHints = sourceHint != nil
                     && destinationHint != nil
