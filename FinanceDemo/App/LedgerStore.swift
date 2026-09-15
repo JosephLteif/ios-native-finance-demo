@@ -80,6 +80,25 @@ final class LedgerStore: ObservableObject {
         persist(.empty, successMessage: "Ledger reset")
     }
 
+    @discardableResult
+    func replaceData(_ imported: FinanceData) -> Bool {
+        persist(imported, successMessage: "Ledger restored")
+    }
+
+    @discardableResult
+    func mergeData(_ imported: FinanceData) -> Bool {
+        var updated = data
+        let accountIDs = Set(updated.accounts.map(\.id))
+        let categoryIDs = Set(updated.categories.map(\.id))
+        let transactionIDs = Set(updated.transactions.map(\.id))
+
+        updated.accounts.append(contentsOf: imported.accounts.filter { !accountIDs.contains($0.id) })
+        updated.categories.append(contentsOf: imported.categories.filter { !categoryIDs.contains($0.id) })
+        updated.transactions.append(contentsOf: imported.transactions.filter { !transactionIDs.contains($0.id) })
+
+        return persist(updated, successMessage: "Import completed")
+    }
+
     func reload() {
         data = storage.load()
     }

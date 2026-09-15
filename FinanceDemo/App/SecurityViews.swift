@@ -25,6 +25,7 @@ private enum PasscodeSheet: Identifiable, Equatable {
 
 @MainActor
 struct SecuritySettingsView: View {
+    @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
     @State private var passcodeSheet: PasscodeSheet?
     @State private var isShowingRemoveConfirmation = false
@@ -94,6 +95,14 @@ struct SecuritySettingsView: View {
                     Text("This lock protects the Pocket Ledger app. Widgets are separate system surfaces and may continue to show their configured balance.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                Section("Data") {
+                    NavigationLink {
+                        DataTransferView(store: store)
+                    } label: {
+                        Label("Import & Backup", systemImage: "arrow.down.doc")
+                    }
                 }
             }
             .scrollContentBackground(.hidden)

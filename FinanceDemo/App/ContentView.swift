@@ -60,7 +60,7 @@ struct ContentView: View {
                     Label("Categories", systemImage: "square.grid.2x2")
                 }
 
-            SecuritySettingsView(security: security)
+            SecuritySettingsView(store: store, security: security)
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
                 }

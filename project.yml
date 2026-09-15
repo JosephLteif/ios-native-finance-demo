@@ -12,6 +12,11 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: 26.0
     SWIFT_VERSION: 6.0
 
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.19
+
 targets:
   FinanceDemo:
     type: application
@@ -48,6 +53,7 @@ targets:
         com.apple.security.application-groups:
           - group.com.josephlteif.financedemo
     dependencies:
+      - package: ZIPFoundation
       - target: FinanceDemoWidget
         embed: true
         codeSign: false

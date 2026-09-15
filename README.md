@@ -32,6 +32,17 @@ The main app now contains the first local finance workflow for the Lebanese mark
 
 The current slice is local-only and intentionally keeps currency totals separate. It records the exchange rate for each mixed-currency transaction but does not yet convert all historical balances into one net-worth number.
 
+## Data import and backup
+
+Settings → Import & Backup supports several migration paths:
+
+- Pocket Ledger JSON backups are lossless and can be merged into the current ledger or used to replace it.
+- CSV, TSV, and JSON row exports open a field-mapping screen. Date and amount are required; type, currency, account, destination account, category, and note can be mapped or supplied with defaults.
+- `.xlsx` workbooks are read on-device, including multiple sheets. The importer also recognizes the Money Manager-style export used by `2026-09-01 ~ 09-30.xlsx`, combines category/subcategory and note/description fields, and reconstructs paired same-time transfers, including USD-to-LBP amounts when the account names identify the currencies.
+- SQLite backups such as Money Manager `.mmbak`, `.sqlite`, `.sqlite3`, and `.db` files expose their tables for mapping and include a normalized Realbyte table when the known transaction tables are present.
+
+Legacy binary `.xls` files should be saved as `.xlsx`, CSV, or TSV before importing. External files are parsed locally and are not sent to a server. Imported rows are added with new IDs, while Pocket Ledger backup restore preserves its original IDs.
+
 Stable identifiers are intentionally used for every build:
 
 - Main app: `com.josephlteif.financedemo`
