@@ -63,6 +63,7 @@ private struct BillScanResult: Sendable {
     let text: String
     let items: [BillLineItem]
     let currency: LedgerCurrency
+    let statusMessage: String
 }
 
 private enum BillScannerError: LocalizedError, Sendable {
@@ -78,7 +79,7 @@ private enum BillScannerError: LocalizedError, Sendable {
 
 private enum BillOCRService {
     static func extract(from data: Data) async throws -> BillScanResult {
-        try await Task.detached(priority: .userInitiated) {
+        let visionResult = try await Task.detached(priority: .userInitiated) {
             guard let image = UIImage(data: data),
                   let cgImage = image.cgImage else {
                 throw BillScannerError.invalidImage
@@ -119,6 +120,48 @@ private enum BillOCRService {
             let recognizedText = lines.joined(separator: "\n")
             return BillScannerParser.parse(recognizedText)
         }.value
+
+        let analysis = await FoundationModelService.analyzeReceipt(text: visionResult.text)
+        let aiItems = analysis.items.compactMap { item in
+            let unitPriceText = item.unitPriceText.flatMap {
+                BillScannerParser.validAmountText($0, currency: visionResult.currency)
+            }
+            let lineTotalText = item.lineTotalText.flatMap {
+                BillScannerParser.validAmountText($0, currency: visionResult.currency)
+            }
+            guard unitPriceText != nil || lineTotalText != nil else { return nil }
+
+            return BillLineItem(
+                name: item.name,
+                quantity: item.quantity,
+                unitPriceText: unitPriceText ?? "",
+                lineTotalText: lineTotalText ?? ""
+            )
+        }
+
+        switch analysis.status {
+        case .applied where !aiItems.isEmpty:
+            return BillScanResult(
+                text: visionResult.text,
+                items: aiItems,
+                currency: visionResult.currency,
+                statusMessage: "Apple Intelligence cleaned up the receipt items on-device. Review the selection before saving."
+            )
+        case .applied:
+            return BillScanResult(
+                text: visionResult.text,
+                items: visionResult.items,
+                currency: visionResult.currency,
+                statusMessage: "Apple Intelligence returned no usable prices, so Vision OCR was used instead. Review the items before saving."
+            )
+        case .unavailable(let message), .failed(let message):
+            return BillScanResult(
+                text: visionResult.text,
+                items: visionResult.items,
+                currency: visionResult.currency,
+                statusMessage: message
+            )
+        }
     }
 }
 
@@ -134,40 +177,24 @@ private enum BillScannerParser {
             .components(separatedBy: .newlines)
             .compactMap(parseLine)
 
-        return BillScanResult(text: text, items: items, currency: currency)
+        return BillScanResult(
+            text: text,
+            items: items,
+            currency: currency,
+            statusMessage: "Vision OCR read the receipt. Review the detected items before saving."
+        )
     }
 
     private static func parseLine(_ line: String) -> BillLineItem? {
         let trimmedLine = normalizeNumerals(in: line)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedLine.count >= 2 else { return nil }
-
-        let lowercasedLine = trimmedLine.lowercased()
-        let ignoredPhrases = [
-            "subtotal",
-            "total",
-            "tax",
-            "vat",
-            "discount",
-            "change",
-            "cash",
-            "credit",
-            "debit",
-            "amount due",
-            "balance",
-            "invoice",
-            "receipt",
-            "thank",
-            "date",
-            "time",
-            "tel",
-            "phone"
-        ]
-        guard !ignoredPhrases.contains(where: lowercasedLine.contains) else { return nil }
+        guard !isMetadataLine(trimmedLine) else { return nil }
         guard trimmedLine.rangeOfCharacter(from: .letters) != nil else { return nil }
 
         let tokens = numberTokens(in: trimmedLine)
         guard let totalToken = tokens.last, totalToken.value > 0 else { return nil }
+        guard hasPriceSuffix(after: totalToken, in: trimmedLine) else { return nil }
 
         var quantity = 1
         var unitPrice = totalToken.value
@@ -204,7 +231,7 @@ private enum BillScannerParser {
         )
     }
 
-    private static func normalizeNumerals(in text: String) -> String {
+    fileprivate static func normalizeNumerals(in text: String) -> String {
         String(text.map { character -> Character in
             switch character {
             case "٠": return "0"
@@ -296,7 +323,68 @@ private enum BillScannerParser {
         NSDecimalNumber(decimal: value).stringValue
     }
 
-    private static func detectCurrency(in text: String) -> LedgerCurrency {
+    fileprivate static func validAmountText(_ text: String, currency: LedgerCurrency) -> String? {
+        let normalized = normalizeNumerals(in: text)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty,
+              (Money.parse(normalized, currency: currency)?.minorUnits ?? 0) > 0 else {
+            return nil
+        }
+        return normalized
+    }
+
+    private static func hasPriceSuffix(after token: NumberToken, in line: String) -> Bool {
+        let suffix = (line as NSString)
+            .substring(from: NSMaxRange(token.range))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !suffix.isEmpty else { return true }
+
+        var removableSuffixCharacters = CharacterSet.punctuationCharacters
+        removableSuffixCharacters.formUnion(.symbols)
+        let normalizedSuffix = suffix
+            .trimmingCharacters(in: removableSuffixCharacters)
+            .uppercased()
+        if normalizedSuffix.isEmpty { return true }
+        return ["USD", "LBP", "LL", "دولار", "ل.ل"].contains(normalizedSuffix)
+    }
+
+    private static func isMetadataLine(_ line: String) -> Bool {
+        let lowercasedLine = line.lowercased()
+        let ignoredPatterns = [
+            #"\b(?:subtotal|total|tax|vat|discount|change|cash|credit|debit|invoice|receipt|thank|date|time|tel|phone|mobile|fax|address|customer|cashier|terminal|reference|auth|approval|order|transaction|loyalty|card|payment)\b"#,
+            #"\bamount\s+due\b"#,
+            #"\bbalance\b"#
+        ]
+        guard !ignoredPatterns.contains(where: {
+            lowercasedLine.range(of: $0, options: .regularExpression) != nil
+        }) else { return true }
+
+        let metadataPatterns = [
+            #"\b(?:street|st\.|road|rd\.|avenue|ave\.|boulevard|blvd\.|highway|hwy|lane|ln\.|drive|dr\.|floor|fl\.|suite|ste\.|apt\.|unit|zip|postal)\b"#,
+            #"\b\d{1,4}[/.-]\d{1,4}[/.-]\d{1,4}\b"#,
+            #"\b\d{1,2}:\d{2}(?::\d{2})?\b"#,
+            #"(?:https?://|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})"#
+        ]
+        if metadataPatterns.contains(where: {
+            lowercasedLine.range(of: $0, options: .regularExpression) != nil
+        }) {
+            return true
+        }
+
+        let tokens = numberTokens(in: line)
+        let digitCount = line.unicodeScalars.filter { CharacterSet.decimalDigits.contains($0) }.count
+        let hasCurrencyMarker = lowercasedLine.range(
+            of: #"(?:\$|€|£|\b(?:usd|lbp|ll)\b|ل\.ل)"#,
+            options: .regularExpression
+        ) != nil
+        if digitCount >= 7 && tokens.count >= 2 && !hasCurrencyMarker {
+            return true
+        }
+
+        return false
+    }
+
+    fileprivate static func detectCurrency(in text: String) -> LedgerCurrency {
         let uppercasedText = text.uppercased()
         let hasStandaloneLL = uppercasedText.range(
             of: #"\bLL\b"#,
@@ -322,6 +410,7 @@ struct BillScannerView: View {
     @State private var previewImage: UIImage?
     @State private var recognizedText = ""
     @State private var lineItems: [BillLineItem] = []
+    @State private var scanStatusMessage: String?
     @State private var currency: LedgerCurrency = .usd
     @State private var isScanning = false
     @State private var isShowingCamera = false
@@ -362,6 +451,15 @@ struct BillScannerView: View {
                         }
                         .padding(14)
                         .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                    }
+
+                    if let scanStatusMessage, !scanStatusMessage.isEmpty, !isScanning {
+                        Label(scanStatusMessage, systemImage: "sparkles")
+                            .font(.footnote)
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 14))
                     }
 
                     if !lineItems.isEmpty {
@@ -666,12 +764,14 @@ struct BillScannerView: View {
         errorMessage = nil
         recognizedText = ""
         lineItems = []
+        scanStatusMessage = nil
 
         do {
             let result = try await BillOCRService.extract(from: data)
             recognizedText = result.text
             lineItems = result.items
             currency = result.currency
+            scanStatusMessage = result.statusMessage
         } catch {
             errorMessage = error.localizedDescription
         }
