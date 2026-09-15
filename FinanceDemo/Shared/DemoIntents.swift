@@ -66,13 +66,13 @@ struct AddDemoIncomeIntent: AppIntent {
             note: "Interactive $100 income",
             kind: .income,
             categoryID: nil,
+            outflows: [],
             inflows: [
                 MoneyMovement(
                     accountID: account.id,
                     money: Money(currency: .usd, minorUnits: 10_000)
                 )
-            ],
-            outflows: []
+            ]
         )
         let saved = storage.appendTransaction(transaction)
         guard saved else {
