@@ -8,7 +8,7 @@ struct GenerateBudgetSummaryIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let snapshot = DemoSharedStorage(context: "app-intent").snapshot()
         let summary = await FoundationModelService.generateBudgetSummary(for: snapshot)
-        return .result(value: summary, dialog: summary)
+        return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))
     }
 }
 
