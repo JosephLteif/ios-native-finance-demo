@@ -18,7 +18,7 @@ enum FoundationModelService {
     }
 
     static func generateBudgetSummary(for snapshot: FinanceWidgetSnapshot) async -> String {
-        generateBudgetSummary(
+        await generateBudgetSummary(
             balance: snapshot.balanceSummary,
             latestTransaction: snapshot.latestTransactionDescription
         )

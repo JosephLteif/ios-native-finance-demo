@@ -91,17 +91,17 @@ final class LedgerStore: ObservableObject {
     }
 
     func availableBalance(for currency: LedgerCurrency) -> Money {
-        let balance = data.accounts
+        let totalMinorUnits = data.accounts
             .filter { $0.currency == currency && $0.type != .loan }
             .reduce(Int64.zero) { $0 + balance(for: $1).minorUnits }
-        return Money(currency: currency, minorUnits: balance)
+        return Money(currency: currency, minorUnits: totalMinorUnits)
     }
 
     func loanBalance(for currency: LedgerCurrency) -> Money {
-        let balance = data.accounts
+        let totalMinorUnits = data.accounts
             .filter { $0.currency == currency && $0.type == .loan }
             .reduce(Int64.zero) { $0 + balance(for: $1).minorUnits }
-        return Money(currency: currency, minorUnits: balance)
+        return Money(currency: currency, minorUnits: totalMinorUnits)
     }
 
     func monthlyExpenseTotals() -> [LedgerCurrency: Int64] {
