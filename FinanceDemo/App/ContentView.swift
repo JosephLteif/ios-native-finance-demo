@@ -3,10 +3,36 @@ import SwiftUI
 @MainActor
 struct ContentView: View {
     @StateObject private var store = LedgerStore()
+    @StateObject private var security = AppSecurityService()
     @State private var isPresentingTransaction = false
+    @State private var isUnlocked = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        Group {
+            if security.isPasscodeEnabled && !isUnlocked {
+                AppLockView(security: security, isUnlocked: $isUnlocked)
+            } else {
+                unlockedContent
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                security.refresh()
+                store.reload()
+            } else if phase == .inactive || phase == .background {
+                isPresentingTransaction = false
+                if security.isPasscodeEnabled {
+                    isUnlocked = false
+                }
+            }
+        }
+        .onChange(of: security.isPasscodeEnabled) { _, enabled in
+            isUnlocked = !enabled
+        }
+    }
+
+    private var unlockedContent: some View {
         TabView {
             DashboardView(store: store, onAddTransaction: presentTransaction)
                 .tabItem {
@@ -27,15 +53,15 @@ struct ContentView: View {
                 .tabItem {
                     Label("Categories", systemImage: "square.grid.2x2")
                 }
+
+            SecuritySettingsView(security: security)
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
+                }
         }
         .tint(.indigo)
         .sheet(isPresented: $isPresentingTransaction) {
             TransactionEditor(store: store)
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                store.reload()
-            }
         }
     }
 

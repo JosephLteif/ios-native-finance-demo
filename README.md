@@ -10,7 +10,7 @@ The Windows machine does not compile iOS code. GitHub Actions provisions a GitHu
 
 - `FinanceDemo/App`: SwiftUI app entry point, ledger store, finance views, and the app-only Siri/Shortcuts provider.
 - `FinanceDemo/Models`: shared snapshot model plus the multi-currency finance domain model.
-- `FinanceDemo/Services`: App Group storage, finance data storage, Foundation Models, and local notification services.
+- `FinanceDemo/Services`: App Group storage, finance data storage, app-lock security, Foundation Models, and local notification services.
 - `FinanceDemo/Shared`: App Intents shared by the main app and widget for finance-ledger actions.
 - `FinanceDemoWidget`: one WidgetKit extension with `systemSmall` and `systemMedium` layouts.
 - `FinanceDemo/Config` and `FinanceDemoWidget/Config`: App Group entitlement files and generated Info.plist destinations.
@@ -124,6 +124,8 @@ Complete this on the physical iPhone after installation:
 - [ ] Run the balance Shortcut and confirm it returns both USD and LBP balances.
 - [ ] Refresh/re-sign the app without deleting it; confirm the state remains.
 - [ ] Record whether shared App Group storage is `WORKING` or `UNAVAILABLE` during device validation.
+- [ ] In Settings, set a 4-to-6 digit app passcode, background the app, and confirm the lock screen appears when it is reopened.
+- [ ] Enable biometric unlock in Settings and confirm Face ID or Touch ID unlocks the app.
 
 ## Troubleshooting
 
@@ -146,5 +148,9 @@ Reinstall the exact same stable bundle identifiers with the same Apple ID, verif
 Free Apple signing is time-limited. Refresh/re-sign from AltStore or Sideloadly before the 7-day window ends. Re-signing should use the same Apple ID and bundle identifiers if you want to preserve the app’s data, but the App Group result must still be verified on the device.
 
 ## Security
+
+Pocket Ledger supports an optional app lock from the Settings tab. The passcode is never stored in the ledger or App Group data: the app stores a salted SHA-256 verifier in a device-only Keychain item, and locks the app again when it enters the background. Face ID, Touch ID, or Optic ID can be enabled as a convenience unlock after a passcode is configured.
+
+The lock protects the main app surface. Widgets are separate system surfaces and may continue to display their configured balance, so users should remove the widget if those balances should not be visible outside the app.
 
 This repository intentionally contains no Apple password, session token, certificate, provisioning profile, private key, `.p12`, GitHub token, or generated credential file. GitHub Actions performs an unsigned build and never contacts Apple provisioning services.
