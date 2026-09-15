@@ -1,0 +1,763 @@
+import Foundation
+import ImageIO
+import PhotosUI
+import SwiftUI
+import UIKit
+import Vision
+
+struct BillLineItem: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var name: String
+    var quantity: Int
+    var unitPriceText: String
+    var lineTotalText: String
+    var isSelected: Bool
+    private let initialQuantity: Int
+    private let initialUnitPriceText: String
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        quantity: Int = 1,
+        unitPriceText: String = "",
+        lineTotalText: String = "",
+        isSelected: Bool = true
+    ) {
+        let normalizedQuantity = max(quantity, 1)
+        self.id = id
+        self.name = name
+        self.quantity = normalizedQuantity
+        self.unitPriceText = unitPriceText
+        self.lineTotalText = lineTotalText
+        self.isSelected = isSelected
+        self.initialQuantity = normalizedQuantity
+        self.initialUnitPriceText = unitPriceText
+    }
+
+    func total(in currency: LedgerCurrency) -> Money? {
+        let multiplier = Int64(max(quantity, 1))
+
+        if quantity == initialQuantity,
+           unitPriceText == initialUnitPriceText,
+           let lineTotal = Money.parse(lineTotalText, currency: currency),
+           lineTotal.minorUnits > 0 {
+            return lineTotal
+        }
+
+        if let unitPrice = Money.parse(unitPriceText, currency: currency),
+           unitPrice.minorUnits > 0 {
+            let (minorUnits, overflow) = unitPrice.minorUnits.multipliedReportingOverflow(by: multiplier)
+            guard !overflow else { return nil }
+            return Money(currency: currency, minorUnits: minorUnits)
+        }
+
+        guard let lineTotal = Money.parse(lineTotalText, currency: currency),
+              lineTotal.minorUnits > 0 else {
+            return nil
+        }
+        return lineTotal
+    }
+}
+
+private struct BillScanResult: Sendable {
+    let text: String
+    let items: [BillLineItem]
+    let currency: LedgerCurrency
+}
+
+private enum BillScannerError: LocalizedError, Sendable {
+    case invalidImage
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidImage:
+            return "The selected image could not be read."
+        }
+    }
+}
+
+private enum BillOCRService {
+    static func extract(from data: Data) async throws -> BillScanResult {
+        try await Task.detached(priority: .userInitiated) {
+            guard let image = UIImage(data: data),
+                  let cgImage = image.cgImage else {
+                throw BillScannerError.invalidImage
+            }
+
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = true
+
+            if let supportedLanguages = try? request.supportedRecognitionLanguages() {
+                let preferredPrefixes = ["en", "ar", "fr"]
+                let languages = supportedLanguages.filter { language in
+                    preferredPrefixes.contains { prefix in
+                        language == prefix || language.hasPrefix("\(prefix)-")
+                    }
+                }
+                if !languages.isEmpty {
+                    request.recognitionLanguages = languages
+                }
+            }
+
+            let handler = VNImageRequestHandler(
+                cgImage: cgImage,
+                orientation: CGImagePropertyOrientation(image.imageOrientation),
+                options: [:]
+            )
+            try handler.perform([request])
+
+            let lines = (request.results ?? [])
+                .sorted { lhs, rhs in
+                    let verticalDifference = abs(lhs.boundingBox.minY - rhs.boundingBox.minY)
+                    if verticalDifference > 0.02 {
+                        return lhs.boundingBox.minY > rhs.boundingBox.minY
+                    }
+                    return lhs.boundingBox.minX < rhs.boundingBox.minX
+                }
+                .compactMap { $0.topCandidates(1).first?.string }
+            let recognizedText = lines.joined(separator: "\n")
+            return BillScannerParser.parse(recognizedText)
+        }.value
+    }
+}
+
+private enum BillScannerParser {
+    private struct NumberToken {
+        let range: NSRange
+        let value: Decimal
+    }
+
+    static func parse(_ text: String) -> BillScanResult {
+        let currency = detectCurrency(in: text)
+        let items = text
+            .components(separatedBy: .newlines)
+            .compactMap(parseLine)
+
+        return BillScanResult(text: text, items: items, currency: currency)
+    }
+
+    private static func parseLine(_ line: String) -> BillLineItem? {
+        let trimmedLine = normalizeNumerals(in: line)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedLine.count >= 2 else { return nil }
+
+        let lowercasedLine = trimmedLine.lowercased()
+        let ignoredPhrases = [
+            "subtotal",
+            "total",
+            "tax",
+            "vat",
+            "discount",
+            "change",
+            "cash",
+            "credit",
+            "debit",
+            "amount due",
+            "balance",
+            "invoice",
+            "receipt",
+            "thank",
+            "date",
+            "time",
+            "tel",
+            "phone"
+        ]
+        guard !ignoredPhrases.contains(where: lowercasedLine.contains) else { return nil }
+        guard trimmedLine.rangeOfCharacter(from: .letters) != nil else { return nil }
+
+        let tokens = numberTokens(in: trimmedLine)
+        guard let totalToken = tokens.last, totalToken.value > 0 else { return nil }
+
+        var quantity = 1
+        var unitPrice = totalToken.value
+        if let possibleQuantity = integerQuantity(tokens[0].value) {
+            let prefix = (trimmedLine as NSString)
+                .substring(to: tokens[0].range.location)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let quantityIsPlausible = prefix.isEmpty
+                || prefix.rangeOfCharacter(from: .letters) != nil
+                || tokens.count >= 3
+
+            if quantityIsPlausible {
+                quantity = possibleQuantity
+                if tokens.count >= 3 {
+                    unitPrice = tokens[tokens.count - 2].value
+                } else {
+                    unitPrice = totalToken.value / Decimal(quantity)
+                }
+            }
+        }
+
+        let itemName = cleanedName(from: trimmedLine, removing: tokens)
+        let uppercasedName = itemName.uppercased()
+        guard itemName.count >= 2,
+              !["USD", "LBP", "LL"].contains(uppercasedName) else {
+            return nil
+        }
+
+        return BillLineItem(
+            name: itemName,
+            quantity: quantity,
+            unitPriceText: decimalText(unitPrice),
+            lineTotalText: decimalText(totalToken.value)
+        )
+    }
+
+    private static func normalizeNumerals(in text: String) -> String {
+        String(text.map { character -> Character in
+            switch character {
+            case "٠": return "0"
+            case "١": return "1"
+            case "٢": return "2"
+            case "٣": return "3"
+            case "٤": return "4"
+            case "٥": return "5"
+            case "٦": return "6"
+            case "٧": return "7"
+            case "٨": return "8"
+            case "٩": return "9"
+            case "۰": return "0"
+            case "۱": return "1"
+            case "۲": return "2"
+            case "۳": return "3"
+            case "۴": return "4"
+            case "۵": return "5"
+            case "۶": return "6"
+            case "۷": return "7"
+            case "۸": return "8"
+            case "۹": return "9"
+            case "٫": return "."
+            case "٬": return ","
+            default: return character
+            }
+        })
+    }
+
+    private static func numberTokens(in line: String) -> [NumberToken] {
+        let regex = try! NSRegularExpression(pattern: #"\d+(?:[.,]\d{1,3})*"#)
+        let nsLine = line as NSString
+        let searchRange = NSRange(location: 0, length: nsLine.length)
+
+        return regex.matches(in: line, range: searchRange).compactMap { match in
+            let rawValue = nsLine.substring(with: match.range)
+            guard let value = decimal(from: rawValue) else { return nil }
+            return NumberToken(range: match.range, value: value)
+        }
+    }
+
+    private static func decimal(from rawValue: String) -> Decimal? {
+        let normalizedValue: String
+        if let comma = rawValue.lastIndex(of: ","),
+           let dot = rawValue.lastIndex(of: ".") {
+            if comma > dot {
+                normalizedValue = rawValue
+                    .replacingOccurrences(of: ".", with: "")
+                    .replacingOccurrences(of: ",", with: ".")
+            } else {
+                normalizedValue = rawValue.replacingOccurrences(of: ",", with: "")
+            }
+        } else if rawValue.filter({ $0 == "," }).count == 1,
+                  let comma = rawValue.firstIndex(of: ",") {
+            let suffix = rawValue[rawValue.index(after: comma)...]
+            normalizedValue = suffix.count == 3
+                ? rawValue.replacingOccurrences(of: ",", with: "")
+                : rawValue.replacingOccurrences(of: ",", with: ".")
+        } else {
+            normalizedValue = rawValue.replacingOccurrences(of: ",", with: "")
+        }
+
+        return Decimal(
+            string: normalizedValue,
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+    }
+
+    private static func integerQuantity(_ value: Decimal) -> Int? {
+        guard value >= 1, value <= 99 else { return nil }
+        let integer = NSDecimalNumber(decimal: value).intValue
+        return Decimal(integer) == value ? integer : nil
+    }
+
+    private static func cleanedName(from line: String, removing tokens: [NumberToken]) -> String {
+        var name = line
+        for token in tokens.reversed() {
+            name = (name as NSString).replacingCharacters(in: token.range, with: " ")
+        }
+
+        return name
+            .components(separatedBy: .whitespacesAndNewlines)
+            .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+            .filter { !$0.isEmpty && $0.lowercased() != "x" }
+            .joined(separator: " ")
+    }
+
+    private static func decimalText(_ value: Decimal) -> String {
+        NSDecimalNumber(decimal: value).stringValue
+    }
+
+    private static func detectCurrency(in text: String) -> LedgerCurrency {
+        let uppercasedText = text.uppercased()
+        let hasStandaloneLL = uppercasedText.range(
+            of: #"\bLL\b"#,
+            options: .regularExpression
+        ) != nil
+
+        if uppercasedText.contains("LBP")
+            || uppercasedText.contains("L.L")
+            || uppercasedText.contains("ل.ل")
+            || hasStandaloneLL {
+            return .lbp
+        }
+        return .usd
+    }
+}
+
+@MainActor
+struct BillScannerView: View {
+    @ObservedObject var store: LedgerStore
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var previewImage: UIImage?
+    @State private var recognizedText = ""
+    @State private var lineItems: [BillLineItem] = []
+    @State private var currency: LedgerCurrency = .usd
+    @State private var isScanning = false
+    @State private var isShowingCamera = false
+    @State private var isPresentingTransactionEditor = false
+    @State private var pendingTotal: Money?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Take or choose a bill photo. Pocket Ledger will read likely item lines, then you can keep only your items and adjust their quantities.")
+                        .font(.subheadline)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                    sourceButtons
+
+                    if let previewImage {
+                        Image(uiImage: previewImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .frame(maxHeight: 260)
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                            }
+                    }
+
+                    if isScanning {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                                .tint(PocketLedgerTheme.accent)
+                            Text("Reading bill…")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                        }
+                        .padding(14)
+                        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                    }
+
+                    if !lineItems.isEmpty {
+                        reviewItems
+                    } else if !isScanning, previewImage != nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("No priced items detected", systemImage: "exclamationmark.magnifyingglass")
+                                .font(.headline)
+                            Text("Add an item manually or try a clearer, closer photo.")
+                                .font(.subheadline)
+                                .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                            Button {
+                                lineItems = [BillLineItem(name: "")]
+                            } label: {
+                                Label("Add item manually", systemImage: "plus.circle")
+                            }
+                            .foregroundStyle(PocketLedgerTheme.accent)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+
+                    if !recognizedText.isEmpty {
+                        DisclosureGroup("Recognized text") {
+                            Text(recognizedText)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(PocketLedgerTheme.textSecondary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 8)
+                        }
+                        .padding(16)
+                        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
+            }
+            .pocketScreen()
+            .navigationTitle("Scan bill")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .onChange(of: selectedPhoto) { _, item in
+                guard let item else { return }
+                loadPhoto(item)
+            }
+            .sheet(isPresented: $isShowingCamera) {
+                BillCameraView { image in
+                    handleImage(image)
+                }
+            }
+            .sheet(isPresented: $isPresentingTransactionEditor) {
+                if let pendingTotal {
+                    TransactionEditor(
+                        store: store,
+                        initialAmount: pendingTotal,
+                        initialBillTotal: pendingTotal,
+                        initialNote: transactionNote
+                    )
+                }
+            }
+            .alert("Bill scan failed", isPresented: errorPresented) {
+                Button("OK") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
+        }
+    }
+
+    private var sourceButtons: some View {
+        HStack(spacing: 10) {
+            PhotosPicker(
+                selection: $selectedPhoto,
+                matching: .images,
+                photoLibrary: .shared
+            ) {
+                Label("Choose photo", systemImage: "photo")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(PocketLedgerTheme.accent)
+
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button {
+                    isShowingCamera = true
+                } label: {
+                    Label("Camera", systemImage: "camera")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(PocketLedgerTheme.accent)
+            }
+        }
+    }
+
+    private var reviewItems: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Choose your items")
+                        .font(.title3.weight(.bold))
+                    Text("Selected \(selectedItemCount) of \(lineItems.count)")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
+
+                Spacer()
+
+                Picker("Currency", selection: $currency) {
+                    ForEach(LedgerCurrency.allCases) { currency in
+                        Text(currency.rawValue).tag(currency)
+                    }
+                }
+                .labelsHidden()
+            }
+
+            ForEach($lineItems) { $item in
+                lineItemEditor($item)
+            }
+
+            Button {
+                lineItems.append(BillLineItem(name: ""))
+            } label: {
+                Label("Add item manually", systemImage: "plus.circle")
+            }
+            .foregroundStyle(PocketLedgerTheme.accent)
+
+            totalCard
+        }
+    }
+
+    private func lineItemEditor(_ item: Binding<BillLineItem>) -> some View {
+        let total = item.wrappedValue.total(in: currency)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: item.isSelected) {
+                Text(item.wrappedValue.name.isEmpty ? "Untitled item" : item.wrappedValue.name)
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            TextField("Item name", text: item.name)
+
+            Stepper(value: item.quantity, in: 1...99) {
+                Text("Quantity \(item.wrappedValue.quantity)")
+                    .font(.subheadline)
+            }
+
+            TextField("Unit price", text: item.unitPriceText)
+                .keyboardType(.decimalPad)
+
+            HStack {
+                Text("Line total")
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                Spacer()
+                Text(total?.formatted ?? "Enter a price")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(total == nil ? PocketLedgerTheme.textTertiary : PocketLedgerTheme.textPrimary)
+            }
+        }
+        .padding(14)
+        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var totalCard: some View {
+        if let total = selectedTotal {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Selected total")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        Text(total.formatted)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                    }
+                    Spacer()
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(PocketLedgerTheme.positive)
+                }
+
+                Button(action: useTotalInTransaction) {
+                    Label("Use total in transaction", systemImage: "arrow.down.to.line")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(PocketLedgerTheme.accent)
+
+                if !hasMatchingAccount {
+                    Text("Add a \(currency.rawValue) account first to use this total.")
+                        .font(.footnote)
+                        .foregroundStyle(PocketLedgerTheme.warning)
+                }
+            }
+            .padding(16)
+            .background(
+                LinearGradient(
+                    colors: [PocketLedgerTheme.surfaceElevated, PocketLedgerTheme.surface],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 20)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+            }
+        } else {
+            Text("Select at least one item and enter a valid price for every selected line.")
+                .font(.footnote)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+                .padding(.top, 4)
+        }
+    }
+
+    private var selectedItemCount: Int {
+        lineItems.filter { $0.isSelected }.count
+    }
+
+    private var selectedTotal: Money? {
+        let selectedItems = lineItems.filter { $0.isSelected }
+        guard !selectedItems.isEmpty else { return nil }
+
+        let totals = selectedItems.compactMap { $0.total(in: currency) }
+        guard totals.count == selectedItems.count else { return nil }
+
+        var minorUnits = Int64.zero
+        for money in totals {
+            let (nextTotal, overflow) = minorUnits.addingReportingOverflow(money.minorUnits)
+            guard !overflow else { return nil }
+            minorUnits = nextTotal
+        }
+        return Money(currency: currency, minorUnits: minorUnits)
+    }
+
+    private var hasMatchingAccount: Bool {
+        store.data.accounts.contains { $0.currency == currency }
+    }
+
+    private var transactionNote: String {
+        let names = lineItems
+            .filter { $0.isSelected && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard !names.isEmpty else { return "Scanned bill" }
+
+        let prefix = names.prefix(3).joined(separator: ", ")
+        return names.count > 3 ? "Bill: \(prefix), …" : "Bill: \(prefix)"
+    }
+
+    private var errorPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
+
+    private func loadPhoto(_ item: PhotosPickerItem) {
+        Task { @MainActor in
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self),
+                      let image = UIImage(data: data) else {
+                    throw BillScannerError.invalidImage
+                }
+                selectedPhoto = nil
+                handleImage(image, data: data)
+            } catch {
+                selectedPhoto = nil
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func handleImage(_ image: UIImage) {
+        guard let data = image.jpegData(compressionQuality: 0.9) else {
+            errorMessage = BillScannerError.invalidImage.localizedDescription
+            return
+        }
+        handleImage(image, data: data)
+    }
+
+    private func handleImage(_ image: UIImage, data: Data) {
+        previewImage = image
+        Task { @MainActor in
+            await scan(data: data)
+        }
+    }
+
+    private func scan(data: Data) async {
+        isScanning = true
+        errorMessage = nil
+        recognizedText = ""
+        lineItems = []
+
+        do {
+            let result = try await BillOCRService.extract(from: data)
+            recognizedText = result.text
+            lineItems = result.items
+            currency = result.currency
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isScanning = false
+    }
+
+    private func useTotalInTransaction() {
+        guard let total = selectedTotal else { return }
+        guard hasMatchingAccount else {
+            errorMessage = "Add a \(currency.rawValue) account before adding this bill as a transaction."
+            return
+        }
+
+        pendingTotal = total
+        isPresentingTransactionEditor = true
+    }
+}
+
+@MainActor
+private struct BillCameraView: UIViewControllerRepresentable {
+    let onImage: (UIImage) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onImage: onImage, dismiss: { dismiss() })
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    @MainActor
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onImage: (UIImage) -> Void
+        let dismiss: () -> Void
+
+        init(onImage: @escaping (UIImage) -> Void, dismiss: @escaping () -> Void) {
+            self.onImage = onImage
+            self.dismiss = dismiss
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage {
+                onImage(image)
+            }
+            dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            dismiss()
+        }
+    }
+}
+
+private extension CGImagePropertyOrientation {
+    init(_ orientation: UIImage.Orientation) {
+        switch orientation {
+        case .up:
+            self = .up
+        case .upMirrored:
+            self = .upMirrored
+        case .down:
+            self = .down
+        case .downMirrored:
+            self = .downMirrored
+        case .left:
+            self = .left
+        case .leftMirrored:
+            self = .leftMirrored
+        case .right:
+            self = .right
+        case .rightMirrored:
+            self = .rightMirrored
+        @unknown default:
+            self = .up
+        }
+    }
+}

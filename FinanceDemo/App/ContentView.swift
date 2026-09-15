@@ -394,6 +394,7 @@ private struct TransactionsView: View {
     @ObservedObject var store: LedgerStore
     let onAddTransaction: () -> Void
     @State private var selectedFilter: TransactionFilter = .all
+    @State private var isPresentingBillScanner = false
 
     var body: some View {
         NavigationStack {
@@ -451,6 +452,9 @@ private struct TransactionsView: View {
             }
             .pocketScreen()
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $isPresentingBillScanner) {
+                BillScannerView(store: store)
+            }
         }
     }
 
@@ -465,6 +469,17 @@ private struct TransactionsView: View {
             }
 
             Spacer()
+
+            Button {
+                isPresentingBillScanner = true
+            } label: {
+                Image(systemName: "doc.viewfinder")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(PocketLedgerTheme.background)
+                    .frame(width: 42, height: 42)
+                    .background(PocketLedgerTheme.positive, in: Circle())
+            }
+            .accessibilityLabel("Scan bill")
 
             Button(action: onAddTransaction) {
                 Image(systemName: "plus")
@@ -1121,7 +1136,7 @@ private struct MovementLineEditor: View {
 }
 
 @MainActor
-private struct TransactionEditor: View {
+struct TransactionEditor: View {
     @ObservedObject var store: LedgerStore
     @Environment(\.dismiss) private var dismiss
     @State private var note = ""
@@ -1139,10 +1154,30 @@ private struct TransactionEditor: View {
     @State private var rateText = "100000"
     @State private var errorMessage: String?
 
-    init(store: LedgerStore) {
+    init(
+        store: LedgerStore,
+        initialAmount: Money? = nil,
+        initialBillTotal: Money? = nil,
+        initialNote: String? = nil
+    ) {
         _store = ObservedObject(wrappedValue: store)
-        let firstAccountID = store.data.accounts.first?.id ?? UUID()
-        _outflows = State(initialValue: [MovementDraft(accountID: firstAccountID, amount: "")])
+        let preferredCurrency = initialAmount?.currency ?? initialBillTotal?.currency
+        let firstAccount = store.data.accounts.first { account in
+            guard let preferredCurrency else { return true }
+            return account.currency == preferredCurrency
+        } ?? store.data.accounts.first
+        let firstAccountID = firstAccount?.id ?? UUID()
+        _note = State(initialValue: initialNote ?? "")
+        _dueCurrency = State(initialValue: initialBillTotal?.currency ?? preferredCurrency ?? .usd)
+        _amountDue = State(initialValue: initialBillTotal.map { Self.inputText(for: $0) } ?? "")
+        _outflows = State(
+            initialValue: [
+                MovementDraft(
+                    accountID: firstAccountID,
+                    amount: initialAmount.map { Self.inputText(for: $0) } ?? ""
+                )
+            ]
+        )
         _categoryID = State(
             initialValue: store.data.categories.first(where: { $0.parentID != nil })?.id
                 ?? store.data.categories.first?.id
@@ -1307,6 +1342,11 @@ private struct TransactionEditor: View {
 
     private var newMovementDraft: MovementDraft {
         MovementDraft(accountID: store.data.accounts.first?.id ?? UUID(), amount: "")
+    }
+
+    private static func inputText(for money: Money) -> String {
+        let amount = Decimal(money.minorUnits) / Decimal(money.currency.minorUnitScale)
+        return NSDecimalNumber(decimal: amount).stringValue
     }
 
     private var selectedCurrencies: [LedgerCurrency] {

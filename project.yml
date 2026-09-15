@@ -42,7 +42,9 @@ targets:
         CFBundleName: Pocket Ledger
         CFBundleShortVersionString: "1.0"
         CFBundleVersion: "1"
+        NSCameraUsageDescription: "Pocket Ledger uses the camera to read bill items."
         NSFaceIDUsageDescription: "Pocket Ledger uses Face ID to unlock your financial data."
+        NSPhotoLibraryUsageDescription: "Pocket Ledger uses selected bill photos to read bill items."
         UILaunchScreen: {}
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations:

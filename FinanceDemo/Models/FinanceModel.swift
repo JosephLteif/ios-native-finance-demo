@@ -1,6 +1,6 @@
 import Foundation
 
-enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable {
+enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
     case usd = "USD"
     case lbp = "LBP"
 
