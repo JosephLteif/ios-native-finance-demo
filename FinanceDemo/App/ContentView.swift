@@ -10,8 +10,10 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     balanceCard
                     actionGrid
+                    capabilitiesCard
                     diagnosticsCard
                     intelligenceCard
+                    shortcutsCard
                     notificationCard
                 }
                 .padding()
@@ -31,9 +33,12 @@ struct ContentView: View {
             Text(store.snapshot.lastTransactionDescription)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Text("Updated (store.snapshot.lastUpdated, style: .relative)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Text("Updated")
+                Text(store.snapshot.lastUpdated, style: .relative)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -64,13 +69,44 @@ struct ContentView: View {
             .buttonStyle(.bordered)
             .disabled(store.isWorking)
 
+            Button("Reset Demo", systemImage: "arrow.counterclockwise.circle") {
+                store.resetDemo()
+            }
+            .buttonStyle(.bordered)
+
             Button("Refresh Widget", systemImage: "arrow.clockwise.circle") {
                 store.refreshWidget()
             }
             .buttonStyle(.bordered)
             .gridCellColumns(2)
+
+            if let status = store.lastActionStatus {
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .gridCellColumns(2)
+            }
         }
         .labelStyle(.titleAndIcon)
+    }
+
+    private var capabilitiesCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            cardTitle("Capabilities", systemImage: "sparkles.rectangle.stack")
+            diagnosticRow(
+                title: "WidgetKit",
+                value: store.snapshot.appGroupAvailable ? "Ready" : "Needs App Group signing",
+                tint: store.snapshot.appGroupAvailable ? .green : .orange
+            )
+            diagnosticRow(title: "App Intents", value: "5 actions", tint: .green)
+            diagnosticRow(title: "Siri / Shortcuts", value: "5 shortcuts", tint: .green)
+            diagnosticRow(title: "Apple Intelligence", value: store.foundationModelStatus, tint: .primary)
+            diagnosticRow(title: "Local notifications", value: "Available", tint: .green)
+            Text("The widget needs a valid App Group signature. Siri, Shortcuts, notifications, and Apple Intelligence can be tested independently.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .cardSurface()
     }
 
     private var diagnosticsCard: some View {
@@ -103,15 +139,33 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             cardTitle("Foundation Models", systemImage: "apple.intelligence")
             diagnosticRow(title: "Availability", value: store.foundationModelStatus, tint: .primary)
+            if let input = store.foundationModelInput {
+                diagnosticRow(title: "Input balance", value: input, tint: .primary)
+            }
             if let result = store.foundationModelResult {
                 Text(result)
                     .font(.body)
                     .textSelection(.enabled)
             } else {
-                Text("The test uses only Apple’s on-device model and makes no network request.")
+                Text("The test uses the current balance and latest transaction with Apple’s on-device model. It makes no network request.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+        .cardSurface()
+    }
+
+    private var shortcutsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            cardTitle("Siri & Shortcuts", systemImage: "waveform")
+            Text("These App Shortcuts are registered automatically and can be used in Shortcuts or by asking Siri:")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            shortcutRow("Get my finance demo balance")
+            shortcutRow("Add a five dollar expense")
+            shortcutRow("Add a hundred dollars of income")
+            shortcutRow("Reset my finance demo")
+            shortcutRow("Summarize my demo budget")
         }
         .cardSurface()
     }
@@ -144,6 +198,11 @@ struct ContentView: View {
         .font(.subheadline)
     }
 
+    private func shortcutRow(_ phrase: String) -> some View {
+        Label(phrase, systemImage: "mic")
+            .font(.subheadline)
+    }
+
     private func formattedDate(_ date: Date?) -> String? {
         date?.formatted(date: .abbreviated, time: .shortened)
     }
@@ -157,4 +216,3 @@ private extension View {
             .background(.background, in: RoundedRectangle(cornerRadius: 16))
     }
 }
-

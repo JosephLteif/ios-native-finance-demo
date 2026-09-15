@@ -17,7 +17,7 @@ enum FoundationModelService {
         }
     }
 
-    static func generateBudgetSummary() async -> String {
+    static func generateBudgetSummary(for snapshot: DemoSnapshot) async -> String {
         let model = SystemLanguageModel.default
         guard case .available = model.availability else {
             return "Generation skipped: \(availabilityDescription())."
@@ -25,8 +25,13 @@ enum FoundationModelService {
 
         do {
             let session = LanguageModelSession()
+            let prompt = """
+            Give me one concise sentence about this current finance demo. Use only the supplied data and do not invent totals.
+            Current balance: \(snapshot.balanceText)
+            Last transaction: \(snapshot.lastTransactionDescription)
+            """
             let response = try await session.respond(
-                to: "Give me a one sentence summary of this budget: income $1,000, expenses $250, savings $750."
+                to: prompt
             )
             let summary = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
             return summary.isEmpty ? "The model returned an empty response." : summary
@@ -35,4 +40,3 @@ enum FoundationModelService {
         }
     }
 }
-

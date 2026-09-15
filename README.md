@@ -6,10 +6,10 @@ The Windows machine does not compile iOS code. GitHub Actions provisions a GitHu
 
 ## Architecture
 
-- `FinanceDemo/App`: SwiftUI app entry point, view, and observable store.
+- `FinanceDemo/App`: SwiftUI app entry point, view, observable store, and the app-only Siri/Shortcuts provider.
 - `FinanceDemo/Models`: shared snapshot model used by the app and widget.
 - `FinanceDemo/Services`: App Group storage, Foundation Models, and local notification services.
-- `FinanceDemo/Shared`: App Intents and App Shortcuts compiled into both targets.
+- `FinanceDemo/Shared`: App Intents shared by the main app and widget for balance actions.
 - `FinanceDemoWidget`: one WidgetKit extension with `systemSmall` and `systemMedium` layouts.
 - `FinanceDemo/Config` and `FinanceDemoWidget/Config`: App Group entitlement files and generated Info.plist destinations.
 - `.github/workflows/ios-build.yml`: manually triggered unsigned build and IPA packaging workflow.
@@ -122,4 +122,3 @@ Free Apple signing is time-limited. Refresh/re-sign from AltStore or Sideloadly 
 ## Security
 
 This repository intentionally contains no Apple password, session token, certificate, provisioning profile, private key, `.p12`, GitHub token, or generated credential file. GitHub Actions performs an unsigned build and never contacts Apple provisioning services.
-

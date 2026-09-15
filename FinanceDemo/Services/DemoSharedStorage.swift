@@ -67,7 +67,14 @@ final class DemoSharedStorage: @unchecked Sendable {
 
     @discardableResult
     func recordTransaction(deltaCents: Int, description: String) -> Bool {
-        localBalanceCents += deltaCents
+        let startingBalanceCents: Int
+        if isAppGroupAvailable, let defaults, defaults.object(forKey: Key.balanceCents) != nil {
+            startingBalanceCents = defaults.integer(forKey: Key.balanceCents)
+        } else {
+            startingBalanceCents = localBalanceCents
+        }
+
+        localBalanceCents = startingBalanceCents + deltaCents
         localLastTransactionDescription = description
         localLastUpdated = Date()
 
@@ -80,6 +87,26 @@ final class DemoSharedStorage: @unchecked Sendable {
         defaults.set(description, forKey: Key.lastTransactionDescription)
         defaults.set(localLastUpdated.timeIntervalSince1970, forKey: Key.lastUpdated)
         logger.info("context=\(self.context, privacy: .public) transaction_shared=true")
+        return true
+    }
+
+    @discardableResult
+    func resetDemoData() -> Bool {
+        localBalanceCents = 100_000
+        localLastTransactionDescription = "Reset demo balance"
+        localLastUpdated = Date()
+        localLastWidgetRefresh = nil
+
+        guard isAppGroupAvailable, let defaults else {
+            logger.error("context=\(self.context, privacy: .public) reset_not_shared=true")
+            return false
+        }
+
+        defaults.set(localBalanceCents, forKey: Key.balanceCents)
+        defaults.set(localLastTransactionDescription, forKey: Key.lastTransactionDescription)
+        defaults.set(localLastUpdated.timeIntervalSince1970, forKey: Key.lastUpdated)
+        defaults.removeObject(forKey: Key.lastWidgetRefresh)
+        logger.info("context=\(self.context, privacy: .public) reset_shared=true")
         return true
     }
 
@@ -112,4 +139,3 @@ final class DemoSharedStorage: @unchecked Sendable {
         }
     }
 }
-
