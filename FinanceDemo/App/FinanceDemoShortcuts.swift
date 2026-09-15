@@ -48,7 +48,7 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetCategoriesIntent(),
             phrases: [
                 "List my categories in \(.applicationName)",
-                "Get my Pocket Ledger categories"
+                "Get my Pocket Ledger categories in \(.applicationName)"
             ],
             shortTitle: "Get Pocket Ledger Categories",
             systemImageName: "tag"
@@ -57,7 +57,7 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetAccountsIntent(),
             phrases: [
                 "List my accounts in \(.applicationName)",
-                "Get my Pocket Ledger accounts"
+                "Get my Pocket Ledger accounts in \(.applicationName)"
             ],
             shortTitle: "Get Pocket Ledger Accounts",
             systemImageName: "wallet.pass"
@@ -75,7 +75,7 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetTransactionHistoryIntent(),
             phrases: [
                 "Show my transactions for \(\.$period) in \(.applicationName)",
-                "Show my \(\.$category) transactions for \(\.$period) in \(.applicationName)"
+                "Show my \(\.$category) transactions in \(.applicationName)"
             ],
             shortTitle: "Get Transaction History",
             systemImageName: "clock.arrow.circlepath"
@@ -84,7 +84,7 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetSpendingSummaryIntent(),
             phrases: [
                 "How much did I spend \(\.$period) in \(.applicationName)",
-                "How much did I spend on \(\.$category) \(\.$period) in \(.applicationName)"
+                "How much did I spend on \(\.$category) in \(.applicationName)"
             ],
             shortTitle: "Get Spending Summary",
             systemImageName: "chart.bar.doc.horizontal"
