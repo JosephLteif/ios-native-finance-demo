@@ -4,30 +4,70 @@ import SwiftData
 final class FinanceStorage {
     static let appGroupIdentifier = "group.com.josephlteif.financedemo"
 
+    private enum StorageLocation: Equatable {
+        case appGroup
+        case local
+        case unavailable
+    }
+
     private let modelContainer: ModelContainer?
+    private let storageLocation: StorageLocation
 
     init(context: String) {
-        _ = context
-
-        guard let groupURL = FileManager.default.containerURL(
+        if let groupURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
-        ) else {
-            modelContainer = nil
+        ), let sharedContainer = Self.makeModelContainer(
+            at: groupURL.appendingPathComponent("PocketLedger.sqlite")
+        ) {
+            modelContainer = sharedContainer
+            storageLocation = .appGroup
             return
         }
 
-        let databaseURL = groupURL.appendingPathComponent("PocketLedger.sqlite")
-        let schema = Schema([FinanceDatabaseRecord.self])
-        let configuration = ModelConfiguration(
-            schema: schema,
-            url: databaseURL,
-            cloudKitDatabase: .none
-        )
-        modelContainer = try? ModelContainer(for: schema, configurations: [configuration])
+        guard context != "widget",
+              let applicationSupportURL = FileManager.default.urls(
+                  for: .applicationSupportDirectory,
+                  in: .userDomainMask
+              ).first else {
+            modelContainer = nil
+            storageLocation = .unavailable
+            return
+        }
+
+        let localDirectory = applicationSupportURL.appendingPathComponent("PocketLedger", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: localDirectory,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            modelContainer = nil
+            storageLocation = .unavailable
+            return
+        }
+
+        guard let localContainer = Self.makeModelContainer(
+            at: localDirectory.appendingPathComponent("PocketLedger.sqlite")
+        ) else {
+            modelContainer = nil
+            storageLocation = .unavailable
+            return
+        }
+
+        modelContainer = localContainer
+        storageLocation = .local
+    }
+
+    var isPersistent: Bool {
+        modelContainer != nil
     }
 
     var isAppGroupAvailable: Bool {
-        modelContainer != nil
+        storageLocation == .appGroup
+    }
+
+    var isLocalFallback: Bool {
+        storageLocation == .local
     }
 
     func load() -> FinanceData {
@@ -117,5 +157,15 @@ final class FinanceStorage {
     private func makeContext() -> ModelContext? {
         guard let modelContainer else { return nil }
         return ModelContext(modelContainer)
+    }
+
+    private static func makeModelContainer(at databaseURL: URL) -> ModelContainer? {
+        let schema = Schema([FinanceDatabaseRecord.self])
+        let configuration = ModelConfiguration(
+            schema: schema,
+            url: databaseURL,
+            cloudKitDatabase: .none
+        )
+        return try? ModelContainer(for: schema, configurations: [configuration])
     }
 }

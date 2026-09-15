@@ -14,7 +14,21 @@ final class LedgerStore: ObservableObject {
     }
 
     var storageAvailable: Bool {
+        storage.isPersistent
+    }
+
+    var sharedStorageAvailable: Bool {
         storage.isAppGroupAvailable
+    }
+
+    var storageStatus: String {
+        if storage.isAppGroupAvailable {
+            return "Persistent database is working"
+        }
+        if storage.isLocalFallback {
+            return "Persistent local database is working; widget sharing is unavailable"
+        }
+        return "Persistent database unavailable"
     }
 
     var recentTransactions: [LedgerTransaction] {

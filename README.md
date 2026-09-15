@@ -98,16 +98,16 @@ Both the main app and the widget declare only this entitlement:
 
 `com.apple.security.application-groups = [group.com.josephlteif.financedemo]`
 
-The app and widget use a SwiftData-backed SQLite database at `PocketLedger.sqlite` inside that shared App Group. The database contains one durable typed ledger record, is shared across the main app, widget, and App Intents, and starts empty on a fresh install. There is no session-only fallback: if the shared database cannot be opened, the UI reports that state and does not claim that changes were saved.
+When the App Group is available, the app and widget use a SwiftData-backed SQLite database at `PocketLedger.sqlite` inside that shared container. The database contains one durable typed ledger record, is shared across the main app, widget, and App Intents, and starts empty on a fresh install. If a sideloading service strips the App Group entitlement, the main app and App Intents fall back to their own persistent Application Support SQLite database; this remains durable across launches, but cannot be shared with the widget. The widget reports the shared-container limitation instead of pretending it has the app's data.
 
 The storage notice reports either:
 
 - `Persistent database is working`
+- `Persistent local database is working; widget sharing is unavailable`
 - `Persistent database unavailable`
 
-When unavailable, the app labels the widget's shared container as unavailable and rejects writes instead of retaining session-only changes. The widget and App Intents continue to use the same persistent store.
-
-Third-party free signing is the highest-risk part of this proof of concept: it may strip, reject, or fail to preserve App Group capabilities. A successful GitHub build proves compilation and embedding only; it does not prove App Groups work on the physical iPhone.
+Only the last state rejects writes. Third-party free signing is the highest-risk part of this proof of concept: it may strip, reject, or fail to preserve App Group capabilities, in which case the main app remains persistent but widget sharing requires a properly provisioned App Group.
+A successful GitHub build proves compilation and embedding only; it does not prove App Groups work on the physical iPhone.
 
 ## Finance acceptance checklist
 

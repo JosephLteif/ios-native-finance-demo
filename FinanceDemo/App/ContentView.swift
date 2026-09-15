@@ -329,12 +329,20 @@ private struct DashboardView: View {
 
     private var storageNotice: some View {
         HStack(spacing: 8) {
-            Image(systemName: store.storageAvailable ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
-            Text(store.storageAvailable ? "Persistent database is working" : "Persistent database unavailable")
+            Image(systemName: store.sharedStorageAvailable
+                  ? "checkmark.shield.fill"
+                  : store.storageAvailable
+                  ? "internaldrive.fill"
+                  : "exclamationmark.triangle.fill")
+            Text(store.storageStatus)
                 .font(.caption)
             Spacer()
         }
-        .foregroundStyle(store.storageAvailable ? PocketLedgerTheme.positive : PocketLedgerTheme.warning)
+        .foregroundStyle(store.storageAvailable
+                          ? store.sharedStorageAvailable
+                          ? PocketLedgerTheme.positive
+                          : PocketLedgerTheme.accent
+                          : PocketLedgerTheme.warning)
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .background(PocketLedgerTheme.surface.opacity(0.72), in: Capsule())
@@ -683,8 +691,10 @@ private struct AccountsView: View {
                         }
                     }
 
-                    Text(store.storageAvailable
+                    Text(store.sharedStorageAvailable
                          ? "Stored locally in the shared app container."
+                         : store.storageAvailable
+                         ? "Stored persistently on this device; widget sharing is unavailable."
                          : "Persistent storage is unavailable; changes cannot be saved.")
                         .font(.caption)
                         .foregroundStyle(PocketLedgerTheme.textTertiary)

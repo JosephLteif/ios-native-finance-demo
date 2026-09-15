@@ -33,8 +33,8 @@ struct AddDemoExpenseIntent: AppIntent {
         let saved = storage.appendTransaction(transaction)
         guard saved else {
             return .result(
-                value: "Shared App Group unavailable",
-                dialog: "The expense was not saved because the shared App Group is unavailable."
+                value: "Persistent database unavailable",
+                dialog: "The expense was not saved because the persistent database is unavailable."
             )
         }
 
@@ -77,8 +77,8 @@ struct AddDemoIncomeIntent: AppIntent {
         let saved = storage.appendTransaction(transaction)
         guard saved else {
             return .result(
-                value: "Shared App Group unavailable",
-                dialog: "The income was not saved because the shared App Group is unavailable."
+                value: "Persistent database unavailable",
+                dialog: "The income was not saved because the persistent database is unavailable."
             )
         }
 
@@ -101,8 +101,8 @@ struct ResetDemoDataIntent: AppIntent {
         let saved = storage.resetLedger()
         guard saved else {
             return .result(
-                value: "Shared App Group unavailable",
-                dialog: "The ledger was not reset because the shared App Group is unavailable."
+                value: "Persistent database unavailable",
+                dialog: "The ledger was not cleared because the persistent database is unavailable."
             )
         }
 
@@ -121,11 +121,12 @@ struct GetDemoBalanceIntent: AppIntent {
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let snapshot = FinanceStorage(context: "app-intent").widgetSnapshot()
-        guard snapshot.appGroupAvailable else {
+        let storage = FinanceStorage(context: "app-intent")
+        let snapshot = storage.widgetSnapshot()
+        guard storage.isPersistent else {
             return .result(
-                value: "Shared App Group unavailable",
-                dialog: "The Pocket Ledger shared App Group is unavailable, so no shared balances can be read."
+                value: "Persistent database unavailable",
+                dialog: "The Pocket Ledger persistent database is unavailable, so no balances can be read."
             )
         }
 
