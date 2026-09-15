@@ -1,0 +1,34 @@
+# XcodeGen output and Xcode build products
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+build/
+
+# Local iOS artifacts
+*.app/
+*.appex/
+*.ipa
+
+# Apple signing material and credential files
+*.cer
+*.crt
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.pem
+*.key
+*.privatekey
+*.pkcs12
+fastlane/session/
+
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+*.local
+
+# macOS and editor files
+.DS_Store
+.idea/
+.vscode/
+

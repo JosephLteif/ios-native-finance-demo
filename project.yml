@@ -1,0 +1,81 @@
+name: ios-native-finance-demo
+
+options:
+  bundleIdPrefix: com.josephlteif
+  deploymentTarget:
+    iOS: 26.0
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: 26.0
+    SWIFT_VERSION: 6.0
+
+targets:
+  FinanceDemo:
+    type: application
+    platform: iOS
+    sources:
+      - path: FinanceDemo/App
+      - path: FinanceDemo/Models
+      - path: FinanceDemo/Services
+      - path: FinanceDemo/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo
+        INFOPLIST_FILE: FinanceDemo/Config/Info.plist
+        CODE_SIGN_ENTITLEMENTS: FinanceDemo/Config/FinanceDemo.entitlements
+        TARGETED_DEVICE_FAMILY: 1
+        SUPPORTS_MACCATALYST: NO
+    info:
+      path: FinanceDemo/Config/Info.plist
+      properties:
+        CFBundleDisplayName: Finance Native Demo
+        CFBundleName: FinanceDemo
+        CFBundleShortVersionString: 1.0
+        CFBundleVersion: 1
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    entitlements:
+      path: FinanceDemo/Config/FinanceDemo.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.josephlteif.financedemo
+    dependencies:
+      - target: FinanceDemoWidget
+    scheme:
+      gatherCoverageData: false
+      testTargets: []
+
+  FinanceDemoWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: FinanceDemo/Models
+      - path: FinanceDemo/Shared
+      - path: FinanceDemoWidget
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.widget
+        INFOPLIST_FILE: FinanceDemoWidget/Config/Info.plist
+        CODE_SIGN_ENTITLEMENTS: FinanceDemoWidget/Config/FinanceDemoWidget.entitlements
+        TARGETED_DEVICE_FAMILY: 1
+    info:
+      path: FinanceDemoWidget/Config/Info.plist
+      properties:
+        CFBundleDisplayName: Finance Demo Balance
+        CFBundleName: FinanceDemoWidget
+        CFBundleShortVersionString: 1.0
+        CFBundleVersion: 1
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).BalanceWidgetBundle
+    entitlements:
+      path: FinanceDemoWidget/Config/FinanceDemoWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.josephlteif.financedemo
+

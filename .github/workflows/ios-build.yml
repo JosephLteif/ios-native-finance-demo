@@ -1,0 +1,96 @@
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Print build environment
+        run: |
+          set -euo pipefail
+          sw_vers
+          xcodebuild -version
+          swift --version
+          xcode-select -p
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Inspect generated schemes
+        run: xcodebuild -list -project ios-native-finance-demo.xcodeproj
+
+      - name: Compile app and widget for a generic iOS device
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios-native-finance-demo.xcodeproj \
+            -scheme FinanceDemo \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Verify app and embedded widget
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
+          test -d "$APP_PATH" || { echo "Missing app: $APP_PATH"; exit 1; }
+          test -d "$APP_PATH/PlugIns" || { echo "Missing PlugIns directory: $APP_PATH/PlugIns"; exit 1; }
+          WIDGET_PATH="$(find "$APP_PATH/PlugIns" -maxdepth 1 -type d -name "*.appex" -print -quit)"
+          test -n "$WIDGET_PATH" || { echo "No WidgetKit .appex found in $APP_PATH/PlugIns"; exit 1; }
+          echo "App: $APP_PATH"
+          echo "Widget extension: $WIDGET_PATH"
+          file "$APP_PATH/FinanceDemo"
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
+          PACKAGE_ROOT="$RUNNER_TEMP/unsigned-ipa"
+          rm -rf "$PACKAGE_ROOT"
+          mkdir -p "$PACKAGE_ROOT/Payload"
+          cp -R "$APP_PATH" "$PACKAGE_ROOT/Payload/FinanceDemo.app"
+          ditto -c -k --sequesterRsrc --keepParent "$PACKAGE_ROOT/Payload" "$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
+          test -f "$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
+          unzip -l "$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
+
+      - name: Write build information
+        run: |
+          set -euo pipefail
+          {
+            echo "Xcode: $(xcodebuild -version | tr '\\n' ' ')"
+            echo "Swift: $(swift --version | head -n 1)"
+            echo "Commit: $GITHUB_SHA"
+            echo "Build date (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > build-info.txt
+          cat build-info.txt
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: FinanceDemo-unsigned
+          path: |
+            FinanceDemo-unsigned.ipa
+            build-info.txt
+          retention-days: 7
+
