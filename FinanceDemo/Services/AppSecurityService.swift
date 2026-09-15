@@ -98,9 +98,10 @@ final class AppSecurityService: ObservableObject {
     init() {
         let record = Self.readPasscodeRecord()
         let configured = UserDefaults.standard.bool(forKey: Self.passcodeConfiguredKey)
+        let passcodeEnabled = record != nil || configured
         passcodeRecord = record
-        isPasscodeEnabled = record != nil || configured
-        biometricsEnabled = isPasscodeEnabled && UserDefaults.standard.bool(forKey: Self.biometricsEnabledKey)
+        isPasscodeEnabled = passcodeEnabled
+        biometricsEnabled = passcodeEnabled && UserDefaults.standard.bool(forKey: Self.biometricsEnabledKey)
     }
 
     var availableBiometry: AppBiometry? {
