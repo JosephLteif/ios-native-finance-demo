@@ -111,6 +111,8 @@ final class AppSecurityService: ObservableObject {
         }
 
         switch context.biometryType {
+        case .none:
+            return nil
         case .faceID:
             return .faceID
         case .touchID:
@@ -229,7 +231,10 @@ final class AppSecurityService: ObservableObject {
     private static func makeSalt() throws -> Data {
         var salt = Data(count: 16)
         let status = salt.withUnsafeMutableBytes { buffer in
-            SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress)
+            guard let baseAddress = buffer.baseAddress else {
+                return errSecParam
+            }
+            return SecRandomCopyBytes(kSecRandomDefault, buffer.count, baseAddress)
         }
         guard status == errSecSuccess else {
             throw AppSecurityError.keychainUnavailable

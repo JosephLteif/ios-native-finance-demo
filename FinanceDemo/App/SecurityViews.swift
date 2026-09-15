@@ -252,7 +252,7 @@ private struct PasscodeSetupView: View {
 }
 
 @MainActor
-private struct AppLockView: View {
+struct AppLockView: View {
     @ObservedObject var security: AppSecurityService
     @Binding var isUnlocked: Bool
 
