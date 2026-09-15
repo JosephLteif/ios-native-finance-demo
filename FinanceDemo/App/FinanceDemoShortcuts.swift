@@ -1,8 +1,8 @@
 import AppIntents
 
 struct GenerateBudgetSummaryIntent: AppIntent {
-    static let title: LocalizedStringResource = "Summarize Demo Budget"
-    static let description = IntentDescription("Uses Apple Intelligence to summarize the current Finance Demo balance and latest transaction.")
+    static let title: LocalizedStringResource = "Summarize Pocket Ledger Budget"
+    static let description = IntentDescription("Uses Apple Intelligence to summarize the current Pocket Ledger balance and latest transaction.")
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
@@ -18,11 +18,11 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: GetDemoBalanceIntent(),
             phrases: [
-                "Get my demo balance in \(.applicationName)",
-                "What's my finance demo balance in \(.applicationName)",
+                "Get my balance in \(.applicationName)",
+                "What's my balance in \(.applicationName)",
                 "Check my balance in \(.applicationName)"
             ],
-            shortTitle: "Get Demo Balance",
+            shortTitle: "Get Pocket Ledger Balance",
             systemImageName: "dollarsign.circle"
         )
         AppShortcut(
@@ -32,38 +32,8 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
                 "Spend five dollars in \(.applicationName)",
                 "Add an expense in \(.applicationName)"
             ],
-            shortTitle: "Add Expense",
+            shortTitle: "Add Pocket Ledger Expense",
             systemImageName: "minus.circle"
-        )
-        AppShortcut(
-            intent: AddDemoIncomeIntent(),
-            phrases: [
-                "Add a hundred dollars of income in \(.applicationName)",
-                "Deposit one hundred dollars in \(.applicationName)",
-                "Add income in \(.applicationName)"
-            ],
-            shortTitle: "Add Income",
-            systemImageName: "plus.circle"
-        )
-        AppShortcut(
-            intent: ResetDemoDataIntent(),
-            phrases: [
-                "Reset my finance demo in \(.applicationName)",
-                "Reset the demo balance in \(.applicationName)",
-                "Reset \(.applicationName)"
-            ],
-            shortTitle: "Reset Demo",
-            systemImageName: "arrow.counterclockwise.circle"
-        )
-        AppShortcut(
-            intent: GenerateBudgetSummaryIntent(),
-            phrases: [
-                "Summarize my demo budget in \(.applicationName)",
-                "Give me a finance summary in \(.applicationName)",
-                "Summarize \(.applicationName)"
-            ],
-            shortTitle: "Summarize Budget",
-            systemImageName: "apple.intelligence"
         )
     }
 }

@@ -49,7 +49,7 @@ final class DemoStore: ObservableObject {
         refreshSnapshot()
         foundationModelResult = nil
         foundationModelInput = nil
-        lastActionStatus = saved ? savedStorageMessage("Demo data reset to $1,000") : "Demo data could not be saved."
+        lastActionStatus = saved ? savedStorageMessage("Pocket Ledger reset to $1,000") : "Pocket Ledger data could not be saved."
     }
 
     func refreshWidget() {

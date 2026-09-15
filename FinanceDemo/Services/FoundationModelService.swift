@@ -26,7 +26,7 @@ enum FoundationModelService {
         do {
             let session = LanguageModelSession()
             let prompt = """
-            Give me one concise sentence about this current finance demo. Use only the supplied data and do not invent totals.
+            Give me one concise sentence about this current Pocket Ledger snapshot. Use only the supplied data and do not invent totals.
             Current balance: \(snapshot.balanceText)
             Last transaction: \(snapshot.lastTransactionDescription)
             """

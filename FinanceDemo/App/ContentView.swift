@@ -18,14 +18,14 @@ struct ContentView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Finance Demo")
+            .navigationTitle("Pocket Ledger")
             .background(Color(uiColor: .systemGroupedBackground))
         }
     }
 
     private var balanceCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Finance Demo")
+            Text("Pocket Ledger")
                 .font(.title2.weight(.semibold))
             Text(store.snapshot.balanceText)
                 .font(.system(size: 48, weight: .bold, design: .rounded))
@@ -69,7 +69,7 @@ struct ContentView: View {
             .buttonStyle(.bordered)
             .disabled(store.isWorking)
 
-            Button("Reset Demo", systemImage: "arrow.counterclockwise.circle") {
+            Button("Reset Pocket Ledger", systemImage: "arrow.counterclockwise.circle") {
                 store.resetDemo()
             }
             .buttonStyle(.bordered)
@@ -98,11 +98,11 @@ struct ContentView: View {
                 value: store.snapshot.appGroupAvailable ? "Ready" : "Needs App Group signing",
                 tint: store.snapshot.appGroupAvailable ? .green : .orange
             )
-            diagnosticRow(title: "App Intents", value: "5 actions", tint: .green)
-            diagnosticRow(title: "Siri / Shortcuts", value: "5 shortcuts", tint: .green)
+            diagnosticRow(title: "App Intents", value: "Available", tint: .green)
+            diagnosticRow(title: "Siri / Shortcuts", value: "2 shortcuts", tint: .green)
             diagnosticRow(title: "Apple Intelligence", value: store.foundationModelStatus, tint: .primary)
             diagnosticRow(title: "Local notifications", value: "Available", tint: .green)
-            Text("The widget needs a valid App Group signature. Siri, Shortcuts, notifications, and Apple Intelligence can be tested independently.")
+            Text("The widget and shared App Intents need a valid App Group signature. Notifications and Apple Intelligence can be tested independently.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -128,7 +128,7 @@ struct ContentView: View {
                 tint: .primary
             )
             diagnosticRow(title: "Current iOS", value: store.iosVersion, tint: .primary)
-            Text("The app and Siri can use local app storage when App Group signing is unavailable; widgets still require the shared App Group.")
+            Text("No ordinary UserDefaults fallback is used. If App Group signing is unavailable, the demo keeps only in-memory diagnostic state so shared-data tests cannot appear to pass.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -158,14 +158,11 @@ struct ContentView: View {
     private var shortcutsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             cardTitle("Siri & Shortcuts", systemImage: "waveform")
-            Text("These App Shortcuts are registered automatically. Say the phrase with the app name, for example: “Get my demo balance in Finance Demo.”")
+            Text("These two App Shortcuts are registered automatically. Say the phrase with the app name, for example: “Get my balance in Pocket Ledger.”")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            shortcutRow("Get my finance demo balance")
+            shortcutRow("Get my Pocket Ledger balance")
             shortcutRow("Add a five dollar expense")
-            shortcutRow("Add a hundred dollars of income")
-            shortcutRow("Reset my finance demo")
-            shortcutRow("Summarize my demo budget")
         }
         .cardSurface()
     }
@@ -204,10 +201,7 @@ struct ContentView: View {
     }
 
     private var mainStorageStatusText: String {
-        if store.snapshot.appGroupAvailable {
-            return "WORKING"
-        }
-        return store.snapshot.appStorageAvailable ? "LOCAL FALLBACK" : "UNAVAILABLE"
+        store.snapshot.appStorageAvailable ? "WORKING" : "UNAVAILABLE"
     }
 
     private func formattedDate(_ date: Date?) -> String? {

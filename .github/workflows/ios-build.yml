@@ -56,10 +56,24 @@ jobs:
           APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
           test -d "$APP_PATH" || { echo "Missing app: $APP_PATH"; exit 1; }
           test -d "$APP_PATH/PlugIns" || { echo "Missing PlugIns directory: $APP_PATH/PlugIns"; exit 1; }
-          WIDGET_PATH="$(find "$APP_PATH/PlugIns" -maxdepth 1 -type d -name "*.appex" -print -quit)"
+          WIDGET_PATH=""
+          for candidate in "$APP_PATH"/PlugIns/*.appex; do
+            if [ -d "$candidate" ]; then
+              WIDGET_PATH="$candidate"
+              break
+            fi
+          done
           test -n "$WIDGET_PATH" || { echo "No WidgetKit .appex found in $APP_PATH/PlugIns"; exit 1; }
+          test -f "$APP_PATH/Assets.car" || { echo "Missing compiled asset catalog: $APP_PATH/Assets.car"; exit 1; }
+          DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_PATH/Info.plist")"
+          test "$DISPLAY_NAME" = "Pocket Ledger" || {
+            echo "Unexpected app display name: $DISPLAY_NAME"
+            exit 1
+          }
           echo "App: $APP_PATH"
           echo "Widget extension: $WIDGET_PATH"
+          echo "Compiled app icon catalog: $APP_PATH/Assets.car"
+          echo "Display name: $DISPLAY_NAME"
           file "$APP_PATH/FinanceDemo"
 
       - name: Package unsigned IPA
@@ -67,12 +81,19 @@ jobs:
           set -euo pipefail
           APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
           PACKAGE_ROOT="$RUNNER_TEMP/unsigned-ipa"
+          IPA_PATH="$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
           rm -rf "$PACKAGE_ROOT"
+          rm -f "$IPA_PATH"
           mkdir -p "$PACKAGE_ROOT/Payload"
-          cp -R "$APP_PATH" "$PACKAGE_ROOT/Payload/FinanceDemo.app"
-          ditto -c -k --sequesterRsrc --keepParent "$PACKAGE_ROOT/Payload" "$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
-          test -f "$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
-          unzip -l "$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
+          ditto "$APP_PATH" "$PACKAGE_ROOT/Payload/FinanceDemo.app"
+          ditto -c -k --sequesterRsrc --keepParent "$PACKAGE_ROOT/Payload" "$IPA_PATH"
+          test -f "$IPA_PATH"
+          unzip -t "$IPA_PATH"
+          unzip -Z1 "$IPA_PATH" | grep -Eq '^Payload/FinanceDemo\.app/PlugIns/[^/]+\.appex(/|$)' || {
+            echo "Packaged IPA does not contain an embedded widget extension."
+            exit 1
+          }
+          unzip -l "$IPA_PATH"
 
       - name: Write build information
         run: |
@@ -86,7 +107,7 @@ jobs:
           cat build-info.txt
 
       - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: FinanceDemo-unsigned
           path: |

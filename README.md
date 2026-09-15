@@ -1,6 +1,8 @@
-# iOS Native Finance Demo
+# Pocket Ledger
 
-This repository is a small, local-only SwiftUI proof of concept for validating an iOS development and sideloading workflow from Windows 11.
+Pocket Ledger is a small, local-only SwiftUI proof of concept for validating an iOS development and sideloading workflow from Windows 11. It is intentionally an MVP validation app, not a production finance product.
+
+The public app name is **Pocket Ledger**. The internal Xcode target, source directory, bundle IDs, and IPA filename remain **FinanceDemo** so free-Apple-ID testing keeps stable identifiers between builds.
 
 The Windows machine does not compile iOS code. GitHub Actions provisions a GitHub-hosted macOS runner, installs XcodeGen, generates the Xcode project from `project.yml`, compiles an unsigned device build, verifies the embedded widget extension, and uploads `FinanceDemo-unsigned.ipa` as a short-lived artifact.
 
@@ -12,6 +14,7 @@ The Windows machine does not compile iOS code. GitHub Actions provisions a GitHu
 - `FinanceDemo/Shared`: App Intents shared by the main app and widget for balance actions.
 - `FinanceDemoWidget`: one WidgetKit extension with `systemSmall` and `systemMedium` layouts.
 - `FinanceDemo/Config` and `FinanceDemoWidget/Config`: App Group entitlement files and generated Info.plist destinations.
+- `FinanceDemo/Resources/Assets.xcassets`: the Pocket Ledger app icon.
 - `.github/workflows/ios-build.yml`: manually triggered unsigned build and IPA packaging workflow.
 
 XcodeGen is used so the project configuration stays declarative and the generated `.xcodeproj` does not need to be committed. CI runs `brew install xcodegen` followed by `xcodegen generate`.
@@ -23,6 +26,12 @@ Stable identifiers are intentionally used for every build:
 - App Group: `group.com.josephlteif.financedemo`
 
 The minimum deployment target is iOS 26.0. The demo uses SwiftUI, WidgetKit, AppIntents, UserNotifications, Foundation, and Foundation Models. Foundation Models is entirely on-device; this project does not use OpenAI, Gemini, Claude, Firebase, Supabase, or another backend.
+
+## Branding
+
+![Pocket Ledger app icon](FinanceDemo/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png)
+
+Pocket Ledger uses a dark navy, teal, emerald, and warm gold wallet/ledger mark. The source icon is stored at `FinanceDemo/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png` and is included in the main app target through XcodeGen. The internal `FinanceDemo` names are deliberate implementation details and should not be renamed during free-signing tests.
 
 ## GitHub Actions build
 
@@ -51,18 +60,22 @@ Official installation references:
 - AltStore Windows instructions: <https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows>
 - Sideloadly: <https://sideloadly.io/>
 
-AltServer and Sideloadly require Apple’s web-installed iTunes and iCloud components on Windows. Microsoft Store iCloud is a known incompatibility for the standard setup. Do not uninstall existing Apple software until you have confirmed which version you want to replace and have a backup plan for any iCloud/iTunes use.
+AltStore’s Windows instructions require the latest iTunes and iCloud packages downloaded directly from Apple rather than the Microsoft Store versions for the standard setup. Sideloadly documents the same web-installed iTunes/iCloud requirement. Do not uninstall existing Apple software automatically: first identify whether the installed package is the Microsoft Store version, and decide which Apple software you want to keep.
+
+AltStore installation and IPA installation are separate steps. First install AltStore itself through AltServer; only after AltStore is working should you import the unsigned Pocket Ledger IPA.
 
 After the software prerequisites are correct, the manual device steps are:
 
-1. Connect the iPhone to the PC by USB while it is unlocked.
-2. Tap **Trust** on the iPhone and accept the Windows trust prompt if shown.
-3. Enable **Settings → Privacy & Security → Developer Mode** on the iPhone.
-4. Run AltServer as administrator and authenticate it with the Apple ID when prompted. Never put the Apple ID password in this repository, GitHub, a script, or chat.
-5. Install AltStore to the iPhone. If Wi-Fi refresh is desired, enable Wi-Fi sync for the iPhone in iTunes while it is connected.
-6. In AltStore, open the downloaded `FinanceDemo-unsigned.ipa` and let AltStore sign/install it.
+1. Install AltServer from the official AltStore Windows download and run it as administrator.
+2. Connect the iPhone to the PC by USB while it is unlocked.
+3. Tap **Trust** on the iPhone and accept the Windows trust prompt if shown.
+4. Enable **Settings → Privacy & Security → Developer Mode** on the iPhone, then restart if iOS requests it.
+5. Open iTunes and enable Wi-Fi sync for the iPhone if Wi-Fi refresh is desired.
+6. Use AltServer’s **Install AltStore** menu to install AltStore itself, then authenticate directly in AltServer with the Apple ID. Never put the Apple ID password in this repository, GitHub, a script, or chat.
 7. Trust the developer profile in **Settings → General → VPN & Device Management** if iOS asks for it.
-8. Refresh the app from AltStore before the free 7-day signing window expires.
+8. Download the completed `FinanceDemo-unsigned.ipa` artifact from GitHub Actions.
+9. Open/share the IPA into AltStore and let AltStore sign/install Pocket Ledger.
+10. Refresh the app from AltStore before the free 7-day signing window expires.
 
 Sideloadly follows the same no-paid-membership principle: load the IPA, select the connected iPhone, authenticate directly in Sideloadly, and sideload. Its official FAQ also documents Wi-Fi pairing and the 7-day free-account window.
 
@@ -72,14 +85,14 @@ Both the main app and the widget declare only this entitlement:
 
 `com.apple.security.application-groups = [group.com.josephlteif.financedemo]`
 
-The app uses `UserDefaults(suiteName: "group.com.josephlteif.financedemo")` when the App Group is authorized. If signing does not authorize the group, the main app and App Intents use ordinary app storage so the demo and Siri actions remain usable; the widget still requires the shared App Group.
+The app uses `UserDefaults(suiteName: "group.com.josephlteif.financedemo")` only when the App Group is authorized. It does not silently fall back to ordinary `UserDefaults`: if the shared container is unavailable, the UI reports that state and keeps only in-memory diagnostic values. This prevents a working-looking main app from masking a failed App Group test.
 
 The Diagnostics card reports either:
 
 - `Shared App Group: WORKING`
 - `Shared App Group: UNAVAILABLE`
 
-When unavailable, the app labels the widget's shared container as unavailable and reports the main app's local fallback separately. OSLog contexts distinguish `main-app`, `widget`, and `app-intent` so device logs can show which storage path each process can reach.
+When unavailable, the app labels the widget's shared container as unavailable and reports main-app storage as unavailable. OSLog contexts distinguish `main-app`, `widget`, and `app-intent` so device logs can show which process can reach the shared container.
 
 Third-party free signing is the highest-risk part of this proof of concept: it may strip, reject, or fail to preserve App Group capabilities. A successful GitHub build proves compilation and embedding only; it does not prove App Groups work on the physical iPhone.
 
@@ -90,9 +103,9 @@ Complete this on the physical iPhone after installation:
 - [ ] Launch the app.
 - [ ] Confirm the balance is `$1,000`.
 - [ ] Tap **Add $5 Expense** and confirm `$995`.
-- [ ] Add the **Demo Balance** widget to the Home Screen and confirm it shows `$995`.
-- [ ] Tap the interactive expense button in the widget and confirm the app/widget balance becomes `$990`.
-- [ ] Run **Get Demo Balance** from Shortcuts or Siri and confirm it returns the current balance.
+- [ ] Add the **Pocket Ledger Balance** widget to the Home Screen and confirm it shows `$995`.
+- [ ] Tap the interactive expense button in the widget and confirm the Pocket Ledger app/widget balance becomes `$990`.
+- [ ] Run **Get Pocket Ledger Balance** from Shortcuts or Siri and confirm it returns the current balance.
 - [ ] Tap **Test Notification** and confirm the notification arrives about 10 seconds later.
 - [ ] Tap **Test Apple Intelligence** and confirm the availability state and, when available, the generated one-sentence summary.
 - [ ] Close and reopen the app; confirm the state persists.
@@ -113,7 +126,7 @@ Use the web-installed iTunes and iCloud packages, keep iTunes/iCloud running, co
 
 ### App Group says UNAVAILABLE
 
-Reinstall the exact same stable bundle identifiers with the same Apple ID, verify both entitlement files still contain the same App Group, and inspect device logs for the `main-app`, `widget`, and `app-intent` contexts. Do not treat a widget showing a value from its placeholder as proof of shared storage.
+Reinstall the exact same stable bundle identifiers with the same Apple ID, verify both entitlement files still contain the same App Group, and inspect device logs for the `main-app`, `widget`, and `app-intent` contexts. Do not treat a widget showing a value from its placeholder as proof of shared storage. Free third-party signing may strip, reject, or fail to preserve App Groups; only the physical-device checklist can validate this path.
 
 ### App expires
 

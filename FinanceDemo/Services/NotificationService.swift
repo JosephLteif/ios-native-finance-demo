@@ -25,8 +25,8 @@ enum NotificationService {
         }
 
         let content = UNMutableNotificationContent()
-        content.title = "Finance Native Demo"
-        content.body = "Finance Demo notification works."
+        content.title = "Pocket Ledger"
+        content.body = "Pocket Ledger notification works."
         content.sound = .default
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)

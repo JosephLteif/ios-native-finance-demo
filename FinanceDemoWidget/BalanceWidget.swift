@@ -12,7 +12,7 @@ struct BalanceTimelineProvider: TimelineProvider {
             date: .now,
             snapshot: DemoSnapshot(
                 balanceCents: 100_000,
-                lastTransactionDescription: "Starting balance",
+                lastTransactionDescription: "Starting Pocket Ledger balance",
                 lastUpdated: .now,
                 lastWidgetRefresh: nil,
                 appGroupAvailable: true,
@@ -39,27 +39,45 @@ struct BalanceWidgetEntryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("Finance Demo")
+            Text("Pocket Ledger")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Text(entry.snapshot.balanceText)
-                .font(.system(size: family == .systemSmall ? 30 : 38, weight: .bold, design: .rounded))
-                .minimumScaleFactor(0.65)
-                .lineLimit(1)
+            if entry.snapshot.appGroupAvailable {
+                Text(entry.snapshot.balanceText)
+                    .font(.system(size: family == .systemSmall ? 30 : 38, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.65)
+                    .lineLimit(1)
 
-            Text(entry.snapshot.lastTransactionDescription)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(family == .systemSmall ? 2 : 1)
+                Text(entry.snapshot.lastTransactionDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(family == .systemSmall ? 2 : 1)
+            } else {
+                Text("Shared storage unavailable")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Sign both targets with the Pocket Ledger App Group to share the balance.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Spacer(minLength: 0)
 
             HStack {
-                Text(entry.snapshot.lastUpdated, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if entry.snapshot.appGroupAvailable {
+                    Text(entry.snapshot.lastUpdated, style: .relative)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text("App Group required")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: 4)
 
@@ -88,8 +106,8 @@ struct BalanceWidget: Widget {
         StaticConfiguration(kind: Self.kind, provider: BalanceTimelineProvider()) { entry in
             BalanceWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("Demo Balance")
-        .description("Shows the shared demo balance and last transaction.")
+        .configurationDisplayName("Pocket Ledger Balance")
+        .description("Shows the shared Pocket Ledger balance and last transaction.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
