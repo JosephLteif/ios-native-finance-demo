@@ -3,71 +3,135 @@ import WidgetKit
 
 struct AddDemoExpenseIntent: AppIntent {
     static let title: LocalizedStringResource = "Add Pocket Ledger Expense"
-    static let description = IntentDescription("Subtracts $5 from the Pocket Ledger balance.")
+    static let description = IntentDescription("Adds a five dollar expense to the USD cash ledger.")
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let storage = DemoSharedStorage(context: "app-intent")
-        let saved = storage.recordTransaction(deltaCents: -500, description: "Interactive $5 expense")
-        if saved {
-            WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
+        let storage = FinanceStorage(context: "app-intent")
+        let value = storage.load()
+        guard let account = value.accounts.first(where: { $0.currency == .usd && $0.type != .loan }),
+              let category = value.categories.first(where: { $0.parentID != nil }) else {
+            return .result(
+                value: "Ledger is not initialized",
+                dialog: "Pocket Ledger could not find a USD account and expense category."
+            )
         }
-        let balance = storage.snapshot().balanceText
+
+        let transaction = LedgerTransaction(
+            note: "Interactive $5 expense",
+            kind: .expense,
+            categoryID: category.id,
+            amountDue: Money(currency: .usd, minorUnits: 500),
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 500)
+                )
+            ],
+            inflows: []
+        )
+        let saved = storage.appendTransaction(transaction)
         guard saved else {
-            return .result(value: "Shared App Group unavailable", dialog: "The expense was not saved because the shared App Group is unavailable.")
+            return .result(
+                value: "Shared App Group unavailable",
+                dialog: "The expense was not saved because the shared App Group is unavailable."
+            )
         }
-        return .result(value: balance, dialog: "Your Pocket Ledger balance is now \(balance).")
+
+        WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
+        let balance = storage.widgetSnapshot().balanceSummary
+        return .result(
+            value: balance,
+            dialog: "Your Pocket Ledger balances are now \(balance)."
+        )
     }
 }
 
 struct AddDemoIncomeIntent: AppIntent {
     static let title: LocalizedStringResource = "Add Pocket Ledger Income"
-    static let description = IntentDescription("Adds $100 to the Pocket Ledger balance.")
+    static let description = IntentDescription("Adds one hundred dollars to the USD cash ledger.")
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let storage = DemoSharedStorage(context: "app-intent")
-        let saved = storage.recordTransaction(deltaCents: 10_000, description: "Interactive $100 income")
-        if saved {
-            WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
+        let storage = FinanceStorage(context: "app-intent")
+        let value = storage.load()
+        guard let account = value.accounts.first(where: { $0.currency == .usd && $0.type != .loan }) else {
+            return .result(
+                value: "Ledger is not initialized",
+                dialog: "Pocket Ledger could not find a USD account."
+            )
         }
-        let balance = storage.snapshot().balanceText
+
+        let transaction = LedgerTransaction(
+            note: "Interactive $100 income",
+            kind: .income,
+            categoryID: nil,
+            inflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 10_000)
+                )
+            ],
+            outflows: []
+        )
+        let saved = storage.appendTransaction(transaction)
         guard saved else {
-            return .result(value: "Shared App Group unavailable", dialog: "The income was not saved because the shared App Group is unavailable.")
+            return .result(
+                value: "Shared App Group unavailable",
+                dialog: "The income was not saved because the shared App Group is unavailable."
+            )
         }
-        return .result(value: balance, dialog: "Your Pocket Ledger balance is now \(balance).")
+
+        WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
+        let balance = storage.widgetSnapshot().balanceSummary
+        return .result(
+            value: balance,
+            dialog: "Your Pocket Ledger balances are now \(balance)."
+        )
     }
 }
 
 struct ResetDemoDataIntent: AppIntent {
     static let title: LocalizedStringResource = "Reset Pocket Ledger"
-    static let description = IntentDescription("Resets the Pocket Ledger balance to $1,000.")
+    static let description = IntentDescription("Resets the Pocket Ledger finance ledger to its starter accounts and categories.")
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let storage = DemoSharedStorage(context: "app-intent")
-        let saved = storage.resetDemoData()
-        if saved {
-            WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
-        }
-        let balance = storage.snapshot().balanceText
+        let storage = FinanceStorage(context: "app-intent")
+        let saved = storage.resetLedger()
         guard saved else {
-            return .result(value: "Shared App Group unavailable", dialog: "The demo was not reset because the shared App Group is unavailable.")
+            return .result(
+                value: "Shared App Group unavailable",
+                dialog: "The ledger was not reset because the shared App Group is unavailable."
+            )
         }
-        return .result(value: balance, dialog: "Pocket Ledger was reset. The balance is \(balance).")
+
+        WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
+        let balance = storage.widgetSnapshot().balanceSummary
+        return .result(
+            value: balance,
+            dialog: "Pocket Ledger was reset. The available balances are \(balance)."
+        )
     }
 }
 
 struct GetDemoBalanceIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Pocket Ledger Balance"
-    static let description = IntentDescription("Reads the current Pocket Ledger balance.")
+    static let description = IntentDescription("Reads the current USD and LBP balances.")
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let snapshot = DemoSharedStorage(context: "app-intent").snapshot()
+        let snapshot = FinanceStorage(context: "app-intent").widgetSnapshot()
         guard snapshot.appGroupAvailable else {
-            return .result(value: "Shared App Group unavailable", dialog: "The Pocket Ledger shared App Group is unavailable, so no shared balance can be read.")
+            return .result(
+                value: "Shared App Group unavailable",
+                dialog: "The Pocket Ledger shared App Group is unavailable, so no shared balances can be read."
+            )
         }
-        return .result(value: snapshot.balanceText, dialog: "Your Pocket Ledger balance is \(snapshot.balanceText).")
+
+        return .result(
+            value: snapshot.balanceSummary,
+            dialog: "Your Pocket Ledger balances are \(snapshot.balanceSummary)."
+        )
     }
 }

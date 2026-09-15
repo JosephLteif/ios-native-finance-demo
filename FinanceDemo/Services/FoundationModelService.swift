@@ -17,7 +17,17 @@ enum FoundationModelService {
         }
     }
 
-    static func generateBudgetSummary(for snapshot: DemoSnapshot) async -> String {
+    static func generateBudgetSummary(for snapshot: FinanceWidgetSnapshot) async -> String {
+        generateBudgetSummary(
+            balance: snapshot.balanceSummary,
+            latestTransaction: snapshot.latestTransactionDescription
+        )
+    }
+
+    private static func generateBudgetSummary(
+        balance: String,
+        latestTransaction: String
+    ) async -> String {
         let model = SystemLanguageModel.default
         guard case .available = model.availability else {
             return "Generation skipped: \(availabilityDescription())."
@@ -27,8 +37,8 @@ enum FoundationModelService {
             let session = LanguageModelSession()
             let prompt = """
             Give me one concise sentence about this current Pocket Ledger snapshot. Use only the supplied data and do not invent totals.
-            Current balance: \(snapshot.balanceText)
-            Last transaction: \(snapshot.lastTransactionDescription)
+            Current balances: \(balance)
+            Last transaction: \(latestTransaction)
             """
             let response = try await session.respond(
                 to: prompt

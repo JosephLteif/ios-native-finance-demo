@@ -1,6 +1,6 @@
 # Pocket Ledger
 
-Pocket Ledger is a small, local-only SwiftUI proof of concept for validating an iOS development and sideloading workflow from Windows 11. It is intentionally an MVP validation app, not a production finance product.
+Pocket Ledger is a small, local-only SwiftUI proof of concept for validating an iOS development and sideloading workflow from Windows 11 while shaping a personal finance product for Lebanon. It is intentionally an MVP validation app, not a production finance product.
 
 The public app name is **Pocket Ledger**. The internal Xcode target, source directory, bundle IDs, and IPA filename remain **FinanceDemo** so free-Apple-ID testing keeps stable identifiers between builds.
 
@@ -8,16 +8,29 @@ The Windows machine does not compile iOS code. GitHub Actions provisions a GitHu
 
 ## Architecture
 
-- `FinanceDemo/App`: SwiftUI app entry point, view, observable store, and the app-only Siri/Shortcuts provider.
-- `FinanceDemo/Models`: shared snapshot model used by the app and widget.
-- `FinanceDemo/Services`: App Group storage, Foundation Models, and local notification services.
-- `FinanceDemo/Shared`: App Intents shared by the main app and widget for balance actions.
+- `FinanceDemo/App`: SwiftUI app entry point, ledger store, finance views, and the app-only Siri/Shortcuts provider.
+- `FinanceDemo/Models`: shared snapshot model plus the multi-currency finance domain model.
+- `FinanceDemo/Services`: App Group storage, finance data storage, Foundation Models, and local notification services.
+- `FinanceDemo/Shared`: App Intents shared by the main app and widget for finance-ledger actions.
 - `FinanceDemoWidget`: one WidgetKit extension with `systemSmall` and `systemMedium` layouts.
 - `FinanceDemo/Config` and `FinanceDemoWidget/Config`: App Group entitlement files and generated Info.plist destinations.
 - `FinanceDemo/Resources/Assets.xcassets`: the Pocket Ledger app icon.
 - `.github/workflows/ios-build.yml`: manually triggered unsigned build and IPA packaging workflow.
 
 XcodeGen is used so the project configuration stays declarative and the generated `.xcodeproj` does not need to be committed. CI runs `brew install xcodegen` followed by `xcodegen generate`.
+
+## Finance product slice
+
+The main app now contains the first local finance workflow for the Lebanese market:
+
+- USD and LBP are stored as integer minor units, so LBP values do not use floating-point rounding.
+- A single transaction can record a bill total, multiple outflows from different accounts, multiple inflows, and a custom exchange rate.
+- Change can be returned to a different account and currency. Requested change and actual change are both retained, so denomination shortfalls such as 460,000 LBP requested and 450,000 LBP returned remain visible.
+- Starter data includes cash, bank-account, and loan account types plus parent categories and subcategories. Accounts and categories can be added from the app.
+- The Overview tab reports available balances by currency, monthly expenses by currency, transaction count, and the most-used category.
+- The widget and Shortcuts read and mutate the same shared finance ledger as the main app.
+
+The current slice is local-only and intentionally keeps currency totals separate. It records the exchange rate for each mixed-currency transaction but does not yet convert all historical balances into one net-worth number.
 
 Stable identifiers are intentionally used for every build:
 
@@ -96,21 +109,21 @@ When unavailable, the app labels the widget's shared container as unavailable an
 
 Third-party free signing is the highest-risk part of this proof of concept: it may strip, reject, or fail to preserve App Group capabilities. A successful GitHub build proves compilation and embedding only; it does not prove App Groups work on the physical iPhone.
 
-## Demo acceptance checklist
+## Finance acceptance checklist
 
 Complete this on the physical iPhone after installation:
 
 - [ ] Launch the app.
-- [ ] Confirm the balance is `$1,000`.
-- [ ] Tap **Add $5 Expense** and confirm `$995`.
-- [ ] Add the **Pocket Ledger Balance** widget to the Home Screen and confirm it shows `$995`.
-- [ ] Tap the interactive expense button in the widget and confirm the Pocket Ledger app/widget balance becomes `$990`.
-- [ ] Run **Get Pocket Ledger Balance** from Shortcuts or Siri and confirm it returns the current balance.
-- [ ] Tap **Test Notification** and confirm the notification arrives about 10 seconds later.
-- [ ] Tap **Test Apple Intelligence** and confirm the availability state and, when available, the generated one-sentence summary.
-- [ ] Close and reopen the app; confirm the state persists.
+- [ ] Confirm the Overview tab shows separate USD and LBP balances.
+- [ ] Add an expense with a `$10` bill total, `$9 paid from a USD cash account, and `90,000 LBP` paid from an LBP cash account.
+- [ ] Add `450,000 LBP` returned to an LBP account, enter `460,000 LBP` as requested change, and confirm the transaction shows the denomination shortfall.
+- [ ] Reopen the app and confirm the transaction and account balances persist.
+- [ ] Add a bank account, loan account, top-level category, and subcategory.
+- [ ] Add the Pocket Ledger widget and confirm it shows separate USD and LBP balances.
+- [ ] Use the widget quick action or the Pocket Ledger expense Shortcut and confirm the new expense appears in Transactions.
+- [ ] Run the balance Shortcut and confirm it returns both USD and LBP balances.
 - [ ] Refresh/re-sign the app without deleting it; confirm the state remains.
-- [ ] Record whether Diagnostics says `WORKING` or `UNAVAILABLE` after every step.
+- [ ] Record whether shared App Group storage is `WORKING` or `UNAVAILABLE` during device validation.
 
 ## Troubleshooting
 

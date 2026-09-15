@@ -59,7 +59,7 @@ targets:
     platform: iOS
     sources:
       - path: FinanceDemo/Models
-      - path: FinanceDemo/Services/DemoSharedStorage.swift
+      - path: FinanceDemo/Services/FinanceStorage.swift
       - path: FinanceDemo/Shared
       - path: FinanceDemoWidget
     settings:

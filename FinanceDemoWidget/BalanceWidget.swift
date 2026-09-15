@@ -1,32 +1,39 @@
 import SwiftUI
 import WidgetKit
 
-struct BalanceEntry: TimelineEntry {
+struct BalanceEntry: TimelineEntry, Sendable {
     let date: Date
-    let snapshot: DemoSnapshot
+    let snapshot: FinanceWidgetSnapshot
 }
 
 struct BalanceTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> BalanceEntry {
         BalanceEntry(
             date: .now,
-            snapshot: DemoSnapshot(
-                balanceCents: 100_000,
-                lastTransactionDescription: "Starting Pocket Ledger balance",
+            snapshot: FinanceWidgetSnapshot(
+                usdAvailable: Money(currency: .usd, minorUnits: 250_000),
+                lbpAvailable: Money(currency: .lbp, minorUnits: 4_500_000),
+                latestTransactionDescription: "Starter ledger",
                 lastUpdated: .now,
-                lastWidgetRefresh: nil,
-                appGroupAvailable: true,
-                appStorageAvailable: true
+                appGroupAvailable: true
             )
         )
     }
 
     func getSnapshot(in context: Context, completion: @escaping (BalanceEntry) -> Void) {
-        completion(BalanceEntry(date: .now, snapshot: DemoSharedStorage(context: "widget").snapshot()))
+        completion(
+            BalanceEntry(
+                date: .now,
+                snapshot: FinanceStorage(context: "widget").widgetSnapshot()
+            )
+        )
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<BalanceEntry>) -> Void) {
-        let entry = BalanceEntry(date: .now, snapshot: DemoSharedStorage(context: "widget").snapshot())
+        let entry = BalanceEntry(
+            date: .now,
+            snapshot: FinanceStorage(context: "widget").widgetSnapshot()
+        )
         let refreshDate = Date(timeIntervalSinceNow: 15 * 60)
         completion(Timeline(entries: [entry], policy: .after(refreshDate)))
     }
@@ -44,12 +51,16 @@ struct BalanceWidgetEntryView: View {
                 .foregroundStyle(.secondary)
 
             if entry.snapshot.appGroupAvailable {
-                Text(entry.snapshot.balanceText)
-                    .font(.system(size: family == .systemSmall ? 30 : 38, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.65)
-                    .lineLimit(1)
+                balanceRow(
+                    currency: "USD",
+                    amount: entry.snapshot.usdAvailable.formatted
+                )
+                balanceRow(
+                    currency: "LBP",
+                    amount: entry.snapshot.lbpAvailable.formatted
+                )
 
-                Text(entry.snapshot.lastTransactionDescription)
+                Text(entry.snapshot.latestTransactionDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(family == .systemSmall ? 2 : 1)
@@ -58,7 +69,7 @@ struct BalanceWidgetEntryView: View {
                     .font(.headline)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Sign both targets with the Pocket Ledger App Group to share the balance.")
+                Text("Sign both targets with the Pocket Ledger App Group to share balances.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -87,7 +98,7 @@ struct BalanceWidgetEntryView: View {
                             .font(.title3)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Add a five dollar expense")
+                    .accessibilityLabel("Add a five dollar USD expense")
                 } else {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -96,6 +107,23 @@ struct BalanceWidgetEntryView: View {
             }
         }
         .containerBackground(.background, for: .widget)
+    }
+
+    private func balanceRow(currency: String, amount: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(currency)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 6)
+            Text(amount)
+                .font(.system(
+                    size: family == .systemSmall ? 17 : 21,
+                    weight: .bold,
+                    design: .rounded
+                ))
+                .minimumScaleFactor(0.55)
+                .lineLimit(1)
+        }
     }
 }
 
@@ -106,8 +134,8 @@ struct BalanceWidget: Widget {
         StaticConfiguration(kind: Self.kind, provider: BalanceTimelineProvider()) { entry in
             BalanceWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("Pocket Ledger Balance")
-        .description("Shows the shared Pocket Ledger balance and last transaction.")
+        .configurationDisplayName("Pocket Ledger Balances")
+        .description("Shows available USD and LBP balances and the latest transaction.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
