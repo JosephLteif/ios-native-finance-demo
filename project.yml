@@ -55,6 +55,7 @@ targets:
     platform: iOS
     sources:
       - path: FinanceDemo/Models
+      - path: FinanceDemo/Services/DemoSharedStorage.swift
       - path: FinanceDemo/Shared
       - path: FinanceDemoWidget
     settings:
@@ -78,4 +79,3 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.josephlteif.financedemo
-

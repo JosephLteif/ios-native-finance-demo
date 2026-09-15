@@ -2,9 +2,9 @@ import AppIntents
 import WidgetKit
 
 struct AddDemoExpenseIntent: AppIntent {
-    static var title: LocalizedStringResource = "Add Demo Expense"
-    static var description = IntentDescription("Subtracts $5 from the shared Finance Native Demo balance.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Add Demo Expense"
+    static let description = IntentDescription("Subtracts $5 from the shared Finance Native Demo balance.")
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult {
         let storage = DemoSharedStorage(context: "app-intent")
@@ -15,9 +15,9 @@ struct AddDemoExpenseIntent: AppIntent {
 }
 
 struct GetDemoBalanceIntent: AppIntent {
-    static var title: LocalizedStringResource = "Get Demo Balance"
-    static var description = IntentDescription("Reads the shared Finance Native Demo balance.")
-    static var openAppWhenRun = false
+    static let title: LocalizedStringResource = "Get Demo Balance"
+    static let description = IntentDescription("Reads the shared Finance Native Demo balance.")
+    static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let snapshot = DemoSharedStorage(context: "app-intent").snapshot()
@@ -27,16 +27,14 @@ struct GetDemoBalanceIntent: AppIntent {
 
 struct FinanceDemoShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        [
-            AppShortcut(
-                intent: GetDemoBalanceIntent(),
-                phrases: [
-                    "Get my demo balance in \(.applicationName)",
-                    "What's my finance demo balance in \(.applicationName)"
-                ],
-                shortTitle: "Get Demo Balance",
-                systemImageName: "dollarsign.circle"
-            )
-        ]
+        AppShortcut(
+            intent: GetDemoBalanceIntent(),
+            phrases: [
+                "Get my demo balance in \(.applicationName)",
+                "What's my finance demo balance in \(.applicationName)"
+            ],
+            shortTitle: "Get Demo Balance",
+            systemImageName: "dollarsign.circle"
+        )
     }
 }
