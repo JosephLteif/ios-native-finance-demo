@@ -21,7 +21,6 @@ targets:
       - path: FinanceDemo/Models
       - path: FinanceDemo/Services
       - path: FinanceDemo/Shared
-    resources:
       - path: FinanceDemo/Resources/Assets.xcassets
     settings:
       base:
