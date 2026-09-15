@@ -98,14 +98,14 @@ Both the main app and the widget declare only this entitlement:
 
 `com.apple.security.application-groups = [group.com.josephlteif.financedemo]`
 
-The app uses `UserDefaults(suiteName: "group.com.josephlteif.financedemo")` only when the App Group is authorized. It does not silently fall back to ordinary `UserDefaults`: if the shared container is unavailable, the UI reports that state and keeps only in-memory diagnostic values. This prevents a working-looking main app from masking a failed App Group test.
+The app and widget use a SwiftData-backed SQLite database at `PocketLedger.sqlite` inside that shared App Group. The database contains one durable typed ledger record, is shared across the main app, widget, and App Intents, and starts empty on a fresh install. There is no session-only fallback: if the shared database cannot be opened, the UI reports that state and does not claim that changes were saved.
 
-The Diagnostics card reports either:
+The storage notice reports either:
 
-- `Shared App Group: WORKING`
-- `Shared App Group: UNAVAILABLE`
+- `Persistent database is working`
+- `Persistent database unavailable`
 
-When unavailable, the app labels the widget's shared container as unavailable and reports main-app storage as unavailable. OSLog contexts distinguish `main-app`, `widget`, and `app-intent` so device logs can show which process can reach the shared container.
+When unavailable, the app labels the widget's shared container as unavailable and rejects writes instead of retaining session-only changes. The widget and App Intents continue to use the same persistent store.
 
 Third-party free signing is the highest-risk part of this proof of concept: it may strip, reject, or fail to preserve App Group capabilities. A successful GitHub build proves compilation and embedding only; it does not prove App Groups work on the physical iPhone.
 
@@ -114,7 +114,10 @@ Third-party free signing is the highest-risk part of this proof of concept: it m
 Complete this on the physical iPhone after installation:
 
 - [ ] Launch the app.
-- [ ] Confirm the Overview tab shows separate USD and LBP balances.
+- [ ] Confirm the fresh database starts with no seeded accounts, categories, or transactions.
+- [ ] Add accounts and confirm the Overview tab shows separate USD and LBP balances.
+- [ ] Tap an account, confirm its account-specific transaction history opens, and reconcile its balance once as a counted transaction and once without creating a transaction.
+- [ ] Open Metrics and verify month, year, custom-date, and category filters update the totals.
 - [ ] Add an expense with a `$10` bill total, `$9 paid from a USD cash account, and `90,000 LBP` paid from an LBP cash account.
 - [ ] Add `450,000 LBP` returned to an LBP account, enter `460,000 LBP` as requested change, and confirm the transaction shows the denomination shortfall.
 - [ ] Reopen the app and confirm the transaction and account balances persist.

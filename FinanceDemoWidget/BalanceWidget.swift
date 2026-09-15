@@ -18,9 +18,9 @@ struct BalanceTimelineProvider: TimelineProvider {
         BalanceEntry(
             date: .now,
             snapshot: FinanceWidgetSnapshot(
-                usdAvailable: Money(currency: .usd, minorUnits: 250_000),
-                lbpAvailable: Money(currency: .lbp, minorUnits: 4_500_000),
-                latestTransactionDescription: "Starter ledger",
+                usdAvailable: Money(currency: .usd, minorUnits: 0),
+                lbpAvailable: Money(currency: .lbp, minorUnits: 0),
+                latestTransactionDescription: "No transactions yet",
                 lastUpdated: .now,
                 appGroupAvailable: true
             )

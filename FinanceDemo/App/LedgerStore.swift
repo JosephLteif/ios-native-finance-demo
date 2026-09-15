@@ -45,27 +45,28 @@ final class LedgerStore: ObservableObject {
     }
 
     func addTransaction(_ transaction: LedgerTransaction) {
-        data.transactions.append(transaction)
-        saveData(successMessage: "Transaction saved")
+        var updated = data
+        updated.transactions.append(transaction)
+        persist(updated, successMessage: "Transaction saved")
     }
 
     func addAccount(_ account: Account) {
-        data.accounts.append(account)
-        saveData(successMessage: "Account added")
+        var updated = data
+        updated.accounts.append(account)
+        persist(updated, successMessage: "Account added")
     }
 
     func addCategory(_ category: LedgerCategory) {
-        data.categories.append(category)
-        saveData(successMessage: "Category added")
+        var updated = data
+        updated.categories.append(category)
+        persist(updated, successMessage: "Category added")
     }
 
     func resetLedger() {
-        data = .starter
-        saveData(successMessage: "Ledger reset")
+        persist(.empty, successMessage: "Ledger reset")
     }
 
     func reload() {
-        guard storage.isAppGroupAvailable else { return }
         data = storage.load()
     }
 
@@ -88,6 +89,63 @@ final class LedgerStore: ObservableObject {
         }
 
         return Money(currency: account.currency, minorUnits: balance)
+    }
+
+    @discardableResult
+    func updateAccountBalance(
+        accountID: UUID,
+        targetBalance: Money,
+        recordAsTransaction: Bool,
+        note: String
+    ) -> Bool {
+        guard let account = account(with: accountID),
+              account.currency == targetBalance.currency else {
+            lastActionStatus = "Balance update failed: currency mismatch."
+            return false
+        }
+
+        let currentBalance = balance(for: account)
+        let difference = targetBalance.minorUnits - currentBalance.minorUnits
+
+        guard difference != 0 else {
+            lastActionStatus = "Balance already matches"
+            return true
+        }
+
+        var updated = data
+        if recordAsTransaction {
+            let adjustmentMoney = Money(
+                currency: account.currency,
+                minorUnits: Swift.abs(difference)
+            )
+            let adjustment = LedgerTransaction(
+                date: .now,
+                note: note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "Balance adjustment"
+                    : note.trimmingCharacters(in: .whitespacesAndNewlines),
+                kind: difference > 0 ? .income : .expense,
+                categoryID: nil,
+                outflows: difference < 0
+                    ? [MoneyMovement(accountID: account.id, money: adjustmentMoney)]
+                    : [],
+                inflows: difference > 0
+                    ? [MoneyMovement(accountID: account.id, money: adjustmentMoney)]
+                    : []
+            )
+            updated.transactions.append(adjustment)
+        } else if let accountIndex = updated.accounts.firstIndex(where: { $0.id == accountID }) {
+            updated.accounts[accountIndex].openingBalance = Money(
+                currency: account.currency,
+                minorUnits: account.openingBalance.minorUnits + difference
+            )
+        }
+
+        return persist(
+            updated,
+            successMessage: recordAsTransaction
+                ? "Balance adjustment saved as a transaction"
+                : "Balance updated without a transaction"
+        )
     }
 
     func availableBalance(for currency: LedgerCurrency) -> Money {
@@ -147,11 +205,17 @@ final class LedgerStore: ObservableObject {
         Calendar.current.dateInterval(of: .month, for: .now)?.start ?? .distantPast
     }
 
-    private func saveData(successMessage: String) {
-        let persisted = storage.save(data)
+    @discardableResult
+    private func persist(_ updated: FinanceData, successMessage: String) -> Bool {
+        let persisted = storage.save(updated)
+        guard persisted else {
+            lastActionStatus = "\(successMessage) was not saved because the persistent database is unavailable."
+            return false
+        }
+
+        data = updated
         WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
-        lastActionStatus = persisted
-            ? successMessage
-            : "\(successMessage) for this session; shared storage is unavailable."
+        lastActionStatus = successMessage
+        return true
     }
 }

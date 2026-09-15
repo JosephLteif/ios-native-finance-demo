@@ -262,62 +262,7 @@ struct FinanceData: Codable, Equatable {
     var categories: [LedgerCategory]
     var transactions: [LedgerTransaction]
 
-    static var starter: FinanceData {
-        let food = LedgerCategory(name: "Food", systemImage: "fork.knife")
-        let housing = LedgerCategory(name: "Housing", systemImage: "house")
-        let transport = LedgerCategory(name: "Transport", systemImage: "car")
-        let shopping = LedgerCategory(name: "Shopping", systemImage: "bag")
-        let health = LedgerCategory(name: "Health", systemImage: "cross.case")
-
-        return FinanceData(
-            accounts: [
-                Account(
-                    name: "Cash — USD",
-                    type: .cash,
-                    currency: .usd,
-                    openingBalance: Money(currency: .usd, minorUnits: 50_000)
-                ),
-                Account(
-                    name: "Cash — LBP",
-                    type: .cash,
-                    currency: .lbp,
-                    openingBalance: Money(currency: .lbp, minorUnits: 1_500_000)
-                ),
-                Account(
-                    name: "Bank — USD",
-                    type: .bankAccount,
-                    currency: .usd,
-                    openingBalance: Money(currency: .usd, minorUnits: 200_000)
-                ),
-                Account(
-                    name: "Bank — LBP",
-                    type: .bankAccount,
-                    currency: .lbp,
-                    openingBalance: Money(currency: .lbp, minorUnits: 3_000_000)
-                ),
-                Account(
-                    name: "Family loan",
-                    type: .loan,
-                    currency: .usd,
-                    openingBalance: Money(currency: .usd, minorUnits: 0)
-                )
-            ],
-            categories: [
-                food,
-                LedgerCategory(name: "Groceries", parentID: food.id, systemImage: "cart"),
-                LedgerCategory(name: "Restaurants", parentID: food.id, systemImage: "fork.knife.circle"),
-                housing,
-                LedgerCategory(name: "Rent", parentID: housing.id, systemImage: "house.fill"),
-                LedgerCategory(name: "Utilities", parentID: housing.id, systemImage: "bolt"),
-                transport,
-                LedgerCategory(name: "Fuel", parentID: transport.id, systemImage: "fuelpump"),
-                LedgerCategory(name: "Taxi", parentID: transport.id, systemImage: "car.fill"),
-                shopping,
-                LedgerCategory(name: "Clothing", parentID: shopping.id, systemImage: "tshirt"),
-                health,
-                LedgerCategory(name: "Pharmacy", parentID: health.id, systemImage: "pills")
-            ],
-            transactions: []
-        )
+    static var empty: FinanceData {
+        FinanceData(accounts: [], categories: [], transactions: [])
     }
 }

@@ -1,48 +1,68 @@
 import Foundation
+import SwiftData
 
 final class FinanceStorage {
     static let appGroupIdentifier = "group.com.josephlteif.financedemo"
-    private static let dataKey = "financeData"
 
-    private let defaults: UserDefaults?
-    private let containerURL: URL?
-    private var inMemoryData = FinanceData.starter
+    private let modelContainer: ModelContainer?
 
     init(context: String) {
-        defaults = UserDefaults(suiteName: Self.appGroupIdentifier)
-        containerURL = FileManager.default.containerURL(
+        _ = context
+
+        guard let groupURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
+        ) else {
+            modelContainer = nil
+            return
+        }
+
+        let databaseURL = groupURL.appendingPathComponent("PocketLedger.sqlite")
+        let schema = Schema([FinanceDatabaseRecord.self])
+        let configuration = ModelConfiguration(
+            schema: schema,
+            url: databaseURL,
+            cloudKitDatabase: .none
         )
+        modelContainer = try? ModelContainer(for: schema, configurations: [configuration])
     }
 
     var isAppGroupAvailable: Bool {
-        defaults != nil && containerURL != nil
+        modelContainer != nil
     }
 
     func load() -> FinanceData {
-        guard let defaults,
-              let data = defaults.data(forKey: Self.dataKey),
-              let decoded = try? JSONDecoder().decode(FinanceData.self, from: data) else {
-            inMemoryData = .starter
-            return inMemoryData
+        guard let context = makeContext(),
+              let records = try? context.fetch(FetchDescriptor<FinanceDatabaseRecord>()),
+              let record = records.first,
+              let decoded = try? JSONDecoder().decode(FinanceData.self, from: record.payload) else {
+            return .empty
         }
 
-        inMemoryData = decoded
         return decoded
     }
 
     @discardableResult
     func save(_ value: FinanceData) -> Bool {
-        inMemoryData = value
-
-        guard isAppGroupAvailable,
-              let defaults,
+        guard let modelContainer,
               let encoded = try? JSONEncoder().encode(value) else {
             return false
         }
 
-        defaults.set(encoded, forKey: Self.dataKey)
-        return true
+        let context = ModelContext(modelContainer)
+
+        do {
+            let records = try context.fetch(FetchDescriptor<FinanceDatabaseRecord>())
+            if let record = records.first {
+                record.payload = encoded
+            } else {
+                context.insert(FinanceDatabaseRecord(payload: encoded))
+            }
+
+            try context.save()
+            return true
+        } catch {
+            return false
+        }
     }
 
     @discardableResult
@@ -54,7 +74,7 @@ final class FinanceStorage {
 
     @discardableResult
     func resetLedger() -> Bool {
-        return save(.starter)
+        save(.empty)
     }
 
     func widgetSnapshot() -> FinanceWidgetSnapshot {
@@ -92,5 +112,10 @@ final class FinanceStorage {
             lastUpdated: latest?.date ?? .now,
             appGroupAvailable: isAppGroupAvailable
         )
+    }
+
+    private func makeContext() -> ModelContext? {
+        guard let modelContainer else { return nil }
+        return ModelContext(modelContainer)
     }
 }

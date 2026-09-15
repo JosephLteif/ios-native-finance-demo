@@ -45,6 +45,11 @@ struct ContentView: View {
                     Label("Transactions", systemImage: "list.bullet.rectangle")
                 }
 
+            MetricsView(store: store)
+                .tabItem {
+                    Label("Metrics", systemImage: "chart.xyaxis.line")
+                }
+
             AccountsView(store: store)
                 .tabItem {
                     Label("Accounts", systemImage: "wallet.pass")
@@ -325,7 +330,7 @@ private struct DashboardView: View {
     private var storageNotice: some View {
         HStack(spacing: 8) {
             Image(systemName: store.storageAvailable ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
-            Text(store.storageAvailable ? "Shared storage is working" : "Session-only storage is active")
+            Text(store.storageAvailable ? "Persistent database is working" : "Persistent database unavailable")
                 .font(.caption)
             Spacer()
         }
@@ -680,7 +685,7 @@ private struct AccountsView: View {
 
                     Text(store.storageAvailable
                          ? "Stored locally in the shared app container."
-                         : "Shared storage is unavailable; changes last for this session only.")
+                         : "Persistent storage is unavailable; changes cannot be saved.")
                         .font(.caption)
                         .foregroundStyle(PocketLedgerTheme.textTertiary)
                         .padding(.horizontal, 4)
@@ -702,7 +707,7 @@ private struct AccountsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Accounts")
                     .font(.system(size: 29, weight: .bold, design: .rounded))
-                Text("Cash, banks, and loans")
+                Text("Tap an account for activity and balance tools")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
@@ -743,7 +748,12 @@ private struct AccountsView: View {
 
             VStack(spacing: 0) {
                 ForEach(accounts) { account in
-                    AccountRow(account: account, balance: store.balance(for: account))
+                    NavigationLink {
+                        AccountDetailView(store: store, accountID: account.id)
+                    } label: {
+                        AccountRow(account: account, balance: store.balance(for: account))
+                    }
+                    .buttonStyle(.plain)
                     Divider().overlay(PocketLedgerTheme.divider)
                 }
             }
@@ -1148,10 +1158,17 @@ private struct TransactionEditor: View {
                     DatePicker("Date", selection: $date, displayedComponents: .date)
 
                     if kind == .expense {
-                        Picker("Category", selection: $categoryID) {
-                            ForEach(store.data.categories) { category in
-                                Text(store.categoryPath(for: category.id))
-                                    .tag(Optional(category.id))
+                        if store.data.categories.isEmpty {
+                            Text("No categories yet — this expense will be Uncategorized.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Picker("Category", selection: $categoryID) {
+                                Text("Uncategorized").tag(UUID?.none)
+                                ForEach(store.data.categories) { category in
+                                    Text(store.categoryPath(for: category.id))
+                                        .tag(Optional(category.id))
+                                }
                             }
                         }
                         Picker("Bill currency", selection: $dueCurrency) {
@@ -1306,7 +1323,7 @@ private struct TransactionEditor: View {
 
         switch kind {
         case .expense:
-            guard !parsedOutflows.isEmpty, categoryID != nil else { return false }
+            guard !parsedOutflows.isEmpty else { return false }
         case .income:
             guard !parsedInflows.isEmpty else { return false }
         case .transfer:

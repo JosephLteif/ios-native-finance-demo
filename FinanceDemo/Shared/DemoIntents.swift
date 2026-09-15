@@ -93,7 +93,7 @@ struct AddDemoIncomeIntent: AppIntent {
 
 struct ResetDemoDataIntent: AppIntent {
     static let title: LocalizedStringResource = "Reset Pocket Ledger"
-    static let description = IntentDescription("Resets the Pocket Ledger finance ledger to its starter accounts and categories.")
+    static let description = IntentDescription("Clears the Pocket Ledger database and starts with no accounts, categories, or transactions.")
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
@@ -110,7 +110,7 @@ struct ResetDemoDataIntent: AppIntent {
         let balance = storage.widgetSnapshot().balanceSummary
         return .result(
             value: balance,
-            dialog: "Pocket Ledger was reset. The available balances are \(balance)."
+            dialog: "Pocket Ledger was cleared. The available balances are \(balance)."
         )
     }
 }
