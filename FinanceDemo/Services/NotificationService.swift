@@ -16,7 +16,7 @@ enum NotificationService {
             } catch {
                 return "Notification permission failed: \(error.localizedDescription)"
             }
-        case .denied, .restricted:
+        case .denied:
             return "Notifications are disabled for this app."
         case .authorized, .provisional, .ephemeral:
             break
@@ -44,4 +44,3 @@ enum NotificationService {
         }
     }
 }
-
