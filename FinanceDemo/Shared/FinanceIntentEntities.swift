@@ -83,7 +83,7 @@ struct FinanceCategoryEntity: IndexedEntity, Hashable, Sendable {
     }
 }
 
-struct FinanceAccountQuery: EntityStringQuery, IndexedEntityQuery, Sendable {
+struct FinanceAccountQuery: EntityStringQuery, Sendable {
     func entities(for identifiers: [FinanceAccountEntity.ID]) async throws -> [FinanceAccountEntity] {
         let data = FinanceStorage(context: "app-intent").load()
         return identifiers.compactMap { identifier in
@@ -103,7 +103,7 @@ struct FinanceAccountQuery: EntityStringQuery, IndexedEntityQuery, Sendable {
     func entities(matching string: String) async throws -> [FinanceAccountEntity] {
         let query = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
-            return suggestedEntities()
+            return try await suggestedEntities()
         }
 
         return allEntities().filter { account in
@@ -125,22 +125,9 @@ struct FinanceAccountQuery: EntityStringQuery, IndexedEntityQuery, Sendable {
             }
     }
 
-    func reindexEntities(
-        for identifiers: [FinanceAccountEntity.ID],
-        indexDescription: CSSearchableIndexDescription
-    ) async throws {
-        let entities = try await entities(for: identifiers)
-        try await CSSearchableIndex(name: financeIntentSearchIndexName)
-            .indexAppEntities(entities, priority: 80)
-    }
-
-    func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
-        try await CSSearchableIndex(name: financeIntentSearchIndexName)
-            .indexAppEntities(allEntities(), priority: 80)
-    }
 }
 
-struct FinanceCategoryQuery: EntityStringQuery, IndexedEntityQuery, Sendable {
+struct FinanceCategoryQuery: EntityStringQuery, Sendable {
     func entities(for identifiers: [FinanceCategoryEntity.ID]) async throws -> [FinanceCategoryEntity] {
         let data = FinanceStorage(context: "app-intent").load()
         return identifiers.compactMap { identifier in
@@ -157,7 +144,7 @@ struct FinanceCategoryQuery: EntityStringQuery, IndexedEntityQuery, Sendable {
     func entities(matching string: String) async throws -> [FinanceCategoryEntity] {
         let query = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
-            return suggestedEntities()
+            return try await suggestedEntities()
         }
 
         return allEntities().filter { category in
@@ -173,19 +160,6 @@ struct FinanceCategoryQuery: EntityStringQuery, IndexedEntityQuery, Sendable {
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 
-    func reindexEntities(
-        for identifiers: [FinanceCategoryEntity.ID],
-        indexDescription: CSSearchableIndexDescription
-    ) async throws {
-        let entities = try await entities(for: identifiers)
-        try await CSSearchableIndex(name: financeIntentSearchIndexName)
-            .indexAppEntities(entities, priority: 60)
-    }
-
-    func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
-        try await CSSearchableIndex(name: financeIntentSearchIndexName)
-            .indexAppEntities(allEntities(), priority: 60)
-    }
 }
 
 enum FinanceIntentTransactionKind: String, AppEnum, CaseIterable, Hashable, Sendable {

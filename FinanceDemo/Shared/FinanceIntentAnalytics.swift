@@ -120,7 +120,7 @@ struct FinanceTransactionEntity: IndexedEntity, Hashable, Sendable {
 
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(
-            title: note.isEmpty ? kind : note,
+            title: "\(note.isEmpty ? kind : note)",
             subtitle: "\(kind) · \(amount) · \(date.formatted(date: .abbreviated, time: .shortened))"
         )
     }
@@ -148,7 +148,7 @@ struct FinanceTransactionEntity: IndexedEntity, Hashable, Sendable {
     }
 }
 
-struct FinanceTransactionQuery: EntityStringQuery, IndexedEntityQuery, Sendable {
+struct FinanceTransactionQuery: EntityStringQuery, Sendable {
     func entities(for identifiers: [FinanceTransactionEntity.ID]) async throws -> [FinanceTransactionEntity] {
         let data = FinanceStorage(context: "app-intent").load()
         return identifiers.compactMap { identifier in
@@ -165,7 +165,7 @@ struct FinanceTransactionQuery: EntityStringQuery, IndexedEntityQuery, Sendable 
     func entities(matching string: String) async throws -> [FinanceTransactionEntity] {
         let query = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
-            return suggestedEntities()
+            return try await suggestedEntities()
         }
 
         return allEntities().filter { transaction in
@@ -174,20 +174,6 @@ struct FinanceTransactionQuery: EntityStringQuery, IndexedEntityQuery, Sendable 
                 || transaction.date.formatted(date: .abbreviated, time: .omitted)
                     .localizedCaseInsensitiveContains(query)
         }
-    }
-
-    func reindexEntities(
-        for identifiers: [FinanceTransactionEntity.ID],
-        indexDescription: CSSearchableIndexDescription
-    ) async throws {
-        let entities = try await entities(for: identifiers)
-        try await CSSearchableIndex(name: financeIntentSearchIndexName)
-            .indexAppEntities(entities, priority: 100)
-    }
-
-    func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
-        try await CSSearchableIndex(name: financeIntentSearchIndexName)
-            .indexAppEntities(allEntities(), priority: 100)
     }
 
     private func allEntities() -> [FinanceTransactionEntity] {

@@ -239,7 +239,7 @@ struct GetAccountBalanceIntent: AppIntent {
         let value = resolvedAccount.name + ": " + balance.formatted
         return .result(
             value: value,
-            dialog: resolvedAccount.name + " has " + balance.formatted + "."
+            dialog: IntentDialog(stringLiteral: resolvedAccount.name + " has " + balance.formatted + ".")
         )
     }
 }
@@ -256,7 +256,7 @@ struct AddLedgerTransactionIntent: AppIntent {
     var account: FinanceAccountEntity
 
     @Parameter(title: "Amount", description: "The amount in the selected account's currency.")
-    var amount: Decimal
+    var amount: String
 
     @Parameter(title: "Category", description: "Optional category for an expense.")
     var category: FinanceCategoryEntity?
@@ -265,7 +265,7 @@ struct AddLedgerTransactionIntent: AppIntent {
     var destinationAccount: FinanceAccountEntity?
 
     @Parameter(title: "Destination amount", description: "The amount entering the destination account.")
-    var destinationAmount: Decimal?
+    var destinationAmount: String?
 
     @Parameter(title: "Note", description: "Optional note for the transaction.")
     var note: String?
@@ -274,16 +274,16 @@ struct AddLedgerTransactionIntent: AppIntent {
     var date: Date?
 
     @Parameter(title: "Bill total", description: "Optional expense total, which may use a different currency.")
-    var amountDue: Decimal?
+    var amountDue: String?
 
     @Parameter(title: "Bill currency", description: "Currency for the optional bill total.")
     var amountDueCurrency: FinanceIntentCurrency?
 
     @Parameter(title: "Requested change", description: "Optional requested change amount in the destination currency.")
-    var requestedChange: Decimal?
+    var requestedChange: String?
 
     @Parameter(title: "Exchange rate", description: "Optional quote units per base unit for a mixed-currency transaction.")
-    var exchangeRate: Decimal?
+    var exchangeRate: String?
 
     @Parameter(title: "Rate base currency", description: "Currency used as the exchange-rate base.")
     var rateBaseCurrency: FinanceIntentCurrency?
@@ -520,12 +520,20 @@ struct AddLedgerTransactionIntent: AppIntent {
 }
 
 private func financeMoney(
-    _ amount: Decimal,
+    _ rawValue: String,
     currency: LedgerCurrency,
     allowsZero: Bool = false
 ) -> Money? {
-    let rawValue = NSDecimalNumber(decimal: amount).stringValue
-    guard let money = Money.parse(rawValue, currency: currency) else {
+    let normalized = rawValue
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: ",", with: "")
+    guard !normalized.isEmpty,
+          let amount = Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX")) else {
+        return nil
+    }
+
+    let parsedValue = NSDecimalNumber(decimal: amount).stringValue
+    guard let money = Money.parse(parsedValue, currency: currency) else {
         return nil
     }
 
@@ -535,8 +543,15 @@ private func financeMoney(
     return money.minorUnits > 0 ? money : nil
 }
 
-private func financePositiveDecimal(_ value: Decimal) -> Decimal? {
-    value > 0 ? value : nil
+private func financePositiveDecimal(_ rawValue: String) -> Decimal? {
+    let normalized = rawValue
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: ",", with: "")
+    guard let value = Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX")),
+          value > 0 else {
+        return nil
+    }
+    return value
 }
 
 private func financeTransactionSummary(_ transaction: LedgerTransaction) -> String {
