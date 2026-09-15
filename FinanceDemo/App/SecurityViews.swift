@@ -37,7 +37,7 @@ struct SecuritySettingsView: View {
                 Section("App lock") {
                     if security.isPasscodeEnabled {
                         Label("Passcode enabled", systemImage: "checkmark.shield.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(PocketLedgerTheme.positive)
 
                         Button("Change passcode") {
                             passcodeSheet = .change
@@ -96,7 +96,12 @@ struct SecuritySettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PocketLedgerTheme.background)
+            .listRowBackground(PocketLedgerTheme.surface)
+            .tint(PocketLedgerTheme.accent)
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $passcodeSheet) { sheet in
                 PasscodeSetupView(security: security, mode: sheet)
             }
@@ -186,7 +191,12 @@ private struct PasscodeSetupView: View {
                     .foregroundStyle(.secondary)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PocketLedgerTheme.background)
+            .listRowBackground(PocketLedgerTheme.surface)
+            .tint(PocketLedgerTheme.accent)
             .navigationTitle(mode.title)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -266,7 +276,7 @@ struct AppLockView: View {
 
             Image(systemName: "lock.shield.fill")
                 .font(.system(size: 56))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(PocketLedgerTheme.accent)
 
             VStack(spacing: 8) {
                 Text("Pocket Ledger is locked")
@@ -290,6 +300,7 @@ struct AppLockView: View {
 
             Button("Unlock", action: unlockWithPasscode)
                 .buttonStyle(.borderedProminent)
+                .tint(PocketLedgerTheme.accent)
                 .disabled(!AppPasscodeRules.isValid(passcode))
 
             if security.biometricsEnabled {
@@ -312,7 +323,7 @@ struct AppLockView: View {
             if let errorMessage {
                 Text(errorMessage)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(PocketLedgerTheme.accent)
                     .multilineTextAlignment(.center)
             }
 
@@ -320,7 +331,7 @@ struct AppLockView: View {
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemGroupedBackground))
+        .pocketScreen()
         .task {
             await unlockWithBiometrics()
         }

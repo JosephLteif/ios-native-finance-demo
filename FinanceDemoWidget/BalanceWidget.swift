@@ -1,6 +1,13 @@
 import SwiftUI
 import WidgetKit
 
+private enum PocketWidgetTheme {
+    static let background = Color(red: 0.04, green: 0.08, blue: 0.13)
+    static let accent = Color(red: 0.20, green: 0.78, blue: 0.70)
+    static let income = Color(red: 0.37, green: 0.66, blue: 1.00)
+    static let warning = Color(red: 0.96, green: 0.70, blue: 0.32)
+}
+
 struct BalanceEntry: TimelineEntry, Sendable {
     let date: Date
     let snapshot: FinanceWidgetSnapshot
@@ -48,7 +55,7 @@ struct BalanceWidgetEntryView: View {
         VStack(alignment: .leading, spacing: 7) {
             Text("Pocket Ledger")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PocketWidgetTheme.accent)
 
             if entry.snapshot.appGroupAvailable {
                 balanceRow(
@@ -67,7 +74,7 @@ struct BalanceWidgetEntryView: View {
             } else {
                 Text("Shared storage unavailable")
                     .font(.headline)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(PocketWidgetTheme.warning)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Sign both targets with the Pocket Ledger App Group to share balances.")
                     .font(.caption)
@@ -96,24 +103,25 @@ struct BalanceWidgetEntryView: View {
                     Button(intent: AddDemoExpenseIntent()) {
                         Image(systemName: "minus.circle.fill")
                             .font(.title3)
+                            .foregroundStyle(PocketWidgetTheme.accent)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Add a five dollar USD expense")
                 } else {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(PocketWidgetTheme.warning)
                         .accessibilityLabel("Shared App Group unavailable")
                 }
             }
         }
-        .containerBackground(.background, for: .widget)
+        .containerBackground(PocketWidgetTheme.background, for: .widget)
     }
 
     private func balanceRow(currency: String, amount: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(currency)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(currency == "USD" ? PocketWidgetTheme.income : Color.white.opacity(0.62))
             Spacer(minLength: 6)
             Text(amount)
                 .font(.system(
