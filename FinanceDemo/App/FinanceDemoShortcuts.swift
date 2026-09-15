@@ -35,5 +35,41 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             shortTitle: "Add Pocket Ledger Expense",
             systemImageName: "minus.circle"
         )
+        AppShortcut(
+            intent: AddLedgerTransactionIntent(),
+            phrases: [
+                "Add a transaction to \(\.$account) in \(.applicationName)",
+                "Record a transaction in \(.applicationName)"
+            ],
+            shortTitle: "Add Pocket Ledger Transaction",
+            systemImageName: "plus.circle"
+        )
+        AppShortcut(
+            intent: GetCategoriesIntent(),
+            phrases: [
+                "List my categories in \(.applicationName)",
+                "Get my Pocket Ledger categories"
+            ],
+            shortTitle: "Get Pocket Ledger Categories",
+            systemImageName: "tag"
+        )
+        AppShortcut(
+            intent: GetAccountsIntent(),
+            phrases: [
+                "List my accounts in \(.applicationName)",
+                "Get my Pocket Ledger accounts"
+            ],
+            shortTitle: "Get Pocket Ledger Accounts",
+            systemImageName: "wallet.pass"
+        )
+        AppShortcut(
+            intent: GetAccountBalanceIntent(),
+            phrases: [
+                "Get the balance of \(\.$account) in \(.applicationName)",
+                "Check an account balance in \(.applicationName)"
+            ],
+            shortTitle: "Get Account Balance",
+            systemImageName: "chart.bar.xaxis"
+        )
     }
 }

@@ -248,6 +248,7 @@ final class LedgerStore: ObservableObject {
 
         data = updated
         WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
+        FinanceDemoShortcuts.updateAppShortcutParameters()
         lastActionStatus = successMessage
         return true
     }
