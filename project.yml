@@ -73,7 +73,6 @@ targets:
         CFBundleVersion: "1"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).BalanceWidgetBundle
     entitlements:
       path: FinanceDemoWidget/Config/FinanceDemoWidget.entitlements
       properties:
