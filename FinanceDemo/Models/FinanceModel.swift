@@ -154,6 +154,62 @@ enum TransactionKind: String, Codable, CaseIterable, Identifiable, Hashable {
     }
 }
 
+enum ScheduleFrequency: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
+    case once
+    case daily
+    case weekly
+    case monthly
+    case yearly
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .once:
+            return "Once"
+        case .daily:
+            return "Daily"
+        case .weekly:
+            return "Weekly"
+        case .monthly:
+            return "Monthly"
+        case .yearly:
+            return "Yearly"
+        }
+    }
+
+    func nextDate(after date: Date, calendar: Calendar = .current) -> Date? {
+        switch self {
+        case .once:
+            return nil
+        case .daily:
+            return calendar.date(byAdding: .day, value: 1, to: date)
+        case .weekly:
+            return calendar.date(byAdding: .weekOfYear, value: 1, to: date)
+        case .monthly:
+            return calendar.date(byAdding: .month, value: 1, to: date)
+        case .yearly:
+            return calendar.date(byAdding: .year, value: 1, to: date)
+        }
+    }
+}
+
+enum TransactionTiming: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case now
+    case scheduled
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .now:
+            return "Now"
+        case .scheduled:
+            return "Schedule"
+        }
+    }
+}
+
 struct MoneyMovement: Identifiable, Codable, Equatable {
     let id: UUID
     var accountID: UUID
@@ -245,6 +301,80 @@ struct LedgerTransaction: Identifiable, Codable, Equatable {
     }
 }
 
+struct ScheduledTransaction: Identifiable, Codable, Equatable {
+    let id: UUID
+    var nextRunDate: Date
+    var frequency: ScheduleFrequency
+    var isEnabled: Bool
+    var lastRunDate: Date?
+    var note: String
+    var kind: TransactionKind
+    var categoryID: UUID?
+    var amountDue: Money?
+    var outflows: [MoneyMovement]
+    var inflows: [MoneyMovement]
+    var exchangeRate: ExchangeRate?
+    var changeAdjustment: ChangeAdjustment?
+
+    init(
+        id: UUID = UUID(),
+        nextRunDate: Date,
+        frequency: ScheduleFrequency,
+        isEnabled: Bool = true,
+        lastRunDate: Date? = nil,
+        note: String,
+        kind: TransactionKind,
+        categoryID: UUID?,
+        amountDue: Money? = nil,
+        outflows: [MoneyMovement],
+        inflows: [MoneyMovement],
+        exchangeRate: ExchangeRate? = nil,
+        changeAdjustment: ChangeAdjustment? = nil
+    ) {
+        self.id = id
+        self.nextRunDate = nextRunDate
+        self.frequency = frequency
+        self.isEnabled = isEnabled
+        self.lastRunDate = lastRunDate
+        self.note = note
+        self.kind = kind
+        self.categoryID = categoryID
+        self.amountDue = amountDue
+        self.outflows = outflows
+        self.inflows = inflows
+        self.exchangeRate = exchangeRate
+        self.changeAdjustment = changeAdjustment
+    }
+
+    var transactionTemplate: LedgerTransaction {
+        LedgerTransaction(
+            date: nextRunDate,
+            note: note,
+            kind: kind,
+            categoryID: categoryID,
+            amountDue: amountDue,
+            outflows: outflows,
+            inflows: inflows,
+            exchangeRate: exchangeRate,
+            changeAdjustment: changeAdjustment
+        )
+    }
+
+    func materializedTransaction(on date: Date) -> LedgerTransaction {
+        LedgerTransaction(
+            date: date,
+            note: note,
+            kind: kind,
+            categoryID: categoryID,
+            amountDue: amountDue,
+            outflows: outflows.map { MoneyMovement(accountID: $0.accountID, money: $0.money) },
+            inflows: inflows.map { MoneyMovement(accountID: $0.accountID, money: $0.money) },
+            exchangeRate: exchangeRate,
+            changeAdjustment: changeAdjustment
+        )
+    }
+}
+
 struct FinanceWidgetSnapshot: Equatable, Sendable {
     let usdAvailable: Money
     let lbpAvailable: Money
@@ -261,8 +391,47 @@ struct FinanceData: Codable, Equatable {
     var accounts: [Account]
     var categories: [LedgerCategory]
     var transactions: [LedgerTransaction]
+    var scheduledTransactions: [ScheduledTransaction]
+
+    init(
+        accounts: [Account],
+        categories: [LedgerCategory],
+        transactions: [LedgerTransaction],
+        scheduledTransactions: [ScheduledTransaction] = []
+    ) {
+        self.accounts = accounts
+        self.categories = categories
+        self.transactions = transactions
+        self.scheduledTransactions = scheduledTransactions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case accounts
+        case categories
+        case transactions
+        case scheduledTransactions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        accounts = try container.decode([Account].self, forKey: .accounts)
+        categories = try container.decode([LedgerCategory].self, forKey: .categories)
+        transactions = try container.decode([LedgerTransaction].self, forKey: .transactions)
+        scheduledTransactions = try container.decodeIfPresent(
+            [ScheduledTransaction].self,
+            forKey: .scheduledTransactions
+        ) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(accounts, forKey: .accounts)
+        try container.encode(categories, forKey: .categories)
+        try container.encode(transactions, forKey: .transactions)
+        try container.encode(scheduledTransactions, forKey: .scheduledTransactions)
+    }
 
     static var empty: FinanceData {
-        FinanceData(accounts: [], categories: [], transactions: [])
+        FinanceData(accounts: [], categories: [], transactions: [], scheduledTransactions: [])
     }
 }

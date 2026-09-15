@@ -64,6 +64,118 @@ final class LedgerStore: ObservableObject {
         persist(updated, successMessage: "Transaction saved")
     }
 
+    @discardableResult
+    func addScheduledTransaction(_ scheduledTransaction: ScheduledTransaction) -> Bool {
+        var updated = data
+        updated.scheduledTransactions.append(scheduledTransaction)
+
+        guard persist(updated, successMessage: "Transaction scheduled") else { return false }
+        if scheduledTransaction.isEnabled,
+           scheduledTransaction.nextRunDate <= .now {
+            processDueScheduledTransactions()
+        }
+        return true
+    }
+
+    @discardableResult
+    func updateScheduledTransaction(_ scheduledTransaction: ScheduledTransaction) -> Bool {
+        guard let index = data.scheduledTransactions.firstIndex(where: { $0.id == scheduledTransaction.id }) else {
+            lastActionStatus = "Scheduled transaction not found"
+            return false
+        }
+
+        var updated = data
+        updated.scheduledTransactions[index] = scheduledTransaction
+        guard persist(updated, successMessage: "Scheduled transaction updated") else { return false }
+
+        if scheduledTransaction.isEnabled,
+           scheduledTransaction.nextRunDate <= .now {
+            processDueScheduledTransactions()
+        }
+        return true
+    }
+
+    @discardableResult
+    func setScheduledTransactionEnabled(id: UUID, isEnabled: Bool) -> Bool {
+        guard let index = data.scheduledTransactions.firstIndex(where: { $0.id == id }) else {
+            lastActionStatus = "Scheduled transaction not found"
+            return false
+        }
+
+        var scheduledTransaction = data.scheduledTransactions[index]
+        guard !(isEnabled && scheduledTransaction.frequency == .once && scheduledTransaction.lastRunDate != nil) else {
+            lastActionStatus = "Completed one-time transactions cannot be re-enabled"
+            return false
+        }
+        scheduledTransaction.isEnabled = isEnabled
+        var updated = data
+        updated.scheduledTransactions[index] = scheduledTransaction
+        let persisted = persist(
+            updated,
+            successMessage: isEnabled ? "Scheduled transaction enabled" : "Scheduled transaction paused"
+        )
+        if persisted, isEnabled, scheduledTransaction.nextRunDate <= .now {
+            processDueScheduledTransactions()
+        }
+        return persisted
+    }
+
+    @discardableResult
+    func deleteScheduledTransaction(id: UUID) -> Bool {
+        var updated = data
+        let originalCount = updated.scheduledTransactions.count
+        updated.scheduledTransactions.removeAll { $0.id == id }
+        guard updated.scheduledTransactions.count != originalCount else {
+            lastActionStatus = "Scheduled transaction not found"
+            return false
+        }
+        return persist(updated, successMessage: "Scheduled transaction deleted")
+    }
+
+    @discardableResult
+    func processDueScheduledTransactions(now: Date = .now) -> Int {
+        var updated = data
+        var materializedCount = 0
+        var changed = false
+        let calendar = Calendar.current
+
+        for index in updated.scheduledTransactions.indices {
+            var scheduledTransaction = updated.scheduledTransactions[index]
+            guard scheduledTransaction.isEnabled else { continue }
+
+            var dueDate = scheduledTransaction.nextRunDate
+            while scheduledTransaction.isEnabled && dueDate <= now {
+                updated.transactions.append(scheduledTransaction.materializedTransaction(on: dueDate))
+                materializedCount += 1
+                changed = true
+                scheduledTransaction.lastRunDate = dueDate
+
+                guard scheduledTransaction.frequency != .once else {
+                    scheduledTransaction.isEnabled = false
+                    break
+                }
+
+                guard let nextDate = scheduledTransaction.frequency.nextDate(after: dueDate, calendar: calendar),
+                      nextDate > dueDate else {
+                    scheduledTransaction.isEnabled = false
+                    break
+                }
+
+                scheduledTransaction.nextRunDate = nextDate
+                dueDate = nextDate
+            }
+
+            updated.scheduledTransactions[index] = scheduledTransaction
+        }
+
+        guard changed else { return 0 }
+        guard persist(
+            updated,
+            successMessage: "Added \(materializedCount) scheduled transaction\(materializedCount == 1 ? "" : "s")"
+        ) else { return 0 }
+        return materializedCount
+    }
+
     func addAccount(_ account: Account) {
         var updated = data
         updated.accounts.append(account)
@@ -91,10 +203,14 @@ final class LedgerStore: ObservableObject {
         let accountIDs = Set(updated.accounts.map(\.id))
         let categoryIDs = Set(updated.categories.map(\.id))
         let transactionIDs = Set(updated.transactions.map(\.id))
+        let scheduledTransactionIDs = Set(updated.scheduledTransactions.map(\.id))
 
         updated.accounts.append(contentsOf: imported.accounts.filter { !accountIDs.contains($0.id) })
         updated.categories.append(contentsOf: imported.categories.filter { !categoryIDs.contains($0.id) })
         updated.transactions.append(contentsOf: imported.transactions.filter { !transactionIDs.contains($0.id) })
+        updated.scheduledTransactions.append(
+            contentsOf: imported.scheduledTransactions.filter { !scheduledTransactionIDs.contains($0.id) }
+        )
 
         return persist(updated, successMessage: "Import completed")
     }

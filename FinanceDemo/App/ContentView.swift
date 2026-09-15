@@ -21,6 +21,7 @@ struct ContentView: View {
             if phase == .active {
                 security.refresh()
                 store.reload()
+                store.processDueScheduledTransactions()
             } else if phase == .inactive || phase == .background {
                 isPresentingTransaction = false
                 if security.isPasscodeEnabled {
@@ -30,6 +31,9 @@ struct ContentView: View {
         }
         .onChange(of: security.isPasscodeEnabled) { _, enabled in
             isUnlocked = !enabled
+        }
+        .task {
+            store.processDueScheduledTransactions()
         }
     }
 
@@ -43,6 +47,11 @@ struct ContentView: View {
             TransactionsView(store: store, onAddTransaction: presentTransaction)
                 .tabItem {
                     Label("Transactions", systemImage: "list.bullet.rectangle")
+                }
+
+            ScheduledTransactionsView(store: store)
+                .tabItem {
+                    Label("Scheduled", systemImage: "calendar.badge.clock")
                 }
 
             MetricsView(store: store)
@@ -1142,6 +1151,9 @@ struct TransactionEditor: View {
     @State private var note = ""
     @State private var date = Date.now
     @State private var kind: TransactionKind = .expense
+    @State private var timing: TransactionTiming = .now
+    @State private var scheduleFrequency: ScheduleFrequency = .once
+    @State private var scheduleEnabled = true
     @State private var categoryID: UUID?
     @State private var dueCurrency: LedgerCurrency = .usd
     @State private var amountDue = ""
@@ -1153,35 +1165,74 @@ struct TransactionEditor: View {
     @State private var rateQuote: LedgerCurrency = .lbp
     @State private var rateText = "100000"
     @State private var errorMessage: String?
+    private let editingScheduleID: UUID?
+    private let editingScheduleLastRunDate: Date?
+    private let editingScheduleNextRunDate: Date?
+    private let editingScheduleFrequency: ScheduleFrequency?
 
     init(
         store: LedgerStore,
         initialAmount: Money? = nil,
         initialBillTotal: Money? = nil,
-        initialNote: String? = nil
+        initialNote: String? = nil,
+        initialTiming: TransactionTiming = .now,
+        initialFrequency: ScheduleFrequency = .once,
+        scheduledTransaction: ScheduledTransaction? = nil
     ) {
         _store = ObservedObject(wrappedValue: store)
-        let preferredCurrency = initialAmount?.currency ?? initialBillTotal?.currency
+        let preferredCurrency = scheduledTransaction?.outflows.first?.money.currency
+            ?? scheduledTransaction?.inflows.first?.money.currency
+            ?? initialAmount?.currency
+            ?? scheduledTransaction?.amountDue?.currency
+            ?? initialBillTotal?.currency
         let firstAccount = store.data.accounts.first { account in
             guard let preferredCurrency else { return true }
             return account.currency == preferredCurrency
         } ?? store.data.accounts.first
         let firstAccountID = firstAccount?.id ?? UUID()
-        _note = State(initialValue: initialNote ?? "")
-        _dueCurrency = State(initialValue: initialBillTotal?.currency ?? preferredCurrency ?? .usd)
-        _amountDue = State(initialValue: initialBillTotal.map { Self.inputText(for: $0) } ?? "")
+        let amountDue = scheduledTransaction?.amountDue ?? initialBillTotal
+        _note = State(initialValue: scheduledTransaction?.note ?? initialNote ?? "")
+        _date = State(initialValue: scheduledTransaction?.nextRunDate ?? .now)
+        _kind = State(initialValue: scheduledTransaction?.kind ?? .expense)
+        _timing = State(initialValue: scheduledTransaction == nil ? initialTiming : .scheduled)
+        _scheduleFrequency = State(initialValue: scheduledTransaction?.frequency ?? initialFrequency)
+        _scheduleEnabled = State(initialValue: scheduledTransaction?.isEnabled ?? true)
+        _dueCurrency = State(initialValue: amountDue?.currency ?? preferredCurrency ?? .usd)
+        _amountDue = State(initialValue: amountDue.map { Self.inputText(for: $0) } ?? "")
         _outflows = State(
-            initialValue: [
+            initialValue: scheduledTransaction?.outflows.map {
+                MovementDraft(accountID: $0.accountID, amount: Self.inputText(for: $0.money))
+            } ?? [
                 MovementDraft(
                     accountID: firstAccountID,
                     amount: initialAmount.map { Self.inputText(for: $0) } ?? ""
                 )
             ]
         )
+        _inflows = State(
+            initialValue: scheduledTransaction?.inflows.map {
+                MovementDraft(accountID: $0.accountID, amount: Self.inputText(for: $0.money))
+            } ?? []
+        )
+        _requestedChange = State(
+            initialValue: scheduledTransaction?.changeAdjustment.map { Self.inputText(for: $0.requested) } ?? ""
+        )
+        _rateBase = State(initialValue: scheduledTransaction?.exchangeRate?.baseCurrency ?? .usd)
+        _rateQuote = State(initialValue: scheduledTransaction?.exchangeRate?.quoteCurrency ?? .lbp)
+        _rateText = State(
+            initialValue: scheduledTransaction?.exchangeRate.map {
+                NSDecimalNumber(decimal: $0.quoteUnitsPerBaseUnit).stringValue
+            } ?? "100000"
+        )
         _categoryID = State(
-            initialValue: store.data.categories.first(where: { $0.parentID != nil })?.id
+            initialValue: scheduledTransaction?.categoryID
+                ?? store.data.categories.first(where: { $0.parentID != nil })?.id
                 ?? store.data.categories.first?.id
         )
+        editingScheduleID = scheduledTransaction?.id
+        editingScheduleLastRunDate = scheduledTransaction?.lastRunDate
+        editingScheduleNextRunDate = scheduledTransaction?.nextRunDate
+        editingScheduleFrequency = scheduledTransaction?.frequency
     }
 
     var body: some View {
@@ -1198,9 +1249,39 @@ struct TransactionEditor: View {
                     Text("Transaction type")
                 }
 
+                Section("Timing") {
+                    Picker("When", selection: $timing) {
+                        ForEach(TransactionTiming.allCases) { option in
+                            Text(option.displayName).tag(option)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(isEditingScheduledTransaction)
+
+                    if timing == .scheduled {
+                        DatePicker("First run", selection: $date, displayedComponents: .date)
+
+                        Picker("Repeats", selection: $scheduleFrequency) {
+                            ForEach(ScheduleFrequency.allCases) { frequency in
+                                Text(frequency.displayName).tag(frequency)
+                            }
+                        }
+
+                        Toggle("Enabled", isOn: $scheduleEnabled)
+                            .disabled(completedOneTimeSchedule)
+
+                        if completedOneTimeSchedule {
+                            Text("This one-time schedule has already been added to transactions.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        DatePicker("Date", selection: $date, displayedComponents: .date)
+                    }
+                }
+
                 Section("Details") {
                     TextField("What was this for?", text: $note)
-                    DatePicker("Date", selection: $date, displayedComponents: .date)
 
                     if kind == .expense {
                         if store.data.categories.isEmpty {
@@ -1321,14 +1402,14 @@ struct TransactionEditor: View {
             .background(PocketLedgerTheme.background)
             .listRowBackground(PocketLedgerTheme.surface)
             .tint(PocketLedgerTheme.accent)
-            .navigationTitle("New transaction")
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save)
+                    Button(saveButtonTitle, action: save)
                         .disabled(!canSave)
                 }
             }
@@ -1338,6 +1419,31 @@ struct TransactionEditor: View {
                 Text(errorMessage ?? "")
             }
         }
+    }
+
+    private var isEditingScheduledTransaction: Bool {
+        editingScheduleID != nil
+    }
+
+    private var completedOneTimeSchedule: Bool {
+        isEditingScheduledTransaction
+            && editingScheduleLastRunDate != nil
+            && scheduleFrequency == .once
+            && (editingScheduleNextRunDate.map { Calendar.current.isDate(date, inSameDayAs: $0) } ?? false)
+    }
+
+    private var navigationTitle: String {
+        if isEditingScheduledTransaction {
+            return "Edit schedule"
+        }
+        return timing == .scheduled ? "Schedule transaction" : "New transaction"
+    }
+
+    private var saveButtonTitle: String {
+        if timing == .scheduled {
+            return isEditingScheduledTransaction ? "Update" : "Schedule"
+        }
+        return "Save"
     }
 
     private var newMovementDraft: MovementDraft {
@@ -1488,21 +1594,52 @@ struct TransactionEditor: View {
             parsedAmountDue = value
         }
 
-        store.addTransaction(
-            LedgerTransaction(
-                date: date,
-                note: note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? kind.displayName
-                    : note.trimmingCharacters(in: .whitespacesAndNewlines),
-                kind: kind,
-                categoryID: kind == .expense ? categoryID : nil,
-                amountDue: parsedAmountDue,
-                outflows: parsedOutflows,
-                inflows: parsedInflows,
-                exchangeRate: exchangeRate,
-                changeAdjustment: changeAdjustment
-            )
+        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let transaction = LedgerTransaction(
+            date: date,
+            note: trimmedNote.isEmpty ? kind.displayName : trimmedNote,
+            kind: kind,
+            categoryID: kind == .expense ? categoryID : nil,
+            amountDue: parsedAmountDue,
+            outflows: parsedOutflows,
+            inflows: parsedInflows,
+            exchangeRate: exchangeRate,
+            changeAdjustment: changeAdjustment
         )
+
+        if timing == .scheduled {
+            let dateChanged = editingScheduleNextRunDate.map {
+                !Calendar.current.isDate(date, inSameDayAs: $0)
+            } ?? false
+            let frequencyChanged = editingScheduleFrequency.map { $0 != scheduleFrequency } ?? false
+            let lastRunDate = dateChanged || frequencyChanged ? nil : editingScheduleLastRunDate
+            let enabled = lastRunDate != nil && scheduleFrequency == .once
+                ? false
+                : scheduleEnabled
+            let scheduledTransaction = ScheduledTransaction(
+                id: editingScheduleID ?? UUID(),
+                nextRunDate: date,
+                frequency: scheduleFrequency,
+                isEnabled: enabled,
+                lastRunDate: lastRunDate,
+                note: transaction.note,
+                kind: transaction.kind,
+                categoryID: transaction.categoryID,
+                amountDue: transaction.amountDue,
+                outflows: transaction.outflows,
+                inflows: transaction.inflows,
+                exchangeRate: transaction.exchangeRate,
+                changeAdjustment: transaction.changeAdjustment
+            )
+
+            if editingScheduleID != nil {
+                guard store.updateScheduledTransaction(scheduledTransaction) else { return }
+            } else {
+                store.addScheduledTransaction(scheduledTransaction)
+            }
+        } else {
+            store.addTransaction(transaction)
+        }
         dismiss()
     }
 }
