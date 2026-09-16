@@ -261,7 +261,8 @@ final class LedgerStore: ObservableObject {
         return persist(updated, successMessage: "Exchange rate deleted")
     }
 
-    func resetLedger() {
+    @discardableResult
+    func resetLedger() -> Bool {
         persist(.empty, successMessage: "Ledger reset")
     }
 

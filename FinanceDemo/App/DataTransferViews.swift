@@ -13,6 +13,11 @@ struct DataTransferView: View {
     @State private var pendingBackup: BackupImportCandidate?
     @State private var pendingDocument: ImportedDocument?
     @State private var errorMessage: String?
+    @State private var isShowingResetPreparation = false
+    @State private var isShowingResetWarning = false
+    @State private var isShowingFinalResetWarning = false
+    @State private var isContinuingToResetAfterBackup = false
+    @State private var isShowingResetSuccess = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -20,6 +25,7 @@ struct DataTransferView: View {
                 introCard
                 backupCard
                 importCard
+                resetCard
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -54,6 +60,44 @@ struct DataTransferView: View {
         .sheet(item: $pendingDocument) { document in
             ImportMappingView(store: store, document: document)
         }
+        .confirmationDialog(
+            "Back up before erasing?",
+            isPresented: $isShowingResetPreparation,
+            titleVisibility: .visible
+        ) {
+            Button("Export backup, then continue") {
+                startBackupExport(continueToReset: true)
+            }
+            Button("Continue without backup", role: .destructive) {
+                isShowingResetWarning = true
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A full JSON backup is the only way to restore this ledger after it is erased.")
+        }
+        .confirmationDialog(
+            "Erase all ledger data?",
+            isPresented: $isShowingResetWarning,
+            titleVisibility: .visible
+        ) {
+            Button("Show final warning", role: .destructive) {
+                isShowingFinalResetWarning = true
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes every account, category, transaction, scheduled transaction, and exchange rate from this device. The action cannot be undone without a backup.")
+        }
+        .alert("Final warning: erase everything?", isPresented: $isShowingFinalResetWarning) {
+            Button("Erase all data", role: .destructive, action: resetLedger)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This is the last confirmation. Your ledger will be replaced with an empty one immediately.")
+        }
+        .alert("Ledger erased", isPresented: $isShowingResetSuccess) {
+            Button("OK") {}
+        } message: {
+            Text("Your Pocket Ledger data is now empty. App lock and appearance settings were kept.")
+        }
         .alert("Data transfer failed", isPresented: errorPresented) {
             Button("OK") { errorMessage = nil }
         } message: {
@@ -83,12 +127,7 @@ struct DataTransferView: View {
                 .foregroundStyle(PocketLedgerTheme.textSecondary)
 
             Button {
-                do {
-                    backupDocument = PocketLedgerBackupDocument(data: try LedgerBackupCodec.encode(store.data))
-                    isExportingBackup = true
-                } catch {
-                    errorMessage = error.localizedDescription
-                }
+                startBackupExport()
             } label: {
                 Label("Export full backup", systemImage: "square.and.arrow.up")
                     .frame(maxWidth: .infinity)
@@ -107,6 +146,26 @@ struct DataTransferView: View {
             Text("CSV is useful when moving data into a spreadsheet or another finance app. It is not a full restore because it contains transaction rows rather than the ledger's internal IDs.")
                 .font(.footnote)
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
+        }
+        .pocketCard()
+    }
+
+    private var resetCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Erase ledger data", systemImage: "trash")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(PocketLedgerTheme.warning)
+
+            Text("Reset removes all ledger accounts, categories, transactions, schedules, and saved exchange rates. Your app lock and appearance settings stay unchanged.")
+                .font(.subheadline)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+            Button("Review reset warnings", role: .destructive) {
+                isShowingResetPreparation = true
+            }
+            .frame(maxWidth: .infinity)
+            .buttonStyle(.bordered)
+            .tint(PocketLedgerTheme.warning)
         }
         .pocketCard()
     }
@@ -167,9 +226,35 @@ struct DataTransferView: View {
     }
 
     private func exportCompleted(_ result: Result<URL, Error>) {
-        if case .failure(let error) = result {
+        let shouldContinueToReset = isContinuingToResetAfterBackup
+        isContinuingToResetAfterBackup = false
+
+        switch result {
+        case .success:
+            if shouldContinueToReset {
+                isShowingResetWarning = true
+            }
+        case .failure(let error):
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func startBackupExport(continueToReset: Bool = false) {
+        do {
+            backupDocument = PocketLedgerBackupDocument(data: try LedgerBackupCodec.encode(store.data))
+            isContinuingToResetAfterBackup = continueToReset
+            isExportingBackup = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func resetLedger() {
+        guard store.resetLedger() else {
+            errorMessage = store.lastActionStatus ?? "The ledger could not be reset."
+            return
+        }
+        isShowingResetSuccess = true
     }
 }
 
