@@ -37,6 +37,9 @@ struct MetricsView: View {
     @State private var customStart = Calendar.current.date(byAdding: .month, value: -1, to: Date.now) ?? Date.now
     @State private var customEnd = Date.now
     @State private var selectedCategoryID: UUID?
+    @State private var reportURL: URL?
+    @State private var isSharingReport = false
+    @State private var reportError: String?
 
     private var interval: DateInterval {
         let calendar = Calendar.current
@@ -134,16 +137,42 @@ struct MetricsView: View {
             }
             .pocketScreen()
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $isSharingReport) {
+                if let reportURL {
+                    MetricsReportShareSheet(url: reportURL)
+                }
+            }
+            .alert("Report not created", isPresented: reportErrorPresented) {
+                Button("OK") { reportError = nil }
+            } message: {
+                Text(reportError ?? "")
+            }
         }
     }
 
     private var screenHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Metrics")
-                .font(.system(size: 29, weight: .bold, design: .rounded))
-            Text("See how your money moves")
-                .font(.subheadline)
-                .foregroundStyle(PocketLedgerTheme.textSecondary)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Metrics")
+                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                Text("See how your money moves")
+                    .font(.subheadline)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: generateReport) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.headline.weight(.semibold))
+                    .frame(width: 40, height: 40)
+                    .background(PocketLedgerTheme.surfaceElevated, in: Circle())
+                    .overlay {
+                        Circle().stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                    }
+            }
+            .foregroundStyle(PocketLedgerTheme.accent)
+            .accessibilityLabel("Share metrics PDF report")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 14)
@@ -499,6 +528,45 @@ struct MetricsView: View {
         let endDate = interval.end.addingTimeInterval(-1)
         let end = endDate.formatted(.dateTime.month(.abbreviated).day().year())
         return start == end ? start : "\(start) – \(end)"
+    }
+
+    private var reportErrorPresented: Binding<Bool> {
+        Binding(
+            get: { reportError != nil },
+            set: { if !$0 { reportError = nil } }
+        )
+    }
+
+    private func generateReport() {
+        let report = MetricsReportData(
+            periodTitle: periodTitle,
+            dateRange: intervalLabel,
+            currency: selectedCurrency,
+            categoryScope: selectedCategoryID.map { store.categoryPath(for: $0) } ?? "All categories",
+            income: Money(currency: selectedCurrency, minorUnits: incomeTotals[selectedCurrency] ?? 0),
+            expenses: Money(currency: selectedCurrency, minorUnits: selectedCurrencyExpense),
+            entryCount: filteredTransactions.count,
+            activityCounts: Dictionary(grouping: filteredTransactions, by: \.kind).mapValues { $0.count },
+            categories: categoryMetrics.map {
+                MetricsReportCategory(
+                    title: $0.title,
+                    amount: Money(currency: $0.currency, minorUnits: $0.amount),
+                    count: $0.count,
+                    percentage: percentage(for: $0)
+                )
+            },
+            generatedAt: .now
+        )
+
+        do {
+            let fileName = "Pocket-Ledger-Metrics-\(Date.now.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))).pdf"
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+            try MetricsReportPDF.data(for: report).write(to: url, options: .atomic)
+            reportURL = url
+            isSharingReport = true
+        } catch {
+            reportError = error.localizedDescription
+        }
     }
 }
 
