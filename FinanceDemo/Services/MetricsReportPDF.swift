@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import UIKit
 
 struct MetricsReportCategory {
@@ -82,7 +83,6 @@ private final class MetricsReportPDFCanvas {
             font: .systemFont(ofSize: 8),
             color: .secondaryLabel
         )
-        context.endPage()
     }
 
     func drawReport(_ report: MetricsReportData) {
