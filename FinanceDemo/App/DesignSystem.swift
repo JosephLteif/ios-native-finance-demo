@@ -1,17 +1,207 @@
 import SwiftUI
+import UIKit
+
+enum PocketLedgerAppearanceMode: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system:
+            return "System"
+        case .light:
+            return "Light"
+        case .dark:
+            return "Dark"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .system:
+            return "circle.lefthalf.filled"
+        case .light:
+            return "sun.max.fill"
+        case .dark:
+            return "moon.fill"
+        }
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system:
+            return nil
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
+    }
+}
+
+enum PocketLedgerColorTheme: String, CaseIterable, Identifiable {
+    case ocean
+    case forest
+    case sunset
+    case violet
+
+    var id: String { rawValue }
+
+    var title: String {
+        rawValue.capitalized
+    }
+
+    var subtitle: String {
+        switch self {
+        case .ocean:
+            return "Teal and navy"
+        case .forest:
+            return "Fresh emerald"
+        case .sunset:
+            return "Warm coral"
+        case .violet:
+            return "Calm purple"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .ocean:
+            return "water.waves"
+        case .forest:
+            return "leaf.fill"
+        case .sunset:
+            return "sunset.fill"
+        case .violet:
+            return "sparkles"
+        }
+    }
+
+    var previewColors: [Color] {
+        let palette = palette
+        return [palette.accent, palette.surfaceElevated, palette.background]
+    }
+
+    fileprivate var palette: PocketLedgerPalette {
+        switch self {
+        case .ocean:
+            return PocketLedgerPalette(
+                background: adaptiveColor(light: 0xF2F7FB, dark: 0x0A1522),
+                surface: adaptiveColor(light: 0xFFFFFF, dark: 0x122235),
+                surfaceElevated: adaptiveColor(light: 0xE4EEF7, dark: 0x1A3046),
+                divider: adaptiveColor(light: 0x102030, dark: 0xFFFFFF).opacity(0.11),
+                textPrimary: adaptiveColor(light: 0x102030, dark: 0xFFFFFF).opacity(0.94),
+                textSecondary: adaptiveColor(light: 0x4D6072, dark: 0xFFFFFF).opacity(0.62),
+                textTertiary: adaptiveColor(light: 0x758797, dark: 0xFFFFFF).opacity(0.40),
+                accent: adaptiveColor(light: 0x087F75, dark: 0x33C7B3),
+                income: adaptiveColor(light: 0x1769B0, dark: 0x5EA8FF),
+                positive: adaptiveColor(light: 0x16844A, dark: 0x4DD495),
+                warning: adaptiveColor(light: 0xAD6900, dark: 0xF5B24E)
+            )
+        case .forest:
+            return PocketLedgerPalette(
+                background: adaptiveColor(light: 0xF3F8F4, dark: 0x08150F),
+                surface: adaptiveColor(light: 0xFFFFFF, dark: 0x10251C),
+                surfaceElevated: adaptiveColor(light: 0xE5F2E9, dark: 0x19372A),
+                divider: adaptiveColor(light: 0x173D28, dark: 0xFFFFFF).opacity(0.11),
+                textPrimary: adaptiveColor(light: 0x163022, dark: 0xFFFFFF).opacity(0.94),
+                textSecondary: adaptiveColor(light: 0x4C6757, dark: 0xFFFFFF).opacity(0.62),
+                textTertiary: adaptiveColor(light: 0x789080, dark: 0xFFFFFF).opacity(0.40),
+                accent: adaptiveColor(light: 0x237A50, dark: 0x66D48D),
+                income: adaptiveColor(light: 0x1B6D9D, dark: 0x74C8FF),
+                positive: adaptiveColor(light: 0x187A45, dark: 0x82E3A5),
+                warning: adaptiveColor(light: 0xA36A00, dark: 0xF1C56D)
+            )
+        case .sunset:
+            return PocketLedgerPalette(
+                background: adaptiveColor(light: 0xFFF7F2, dark: 0x1A100F),
+                surface: adaptiveColor(light: 0xFFFFFF, dark: 0x2A1B1A),
+                surfaceElevated: adaptiveColor(light: 0xFCE7DC, dark: 0x3C2621),
+                divider: adaptiveColor(light: 0x5A2B20, dark: 0xFFFFFF).opacity(0.11),
+                textPrimary: adaptiveColor(light: 0x3A211B, dark: 0xFFFFFF).opacity(0.94),
+                textSecondary: adaptiveColor(light: 0x76564C, dark: 0xFFFFFF).opacity(0.62),
+                textTertiary: adaptiveColor(light: 0xA17E72, dark: 0xFFFFFF).opacity(0.40),
+                accent: adaptiveColor(light: 0xC45C32, dark: 0xFF9F6E),
+                income: adaptiveColor(light: 0x1C6FAE, dark: 0x86B8FF),
+                positive: adaptiveColor(light: 0x2E8B57, dark: 0x9EDC83),
+                warning: adaptiveColor(light: 0xB06A00, dark: 0xFFD079)
+            )
+        case .violet:
+            return PocketLedgerPalette(
+                background: adaptiveColor(light: 0xF8F5FF, dark: 0x120F1E),
+                surface: adaptiveColor(light: 0xFFFFFF, dark: 0x1D1830),
+                surfaceElevated: adaptiveColor(light: 0xEDE6FF, dark: 0x2B2448),
+                divider: adaptiveColor(light: 0x3C2C68, dark: 0xFFFFFF).opacity(0.11),
+                textPrimary: adaptiveColor(light: 0x261D40, dark: 0xFFFFFF).opacity(0.94),
+                textSecondary: adaptiveColor(light: 0x62577C, dark: 0xFFFFFF).opacity(0.62),
+                textTertiary: adaptiveColor(light: 0x8B81A2, dark: 0xFFFFFF).opacity(0.40),
+                accent: adaptiveColor(light: 0x6B4BC1, dark: 0xB8A1FF),
+                income: adaptiveColor(light: 0x3D79B8, dark: 0x8AC8FF),
+                positive: adaptiveColor(light: 0x298567, dark: 0x79DFBA),
+                warning: adaptiveColor(light: 0xA06A00, dark: 0xF8CD76)
+            )
+        }
+    }
+}
+
+fileprivate struct PocketLedgerPalette {
+    let background: Color
+    let surface: Color
+    let surfaceElevated: Color
+    let divider: Color
+    let textPrimary: Color
+    let textSecondary: Color
+    let textTertiary: Color
+    let accent: Color
+    let income: Color
+    let positive: Color
+    let warning: Color
+}
+
+fileprivate func adaptiveColor(light: UInt32, dark: UInt32) -> Color {
+    Color(uiColor: UIColor { traits in
+        let value = traits.userInterfaceStyle == .dark ? dark : light
+        return UIColor(
+            red: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1
+        )
+    })
+}
 
 enum PocketLedgerTheme {
-    static let background = Color(red: 0.04, green: 0.08, blue: 0.13)
-    static let surface = Color(red: 0.07, green: 0.13, blue: 0.20)
-    static let surfaceElevated = Color(red: 0.10, green: 0.19, blue: 0.28)
-    static let divider = Color.white.opacity(0.11)
-    static let textPrimary = Color.white.opacity(0.94)
-    static let textSecondary = Color.white.opacity(0.62)
-    static let textTertiary = Color.white.opacity(0.40)
-    static let accent = Color(red: 0.20, green: 0.78, blue: 0.70)
-    static let income = Color(red: 0.37, green: 0.66, blue: 1.00)
-    static let positive = Color(red: 0.30, green: 0.83, blue: 0.58)
-    static let warning = Color(red: 0.96, green: 0.70, blue: 0.32)
+    static let colorThemeKey = "pocketLedger.colorTheme"
+    static let appearanceModeKey = "pocketLedger.appearanceMode"
+
+    static var colorTheme: PocketLedgerColorTheme {
+        let rawValue = UserDefaults.standard.string(forKey: colorThemeKey)
+        return PocketLedgerColorTheme(rawValue: rawValue ?? "") ?? .ocean
+    }
+
+    static var appearanceMode: PocketLedgerAppearanceMode {
+        let rawValue = UserDefaults.standard.string(forKey: appearanceModeKey)
+        return PocketLedgerAppearanceMode(rawValue: rawValue ?? "") ?? .system
+    }
+
+    private static var palette: PocketLedgerPalette {
+        colorTheme.palette
+    }
+
+    static var background: Color { palette.background }
+    static var surface: Color { palette.surface }
+    static var surfaceElevated: Color { palette.surfaceElevated }
+    static var divider: Color { palette.divider }
+    static var textPrimary: Color { palette.textPrimary }
+    static var textSecondary: Color { palette.textSecondary }
+    static var textTertiary: Color { palette.textTertiary }
+    static var accent: Color { palette.accent }
+    static var income: Color { palette.income }
+    static var positive: Color { palette.positive }
+    static var warning: Color { palette.warning }
 }
 
 struct PocketIcon: View {
@@ -34,7 +224,7 @@ extension View {
             .background(PocketLedgerTheme.background.ignoresSafeArea())
             .foregroundStyle(PocketLedgerTheme.textPrimary)
             .tint(PocketLedgerTheme.accent)
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(PocketLedgerTheme.appearanceMode.preferredColorScheme)
     }
 
     func pocketCard(cornerRadius: CGFloat = 18) -> some View {

@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var isPresentingTransaction = false
     @State private var isUnlocked = false
     @State private var selectedTab: AppTab = .overview
+    @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
+    @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -66,6 +68,7 @@ struct ContentView: View {
                 .tag(AppTab.more)
         }
         .tint(PocketLedgerTheme.accent)
+        .id("\(selectedColorTheme)-\(selectedAppearanceMode)")
         .overlay(alignment: .bottomTrailing) {
             Button {
                 isPresentingTransaction = true
@@ -80,7 +83,7 @@ struct ContentView: View {
             .padding(.trailing, 18)
             .padding(.bottom, 76)
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(PocketLedgerTheme.appearanceMode.preferredColorScheme)
         .sheet(isPresented: $isPresentingTransaction) {
             TransactionEditor(store: store)
         }

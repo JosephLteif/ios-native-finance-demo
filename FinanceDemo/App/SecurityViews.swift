@@ -31,10 +31,59 @@ struct SecuritySettingsView: View {
     @State private var isShowingRemoveConfirmation = false
     @State private var isUpdatingBiometrics = false
     @State private var errorMessage: String?
+    @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
+    @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Appearance") {
+                    Picker("Mode", selection: $selectedAppearanceMode) {
+                        ForEach(PocketLedgerAppearanceMode.allCases) { mode in
+                            Text(mode.title).tag(mode.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    ForEach(PocketLedgerColorTheme.allCases) { theme in
+                        Button {
+                            selectedColorTheme = theme.rawValue
+                        } label: {
+                            HStack(spacing: 12) {
+                                HStack(spacing: 4) {
+                                    ForEach(theme.previewColors.indices, id: \.self) { index in
+                                        Circle()
+                                            .fill(theme.previewColors[index])
+                                            .frame(width: 12, height: 12)
+                                    }
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(theme.title)
+                                        .font(.subheadline.weight(.semibold))
+                                    Text(theme.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                                }
+
+                                Spacer()
+
+                                if selectedColorTheme == theme.rawValue {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(PocketLedgerTheme.accent)
+                                }
+                            }
+                            .foregroundStyle(PocketLedgerTheme.textPrimary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Text("Choose a palette and decide whether Pocket Ledger follows the device appearance or stays light or dark.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("App lock") {
                     if security.isPasscodeEnabled {
                         Label("Passcode enabled", systemImage: "checkmark.shield.fill")
