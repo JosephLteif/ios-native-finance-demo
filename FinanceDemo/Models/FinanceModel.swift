@@ -445,25 +445,50 @@ struct FinanceWidgetSnapshot: Equatable, Sendable {
     }
 }
 
+struct LedgerBudget: Identifiable, Codable, Equatable {
+    let id: UUID
+    var categoryID: UUID
+    var currency: LedgerCurrency
+    var monthlyLimit: Money
+    var rollover: Bool
+
+    init(
+        id: UUID = UUID(),
+        categoryID: UUID,
+        currency: LedgerCurrency,
+        monthlyLimit: Money,
+        rollover: Bool = false
+    ) {
+        self.id = id
+        self.categoryID = categoryID
+        self.currency = currency
+        self.monthlyLimit = monthlyLimit
+        self.rollover = rollover
+    }
+}
+
 struct FinanceData: Codable, Equatable {
     var accounts: [Account]
     var categories: [LedgerCategory]
     var transactions: [LedgerTransaction]
     var scheduledTransactions: [ScheduledTransaction]
     var exchangeRates: [ExchangeRate]
+    var budgets: [LedgerBudget]
 
     init(
         accounts: [Account],
         categories: [LedgerCategory],
         transactions: [LedgerTransaction],
         scheduledTransactions: [ScheduledTransaction] = [],
-        exchangeRates: [ExchangeRate] = []
+        exchangeRates: [ExchangeRate] = [],
+        budgets: [LedgerBudget] = []
     ) {
         self.accounts = accounts
         self.categories = categories
         self.transactions = transactions
         self.scheduledTransactions = scheduledTransactions
         self.exchangeRates = exchangeRates
+        self.budgets = budgets
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -472,6 +497,7 @@ struct FinanceData: Codable, Equatable {
         case transactions
         case scheduledTransactions
         case exchangeRates
+        case budgets
     }
 
     init(from decoder: Decoder) throws {
@@ -487,6 +513,7 @@ struct FinanceData: Codable, Equatable {
             [ExchangeRate].self,
             forKey: .exchangeRates
         ) ?? []
+        budgets = try container.decodeIfPresent([LedgerBudget].self, forKey: .budgets) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -496,6 +523,7 @@ struct FinanceData: Codable, Equatable {
         try container.encode(transactions, forKey: .transactions)
         try container.encode(scheduledTransactions, forKey: .scheduledTransactions)
         try container.encode(exchangeRates, forKey: .exchangeRates)
+        try container.encode(budgets, forKey: .budgets)
     }
 
     static var empty: FinanceData {

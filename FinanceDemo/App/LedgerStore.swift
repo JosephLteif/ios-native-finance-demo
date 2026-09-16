@@ -67,6 +67,51 @@ final class LedgerStore: ObservableObject {
     }
 
     @discardableResult
+    func updateTransaction(_ transaction: LedgerTransaction) -> Bool {
+        guard let index = data.transactions.firstIndex(where: { $0.id == transaction.id }) else {
+            lastActionStatus = "Transaction not found"
+            return false
+        }
+
+        var updated = data
+        updated.transactions[index] = transaction
+        return persist(updated, successMessage: "Transaction updated")
+    }
+
+    @discardableResult
+    func deleteTransaction(id: UUID) -> Bool {
+        var updated = data
+        let originalCount = updated.transactions.count
+        updated.transactions.removeAll { $0.id == id }
+        guard updated.transactions.count != originalCount else {
+            lastActionStatus = "Transaction not found"
+            return false
+        }
+        return persist(updated, successMessage: "Transaction deleted")
+    }
+
+    @discardableResult
+    func duplicateTransaction(id: UUID) -> Bool {
+        guard let transaction = data.transactions.first(where: { $0.id == id }) else {
+            lastActionStatus = "Transaction not found"
+            return false
+        }
+
+        let duplicate = LedgerTransaction(
+            note: transaction.note,
+            kind: transaction.kind,
+            categoryID: transaction.categoryID,
+            amountDue: transaction.amountDue,
+            outflows: transaction.outflows.map { MoneyMovement(accountID: $0.accountID, money: $0.money) },
+            inflows: transaction.inflows.map { MoneyMovement(accountID: $0.accountID, money: $0.money) },
+            exchangeRate: transaction.exchangeRate,
+            changeAdjustment: transaction.changeAdjustment
+        )
+        addTransaction(duplicate)
+        return storage.isPersistent
+    }
+
+    @discardableResult
     func addScheduledTransaction(_ scheduledTransaction: ScheduledTransaction) -> Bool {
         var updated = data
         updated.scheduledTransactions.append(scheduledTransaction)
@@ -205,6 +250,50 @@ final class LedgerStore: ObservableObject {
         persist(updated, successMessage: "Category added")
     }
 
+    @discardableResult
+    func upsertBudget(_ budget: LedgerBudget) -> Bool {
+        guard budget.monthlyLimit.minorUnits > 0,
+              data.categories.contains(where: { $0.id == budget.categoryID }),
+              budget.monthlyLimit.currency == budget.currency else {
+            lastActionStatus = "Enter a valid budget"
+            return false
+        }
+
+        var updated = data
+        if let index = updated.budgets.firstIndex(where: { $0.id == budget.id }) {
+            updated.budgets[index] = budget
+        } else {
+            updated.budgets.append(budget)
+        }
+        return persist(updated, successMessage: "Budget saved")
+    }
+
+    @discardableResult
+    func deleteBudget(id: UUID) -> Bool {
+        var updated = data
+        let originalCount = updated.budgets.count
+        updated.budgets.removeAll { $0.id == id }
+        guard updated.budgets.count != originalCount else {
+            lastActionStatus = "Budget not found"
+            return false
+        }
+        return persist(updated, successMessage: "Budget deleted")
+    }
+
+    func budgetSpent(_ budget: LedgerBudget, in interval: DateInterval? = nil) -> Money {
+        let month = interval ?? (Calendar.current.dateInterval(of: .month, for: .now) ?? DateInterval(start: .distantPast, duration: .zero))
+        let spent = data.transactions
+            .filter { transaction in
+                transaction.kind == .expense
+                    && month.contains(transaction.date)
+                    && transaction.categoryID == budget.categoryID
+            }
+            .flatMap(\.outflows)
+            .filter { includesInTotals(accountID: $0.accountID) && $0.money.currency == budget.currency }
+            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+        return Money(currency: budget.currency, minorUnits: spent)
+    }
+
     func exchangeRate(base: LedgerCurrency, quote: LedgerCurrency) -> ExchangeRate? {
         guard base != quote else { return nil }
 
@@ -278,6 +367,7 @@ final class LedgerStore: ObservableObject {
         let categoryIDs = Set(updated.categories.map(\.id))
         let transactionIDs = Set(updated.transactions.map(\.id))
         let scheduledTransactionIDs = Set(updated.scheduledTransactions.map(\.id))
+        let budgetIDs = Set(updated.budgets.map(\.id))
 
         updated.accounts.append(contentsOf: imported.accounts.filter { !accountIDs.contains($0.id) })
         updated.categories.append(contentsOf: imported.categories.filter { !categoryIDs.contains($0.id) })
@@ -285,6 +375,7 @@ final class LedgerStore: ObservableObject {
         updated.scheduledTransactions.append(
             contentsOf: imported.scheduledTransactions.filter { !scheduledTransactionIDs.contains($0.id) }
         )
+        updated.budgets.append(contentsOf: imported.budgets.filter { !budgetIDs.contains($0.id) })
         for rate in imported.exchangeRates {
             updated.exchangeRates.removeAll {
                 Set([$0.baseCurrency, $0.quoteCurrency]) == Set([rate.baseCurrency, rate.quoteCurrency])

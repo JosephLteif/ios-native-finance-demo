@@ -1,4 +1,5 @@
 import AppIntents
+import Foundation
 
 struct GenerateBudgetSummaryIntent: AppIntent {
     static let title: LocalizedStringResource = "Summarize Pocket Ledger Budget"
@@ -8,6 +9,37 @@ struct GenerateBudgetSummaryIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let snapshot = FinanceStorage(context: "app-intent").widgetSnapshot()
         let summary = await FoundationModelService.generateBudgetSummary(for: snapshot)
+        return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))
+    }
+}
+
+struct GetBudgetStatusIntent: AppIntent {
+    static let title: LocalizedStringResource = "Check Pocket Ledger Budgets"
+    static let description = IntentDescription("Returns this month's spending against each Pocket Ledger category budget.")
+    static let openAppWhenRun = false
+
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        let data = FinanceStorage(context: "app-intent").load()
+        let month = Calendar.current.dateInterval(of: .month, for: .now)
+        let lines = data.budgets.map { budget -> String in
+            let spent = data.transactions
+                .filter {
+                    $0.kind == .expense
+                        && $0.categoryID == budget.categoryID
+                        && (month?.contains($0.date) ?? true)
+                }
+                .flatMap(\.outflows)
+                .filter { movement in
+                    data.accounts.first(where: { $0.id == movement.accountID })?.includeInTotals == true
+                        && movement.money.currency == budget.currency
+                }
+                .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+            let category = data.categories.first(where: { $0.id == budget.categoryID })?.name ?? "Uncategorized"
+            let spentMoney = Money(currency: budget.currency, minorUnits: spent)
+            let remaining = Money(currency: budget.currency, minorUnits: budget.monthlyLimit.minorUnits - spent)
+            return "\(category): \(spentMoney.formatted) of \(budget.monthlyLimit.formatted), \(remaining.minorUnits >= 0 ? "\(remaining.formatted) remaining" : "\(Money(currency: budget.currency, minorUnits: -remaining.minorUnits).formatted) over")"
+        }
+        let summary = lines.isEmpty ? "No budgets configured." : lines.joined(separator: "\n")
         return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))
     }
 }
@@ -97,6 +129,15 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Summarize Budget",
             systemImageName: "sparkles"
+        ),
+        AppShortcut(
+            intent: GetBudgetStatusIntent(),
+            phrases: [
+                "Check my Pocket Ledger budgets in \(.applicationName)",
+                "How are my budgets doing in \(.applicationName)"
+            ],
+            shortTitle: "Check Budgets",
+            systemImageName: "chart.bar.doc.horizontal"
         )
     }
 }

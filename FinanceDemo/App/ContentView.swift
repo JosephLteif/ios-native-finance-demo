@@ -170,6 +170,12 @@ private struct MoreView: View {
                     }
 
                     NavigationLink {
+                        BudgetsView(store: store)
+                    } label: {
+                        Label("Budgets", systemImage: "chart.bar.doc.horizontal")
+                    }
+
+                    NavigationLink {
                         SecuritySettingsView(store: store, security: security)
                     } label: {
                         Label("Settings", systemImage: "gearshape")
@@ -391,7 +397,14 @@ private struct DashboardView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(store.recentTransactions.prefix(5))) { transaction in
-                        TransactionRow(transaction: transaction, store: store)
+                        TransactionRow(
+                            transaction: transaction,
+                            store: store,
+                            onEdit: {},
+                            onDuplicate: {},
+                            onDelete: {},
+                            allowsActions: false
+                        )
                         Divider().overlay(PocketLedgerTheme.divider)
                     }
                 }
@@ -471,6 +484,9 @@ private struct TransactionDay: Identifiable {
 private struct TransactionsView: View {
     @ObservedObject var store: LedgerStore
     @State private var selectedFilter: TransactionFilter = .all
+    @State private var searchText = ""
+    @State private var editingTransaction: LedgerTransaction?
+    @State private var transactionToDelete: LedgerTransaction?
     @State private var isPresentingBillScanner = false
 
     var body: some View {
@@ -485,6 +501,10 @@ private struct TransactionsView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+
+                    TextField("Search transactions, categories, or accounts", text: $searchText)
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.never)
 
                     transactionsSummary
 
@@ -509,7 +529,14 @@ private struct TransactionsView: View {
 
                                 VStack(spacing: 0) {
                                     ForEach(day.transactions) { transaction in
-                                        TransactionRow(transaction: transaction, store: store)
+                                        TransactionRow(
+                                            transaction: transaction,
+                                            store: store,
+                                            onEdit: { editingTransaction = transaction },
+                                            onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
+                                            onDelete: { transactionToDelete = transaction },
+                                            allowsActions: true
+                                        )
                                         Divider().overlay(PocketLedgerTheme.divider)
                                     }
                                 }
@@ -531,6 +558,27 @@ private struct TransactionsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $isPresentingBillScanner) {
                 BillScannerView(store: store)
+            }
+            .sheet(item: $editingTransaction) { transaction in
+                TransactionEditor(store: store, transaction: transaction)
+            }
+            .confirmationDialog(
+                "Delete transaction?",
+                isPresented: Binding(
+                    get: { transactionToDelete != nil },
+                    set: { if !$0 { transactionToDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let transactionToDelete {
+                        _ = store.deleteTransaction(id: transactionToDelete.id)
+                    }
+                    self.transactionToDelete = nil
+                }
+                Button("Cancel", role: .cancel) { transactionToDelete = nil }
+            } message: {
+                Text(transactionToDelete?.note ?? "")
             }
         }
     }
@@ -563,8 +611,20 @@ private struct TransactionsView: View {
 
     private var filteredTransactions: [LedgerTransaction] {
         store.recentTransactions.filter { transaction in
-            guard let kind = selectedFilter.kind else { return true }
-            return transaction.kind == kind
+            let matchesKind = selectedFilter.kind.map { transaction.kind == $0 } ?? true
+            guard matchesKind else { return false }
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return true }
+            let accountNames = (transaction.outflows + transaction.inflows)
+                .compactMap { store.account(with: $0.accountID)?.name }
+                .joined(separator: " ")
+            let searchable = [
+                transaction.note,
+                store.categoryPath(for: transaction.categoryID),
+                accountNames,
+                transaction.kind.displayName
+            ].joined(separator: " ")
+            return searchable.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -659,6 +719,10 @@ private struct TransactionsView: View {
 private struct TransactionRow: View {
     let transaction: LedgerTransaction
     @ObservedObject var store: LedgerStore
+    let onEdit: () -> Void
+    let onDuplicate: () -> Void
+    let onDelete: () -> Void
+    let allowsActions: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -710,6 +774,14 @@ private struct TransactionRow: View {
                 .lineLimit(2)
         }
         .padding(.vertical, 11)
+        .contentShape(Rectangle())
+        .contextMenu {
+            if allowsActions {
+                Button("Edit", systemImage: "pencil", action: onEdit)
+                Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
+                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+            }
+        }
     }
 
     private var rowSubtitle: String {
@@ -1250,6 +1322,7 @@ struct TransactionEditor: View {
     private let editingScheduleLastRunDate: Date?
     private let editingScheduleNextRunDate: Date?
     private let editingScheduleFrequency: ScheduleFrequency?
+    private let editingTransactionID: UUID?
 
     init(
         store: LedgerStore,
@@ -1259,10 +1332,13 @@ struct TransactionEditor: View {
         initialNote: String? = nil,
         initialTiming: TransactionTiming = .now,
         initialFrequency: ScheduleFrequency = .once,
-        scheduledTransaction: ScheduledTransaction? = nil
+        scheduledTransaction: ScheduledTransaction? = nil,
+        transaction: LedgerTransaction? = nil
     ) {
         _store = ObservedObject(wrappedValue: store)
-        let preferredCurrency = scheduledTransaction?.outflows.first?.money.currency
+        let preferredCurrency = transaction?.outflows.first?.money.currency
+            ?? transaction?.inflows.first?.money.currency
+            ?? scheduledTransaction?.outflows.first?.money.currency
             ?? scheduledTransaction?.inflows.first?.money.currency
             ?? initialAmount?.currency
             ?? scheduledTransaction?.amountDue?.currency
@@ -1272,29 +1348,32 @@ struct TransactionEditor: View {
             return account.currency == preferredCurrency
         } ?? store.data.accounts.first
         let firstAccountID = firstAccount?.id ?? UUID()
-        let amountDue = scheduledTransaction?.amountDue ?? initialBillTotal
+        let amountDue = transaction?.amountDue ?? scheduledTransaction?.amountDue ?? initialBillTotal
         let initialCurrencies = LedgerCurrency.allCases.filter { currency in
-            (scheduledTransaction?.outflows ?? []).contains { $0.money.currency == currency }
-                || (scheduledTransaction?.inflows ?? []).contains { $0.money.currency == currency }
+            (transaction?.outflows ?? scheduledTransaction?.outflows ?? []).contains { $0.money.currency == currency }
+                || (transaction?.inflows ?? scheduledTransaction?.inflows ?? []).contains { $0.money.currency == currency }
         }
-        let initialRateBase = scheduledTransaction?.exchangeRate?.baseCurrency
+        let initialRateBase = transaction?.exchangeRate?.baseCurrency
+            ?? scheduledTransaction?.exchangeRate?.baseCurrency
             ?? initialCurrencies.first
             ?? .usd
-        let initialRateQuote = scheduledTransaction?.exchangeRate?.quoteCurrency
+        let initialRateQuote = transaction?.exchangeRate?.quoteCurrency
+            ?? scheduledTransaction?.exchangeRate?.quoteCurrency
             ?? initialCurrencies.first(where: { $0 != initialRateBase })
             ?? (initialRateBase == .usd ? .lbp : .usd)
-        let initialSavedRate = scheduledTransaction?.exchangeRate
+        let initialSavedRate = transaction?.exchangeRate
+            ?? scheduledTransaction?.exchangeRate
             ?? store.exchangeRate(base: initialRateBase, quote: initialRateQuote)
-        _note = State(initialValue: scheduledTransaction?.note ?? initialNote ?? "")
-        _date = State(initialValue: scheduledTransaction?.nextRunDate ?? .now)
-        _kind = State(initialValue: scheduledTransaction?.kind ?? initialKind)
-        _timing = State(initialValue: scheduledTransaction == nil ? initialTiming : .scheduled)
+        _note = State(initialValue: transaction?.note ?? scheduledTransaction?.note ?? initialNote ?? "")
+        _date = State(initialValue: transaction?.date ?? scheduledTransaction?.nextRunDate ?? .now)
+        _kind = State(initialValue: transaction?.kind ?? scheduledTransaction?.kind ?? initialKind)
+        _timing = State(initialValue: transaction == nil && scheduledTransaction == nil ? initialTiming : transaction == nil ? .scheduled : .now)
         _scheduleFrequency = State(initialValue: scheduledTransaction?.frequency ?? initialFrequency)
         _scheduleEnabled = State(initialValue: scheduledTransaction?.isEnabled ?? true)
         _dueCurrency = State(initialValue: amountDue?.currency ?? preferredCurrency ?? .usd)
         _amountDue = State(initialValue: amountDue.map { Self.inputText(for: $0) } ?? "")
         _outflows = State(
-            initialValue: scheduledTransaction?.outflows.map {
+            initialValue: (transaction?.outflows ?? scheduledTransaction?.outflows)?.map {
                 MovementDraft(accountID: $0.accountID, amount: Self.inputText(for: $0.money))
             } ?? [
                 MovementDraft(
@@ -1304,12 +1383,12 @@ struct TransactionEditor: View {
             ]
         )
         _inflows = State(
-            initialValue: scheduledTransaction?.inflows.map {
+            initialValue: (transaction?.inflows ?? scheduledTransaction?.inflows ?? []).map {
                 MovementDraft(accountID: $0.accountID, amount: Self.inputText(for: $0.money))
             } ?? []
         )
         _requestedChange = State(
-            initialValue: scheduledTransaction?.changeAdjustment.map { Self.inputText(for: $0.requested) } ?? ""
+            initialValue: (transaction?.changeAdjustment ?? scheduledTransaction?.changeAdjustment).map { Self.inputText(for: $0.requested) } ?? ""
         )
         _rateBase = State(initialValue: initialRateBase)
         _rateQuote = State(initialValue: initialRateQuote)
@@ -1319,7 +1398,8 @@ struct TransactionEditor: View {
             } ?? "100000"
         )
         _categoryID = State(
-            initialValue: scheduledTransaction?.categoryID
+            initialValue: transaction?.categoryID
+                ?? scheduledTransaction?.categoryID
                 ?? store.data.categories.first(where: { $0.parentID != nil })?.id
                 ?? store.data.categories.first?.id
         )
@@ -1327,6 +1407,7 @@ struct TransactionEditor: View {
         editingScheduleLastRunDate = scheduledTransaction?.lastRunDate
         editingScheduleNextRunDate = scheduledTransaction?.nextRunDate
         editingScheduleFrequency = scheduledTransaction?.frequency
+        editingTransactionID = transaction?.id
     }
 
     var body: some View {
@@ -1550,6 +1631,9 @@ struct TransactionEditor: View {
         if isEditingScheduledTransaction {
             return "Edit schedule"
         }
+        if editingTransactionID != nil {
+            return "Edit transaction"
+        }
         return timing == .scheduled ? "Schedule transaction" : "New transaction"
     }
 
@@ -1557,7 +1641,7 @@ struct TransactionEditor: View {
         if timing == .scheduled {
             return isEditingScheduledTransaction ? "Update" : "Schedule"
         }
-        return "Save"
+        return editingTransactionID == nil ? "Save" : "Update"
     }
 
     private var newMovementDraft: MovementDraft {
@@ -1718,6 +1802,7 @@ struct TransactionEditor: View {
 
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let transaction = LedgerTransaction(
+            id: editingTransactionID ?? UUID(),
             date: date,
             note: trimmedNote.isEmpty ? kind.displayName : trimmedNote,
             kind: kind,
@@ -1760,7 +1845,11 @@ struct TransactionEditor: View {
                 store.addScheduledTransaction(scheduledTransaction)
             }
         } else {
-            store.addTransaction(transaction)
+            if editingTransactionID == nil {
+                store.addTransaction(transaction)
+            } else {
+                guard store.updateTransaction(transaction) else { return }
+            }
         }
         dismiss()
     }
