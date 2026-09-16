@@ -60,7 +60,9 @@ struct MetricsView: View {
 
     private var filteredTransactions: [LedgerTransaction] {
         store.recentTransactions.filter { transaction in
-            interval.contains(transaction.date) && matchesCategory(transaction)
+            interval.contains(transaction.date)
+                && matchesCategory(transaction)
+                && transactionHasIncludedAccount(transaction)
         }
     }
 
@@ -82,7 +84,9 @@ struct MetricsView: View {
         for transaction in filteredTransactions where transaction.kind == .expense {
             let categoryID = transaction.categoryID
             let categoryName = store.categoryPath(for: categoryID)
-            let movements = transaction.outflows.filter { $0.money.currency == selectedCurrency }
+            let movements = transaction.outflows.filter {
+                $0.money.currency == selectedCurrency && store.includesInTotals(accountID: $0.accountID)
+            }
             guard !movements.isEmpty else { continue }
 
             let key = "\(categoryID?.uuidString ?? "uncategorized")-\(selectedCurrency.rawValue)"
@@ -434,6 +438,7 @@ struct MetricsView: View {
         var totals: [LedgerCurrency: Int64] = [:]
         for transaction in filteredTransactions where transaction.kind == kind {
             for movement in transaction[keyPath: movements] {
+                guard store.includesInTotals(accountID: movement.accountID) else { continue }
                 totals[movement.money.currency, default: 0] += movement.money.minorUnits
             }
         }
@@ -454,6 +459,23 @@ struct MetricsView: View {
         }
 
         return false
+    }
+
+    private func transactionHasIncludedAccount(_ transaction: LedgerTransaction) -> Bool {
+        switch transaction.kind {
+        case .expense:
+            return transaction.outflows.contains {
+                store.includesInTotals(accountID: $0.accountID)
+            }
+        case .income:
+            return transaction.inflows.contains {
+                store.includesInTotals(accountID: $0.accountID)
+            }
+        case .transfer:
+            return (transaction.outflows + transaction.inflows).contains {
+                store.includesInTotals(accountID: $0.accountID)
+            }
+        }
     }
 
     private func movePeriod(by value: Int) {
@@ -521,7 +543,10 @@ private struct CategoryMetricsDetailView: View {
 
             let amount = expenseTransactions(in: interval).reduce(Int64.zero) { total, transaction in
                 total + transaction.outflows
-                    .filter { $0.money.currency == currency }
+                    .filter {
+                        $0.money.currency == currency
+                            && store.includesInTotals(accountID: $0.accountID)
+                    }
                     .reduce(Int64.zero) { $0 + $1.money.minorUnits }
             }
             return CategoryMonthPoint(date: date, amount: amount)
@@ -536,7 +561,10 @@ private struct CategoryMetricsDetailView: View {
     private var selectedMonthTotal: Int64 {
         selectedMonthTransactions.reduce(Int64.zero) { total, transaction in
             total + transaction.outflows
-                .filter { $0.money.currency == currency }
+                .filter {
+                    $0.money.currency == currency
+                        && store.includesInTotals(accountID: $0.accountID)
+                }
                 .reduce(Int64.zero) { $0 + $1.money.minorUnits }
         }
     }
@@ -727,7 +755,10 @@ private struct CategoryMetricsDetailView: View {
             interval.contains(transaction.date)
                 && transaction.kind == .expense
                 && matchesCategory(transaction)
-                && transaction.outflows.contains { $0.money.currency == currency }
+                && transaction.outflows.contains {
+                    $0.money.currency == currency
+                        && store.includesInTotals(accountID: $0.accountID)
+                }
         }
     }
 
@@ -737,12 +768,16 @@ private struct CategoryMetricsDetailView: View {
 
     private func transactionAmount(_ transaction: LedgerTransaction) -> Int64 {
         transaction.outflows
-            .filter { $0.money.currency == currency }
+            .filter {
+                $0.money.currency == currency
+                    && store.includesInTotals(accountID: $0.accountID)
+            }
             .reduce(Int64.zero) { $0 + $1.money.minorUnits }
     }
 
     private func accountNames(for transaction: LedgerTransaction) -> String {
         let names = transaction.outflows.compactMap { movement in
+            guard store.includesInTotals(accountID: movement.accountID) else { return nil }
             store.data.accounts.first(where: { $0.id == movement.accountID })?.name
         }
         return names.isEmpty ? "Expense" : names.joined(separator: ", ")

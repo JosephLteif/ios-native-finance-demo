@@ -42,47 +42,36 @@ struct ContentView: View {
     }
 
     private var unlockedContent: some View {
-        TabView(selection: $selectedTab) {
-            DashboardView(store: store)
-                .tabItem {
-                    Label("Overview", systemImage: "chart.bar.xaxis")
+        selectedContent
+            .tint(PocketLedgerTheme.accent)
+            .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                PocketTabBar(selectedTab: $selectedTab) {
+                    isPresentingTransaction = true
                 }
-                .tag(AppTab.overview)
-
-            TransactionsView(store: store)
-                .tabItem {
-                    Label("Transactions", systemImage: "list.bullet.rectangle")
-                }
-                .tag(AppTab.transactions)
-
-            MetricsView(store: store)
-                .tabItem {
-                    Label("Metrics", systemImage: "chart.xyaxis.line")
-                }
-                .tag(AppTab.metrics)
-
-            MoreView(store: store, security: security)
-                .tabItem {
-                    Label("More", systemImage: "ellipsis.circle")
-                }
-                .tag(AppTab.more)
-        }
-        .tint(PocketLedgerTheme.accent)
-        .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            PocketTabBar(selectedTab: $selectedTab) {
-                isPresentingTransaction = true
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-        }
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
         )
         .sheet(isPresented: $isPresentingTransaction) {
             TransactionEditor(store: store)
+        }
+    }
+
+    @ViewBuilder
+    private var selectedContent: some View {
+        switch selectedTab {
+        case .overview:
+            DashboardView(store: store)
+        case .transactions:
+            TransactionsView(store: store)
+        case .metrics:
+            MetricsView(store: store)
+        case .more:
+            MoreView(store: store, security: security)
         }
     }
 
@@ -215,6 +204,8 @@ private struct MoreView: View {
 @MainActor
 private struct DashboardView: View {
     @ObservedObject var store: LedgerStore
+    @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
+    @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
     var body: some View {
         NavigationStack {
@@ -238,6 +229,10 @@ private struct DashboardView: View {
                 .padding(.bottom, 24)
             }
             .pocketScreen()
+            .accessibilityIdentifier("dashboard-\(selectedColorTheme)")
+            .preferredColorScheme(
+                PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
+            )
             .toolbar(.hidden, for: .navigationBar)
         }
     }
@@ -855,7 +850,12 @@ private struct AccountsView: View {
 
                 Spacer()
 
-                Text(Money(currency: currency, minorUnits: accounts.reduce(Int64.zero) { $0 + store.balance(for: $1).minorUnits }).formatted)
+                Text(Money(
+                    currency: currency,
+                    minorUnits: accounts
+                        .filter(\.includeInTotals)
+                        .reduce(Int64.zero) { $0 + store.balance(for: $1).minorUnits }
+                ).formatted)
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
@@ -890,7 +890,9 @@ private struct AccountRow: View {
         HStack(spacing: 12) {
             PocketIcon(
                 systemImage: account.type.systemImage,
-                tint: account.type == .loan ? PocketLedgerTheme.warning : PocketLedgerTheme.income,
+                tint: account.type == .loan || !account.includeInTotals
+                    ? PocketLedgerTheme.warning
+                    : PocketLedgerTheme.income,
                 size: 36
             )
 
@@ -900,13 +902,20 @@ private struct AccountRow: View {
                 Text(account.type.displayName)
                     .font(.caption)
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
+                if !account.includeInTotals {
+                    Text("Excluded from totals")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(PocketLedgerTheme.warning)
+                }
             }
 
             Spacer()
 
             Text(balance.formatted)
                 .font(.subheadline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(account.type == .loan ? PocketLedgerTheme.warning : PocketLedgerTheme.textPrimary)
+                .foregroundStyle(account.type == .loan || !account.includeInTotals
+                    ? PocketLedgerTheme.warning
+                    : PocketLedgerTheme.textPrimary)
         }
         .padding(.vertical, 11)
     }
@@ -1039,6 +1048,7 @@ private struct AccountEditor: View {
     @State private var type: AccountType = .cash
     @State private var currency: LedgerCurrency = .usd
     @State private var openingBalance = "0"
+    @State private var includeInTotals = true
     @State private var errorMessage: String?
 
     var body: some View {
@@ -1057,6 +1067,10 @@ private struct AccountEditor: View {
                             Text(currency.rawValue).tag(currency)
                         }
                     }
+                    Toggle("Include in totals and metrics", isOn: $includeInTotals)
+                    Text("Turn this off for assets or investments you want to track separately.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Opening balance") {
@@ -1112,7 +1126,8 @@ private struct AccountEditor: View {
                 name: trimmedName,
                 type: type,
                 currency: currency,
-                openingBalance: balance
+                openingBalance: balance,
+                includeInTotals: includeInTotals
             )
         )
         dismiss()

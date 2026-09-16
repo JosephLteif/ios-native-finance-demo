@@ -64,6 +64,7 @@ struct AccountDetailView: View {
         return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
                 balanceCard(account)
+                totalsScopeCard(account)
 
                 HStack(spacing: 10) {
                     accountMetric(
@@ -133,6 +134,27 @@ struct AccountDetailView: View {
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 24)
+        }
+    }
+
+    private func totalsScopeCard(_ account: Account) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Include in totals and metrics", isOn: Binding(
+                get: { account.includeInTotals },
+                set: { store.setAccountIncludedInTotals(accountID: account.id, included: $0) }
+            ))
+            Text(account.includeInTotals
+                 ? "This account contributes to balances and spending metrics."
+                 : "This account stays visible here but is excluded from balances and spending metrics.")
+                .font(.footnote)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+        }
+        .tint(PocketLedgerTheme.accent)
+        .padding(16)
+        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
         }
     }
 

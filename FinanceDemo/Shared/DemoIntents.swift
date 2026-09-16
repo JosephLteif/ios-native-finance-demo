@@ -10,7 +10,7 @@ struct AddDemoExpenseIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")
         let value = storage.load()
-        guard let account = value.accounts.first(where: { $0.currency == .usd && $0.type != .loan }),
+        guard let account = value.accounts.first(where: { $0.currency == .usd && $0.type != .loan && $0.includeInTotals }),
               let category = value.categories.first(where: { $0.parentID != nil }) else {
             return .result(
                 value: "Ledger is not initialized",
@@ -57,7 +57,7 @@ struct AddDemoIncomeIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")
         let value = storage.load()
-        guard let account = value.accounts.first(where: { $0.currency == .usd && $0.type != .loan }) else {
+        guard let account = value.accounts.first(where: { $0.currency == .usd && $0.type != .loan && $0.includeInTotals }) else {
             return .result(
                 value: "Ledger is not initialized",
                 dialog: "Pocket Ledger could not find a USD account."

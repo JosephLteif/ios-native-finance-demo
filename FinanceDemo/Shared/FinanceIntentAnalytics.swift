@@ -411,7 +411,8 @@ private func financeSpendingSummary(
         }
 
         return transaction.outflows.contains { movement in
-            accountID == nil || movement.accountID == accountID
+            (accountID != nil && movement.accountID == accountID)
+                || (accountID == nil && data.accounts.first(where: { $0.id == movement.accountID })?.includeInTotals != false)
         }
     }
 
@@ -421,7 +422,8 @@ private func financeSpendingSummary(
 
     for transaction in matchingTransactions {
         let outflows = transaction.outflows.filter { movement in
-            accountID == nil || movement.accountID == accountID
+            (accountID != nil && movement.accountID == accountID)
+                || (accountID == nil && data.accounts.first(where: { $0.id == movement.accountID })?.includeInTotals != false)
         }
         guard !outflows.isEmpty else { continue }
 

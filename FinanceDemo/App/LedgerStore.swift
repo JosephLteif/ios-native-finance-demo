@@ -41,13 +41,15 @@ final class LedgerStore: ObservableObject {
 
     var monthTransactionCount: Int {
         data.transactions.filter { transaction in
-            transaction.date >= monthStart
+            transaction.date >= monthStart && transactionHasIncludedAccount(transaction)
         }.count
     }
 
     var topCategoryThisMonth: String? {
         var counts: [UUID: Int] = [:]
-        for transaction in data.transactions where transaction.kind == .expense && transaction.date >= monthStart {
+        for transaction in data.transactions where transaction.kind == .expense
+            && transaction.date >= monthStart
+            && transaction.outflows.contains(where: { includesInTotals(accountID: $0.accountID) }) {
             guard let categoryID = transaction.categoryID else { continue }
             counts[categoryID, default: 0] += 1
         }
@@ -182,6 +184,21 @@ final class LedgerStore: ObservableObject {
         persist(updated, successMessage: "Account added")
     }
 
+    @discardableResult
+    func setAccountIncludedInTotals(accountID: UUID, included: Bool) -> Bool {
+        guard let accountIndex = data.accounts.firstIndex(where: { $0.id == accountID }) else {
+            lastActionStatus = "Account not found"
+            return false
+        }
+
+        var updated = data
+        updated.accounts[accountIndex].includeInTotals = included
+        return persist(
+            updated,
+            successMessage: included ? "Account included in totals" : "Account excluded from totals"
+        )
+    }
+
     func addCategory(_ category: LedgerCategory) {
         var updated = data
         updated.categories.append(category)
@@ -285,6 +302,16 @@ final class LedgerStore: ObservableObject {
         data.accounts.first { $0.id == id }
     }
 
+    func includesInTotals(accountID: UUID) -> Bool {
+        account(with: accountID)?.includeInTotals ?? true
+    }
+
+    func transactionHasIncludedAccount(_ transaction: LedgerTransaction) -> Bool {
+        (transaction.outflows + transaction.inflows).contains {
+            includesInTotals(accountID: $0.accountID)
+        }
+    }
+
     func balance(for account: Account) -> Money {
         var balance = account.openingBalance.minorUnits
 
@@ -361,14 +388,14 @@ final class LedgerStore: ObservableObject {
 
     func availableBalance(for currency: LedgerCurrency) -> Money {
         let totalMinorUnits = data.accounts
-            .filter { $0.currency == currency && $0.type != .loan }
+            .filter { $0.currency == currency && $0.type != .loan && $0.includeInTotals }
             .reduce(Int64.zero) { $0 + balance(for: $1).minorUnits }
         return Money(currency: currency, minorUnits: totalMinorUnits)
     }
 
     func loanBalance(for currency: LedgerCurrency) -> Money {
         let totalMinorUnits = data.accounts
-            .filter { $0.currency == currency && $0.type == .loan }
+            .filter { $0.currency == currency && $0.type == .loan && $0.includeInTotals }
             .reduce(Int64.zero) { $0 + balance(for: $1).minorUnits }
         return Money(currency: currency, minorUnits: totalMinorUnits)
     }
@@ -377,7 +404,7 @@ final class LedgerStore: ObservableObject {
         var totals: [LedgerCurrency: Int64] = [:]
 
         for transaction in data.transactions where transaction.kind == .expense && transaction.date >= monthStart {
-            for movement in transaction.outflows {
+            for movement in transaction.outflows where includesInTotals(accountID: movement.accountID) {
                 totals[movement.money.currency, default: 0] += movement.money.minorUnits
             }
         }
