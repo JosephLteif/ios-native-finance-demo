@@ -157,5 +157,6 @@ struct BalanceWidget: Widget {
 struct BalanceWidgetBundle: WidgetBundle {
     var body: some Widget {
         BalanceWidget()
+        AddExpenseControl()
     }
 }

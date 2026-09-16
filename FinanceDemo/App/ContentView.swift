@@ -206,6 +206,7 @@ private struct DashboardView: View {
                     dashboardHeader
                     balanceHero
                     monthSnapshot
+                    budgetSnapshot
                     recentActivity
                     storageNotice
 
@@ -414,6 +415,52 @@ private struct DashboardView: View {
                     RoundedRectangle(cornerRadius: 18)
                         .stroke(PocketLedgerTheme.divider, lineWidth: 1)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var budgetSnapshot: some View {
+        if !store.data.budgets.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    sectionHeader(title: "Budget pulse", detail: "This month")
+                    NavigationLink {
+                        BudgetsView(store: store)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    }
+                    .accessibilityLabel("Open budgets")
+                }
+
+                VStack(spacing: 12) {
+                    ForEach(Array(store.data.budgets.prefix(3))) { budget in
+                        let spent = store.budgetSpent(budget)
+                        let over = spent.minorUnits > budget.monthlyLimit.minorUnits
+                        let ratio = min(
+                            Double(spent.minorUnits) / Double(max(budget.monthlyLimit.minorUnits, 1)),
+                            1
+                        )
+
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack {
+                                Text(store.categoryPath(for: budget.categoryID))
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("\(spent.formatted) / \(budget.monthlyLimit.formatted)")
+                                    .font(.caption.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.textSecondary)
+                            }
+                            ProgressView(value: ratio)
+                                .tint(over ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
+                        }
+                    }
+                }
+                .padding(14)
+                .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 17))
             }
         }
     }

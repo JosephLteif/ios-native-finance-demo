@@ -28,7 +28,10 @@ The main app now contains the first local finance workflow for the Lebanese mark
 - Change can be returned to a different account and currency. Requested change and actual change are both retained, so denomination shortfalls such as 460,000 LBP requested and 450,000 LBP returned remain visible.
 - Starter data includes cash, bank-account, and loan account types plus parent categories and subcategories. Accounts and categories can be added from the app.
 - The Overview tab reports available balances by currency, monthly expenses by currency, transaction count, and the most-used category.
+- Transactions can be searched, edited, duplicated, and deleted from the history surface.
+- Category budgets can be created, edited, and reviewed from both Overview and More, with monthly progress and over-budget states.
 - The widget and Shortcuts read and mutate the same shared finance ledger as the main app.
+- A native Control Center/Lock Screen control records the existing quick USD expense action after device authentication.
 
 The current slice is local-only and intentionally keeps currency totals separate. It records the exchange rate for each mixed-currency transaction but does not yet convert all historical balances into one net-worth number.
 

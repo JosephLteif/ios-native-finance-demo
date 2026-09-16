@@ -60,10 +60,11 @@ final class LedgerStore: ObservableObject {
         return categoryPath(for: categoryID)
     }
 
-    func addTransaction(_ transaction: LedgerTransaction) {
+    @discardableResult
+    func addTransaction(_ transaction: LedgerTransaction) -> Bool {
         var updated = data
         updated.transactions.append(transaction)
-        persist(updated, successMessage: "Transaction saved")
+        return persist(updated, successMessage: "Transaction saved")
     }
 
     @discardableResult
@@ -107,8 +108,7 @@ final class LedgerStore: ObservableObject {
             exchangeRate: transaction.exchangeRate,
             changeAdjustment: transaction.changeAdjustment
         )
-        addTransaction(duplicate)
-        return storage.isPersistent
+        return addTransaction(duplicate)
     }
 
     @discardableResult

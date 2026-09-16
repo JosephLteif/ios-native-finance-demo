@@ -6,6 +6,7 @@ struct AddDemoExpenseIntent: AppIntent {
     static let title: LocalizedStringResource = "Add Pocket Ledger Expense"
     static let description = IntentDescription("Adds a five dollar expense to the USD cash ledger.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")
