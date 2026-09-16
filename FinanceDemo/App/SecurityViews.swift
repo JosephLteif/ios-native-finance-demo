@@ -35,8 +35,7 @@ struct SecuritySettingsView: View {
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
     var body: some View {
-        NavigationStack {
-            Form {
+        Form {
                 Section("Appearance") {
                     Picker("Mode", selection: $selectedAppearanceMode) {
                         ForEach(PocketLedgerAppearanceMode.allCases) { mode in
@@ -178,7 +177,6 @@ struct SecuritySettingsView: View {
             } message: {
                 Text(errorMessage ?? "")
             }
-        }
     }
 
     private var biometricsBinding: Binding<Bool> {

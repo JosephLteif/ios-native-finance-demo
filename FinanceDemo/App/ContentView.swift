@@ -68,27 +68,90 @@ struct ContentView: View {
                 .tag(AppTab.more)
         }
         .tint(PocketLedgerTheme.accent)
-        .id("\(selectedColorTheme)-\(selectedAppearanceMode)")
-        .overlay(alignment: .bottomTrailing) {
-            Button {
+        .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
+        .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            PocketTabBar(selectedTab: $selectedTab) {
                 isPresentingTransaction = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 20, weight: .bold))
-                    .frame(width: 54, height: 54)
             }
-            .foregroundStyle(PocketLedgerTheme.accent)
-            .glassEffect(.regular.interactive(), in: Circle())
-            .accessibilityLabel("Add transaction")
-            .padding(.trailing, 18)
-            .padding(.bottom, 76)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
         }
-        .preferredColorScheme(PocketLedgerTheme.appearanceMode.preferredColorScheme)
+        .preferredColorScheme(
+            PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
+        )
         .sheet(isPresented: $isPresentingTransaction) {
             TransactionEditor(store: store)
         }
     }
 
+}
+
+private struct PocketTabBar: View {
+    @Binding var selectedTab: AppTab
+    let onAdd: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 2) {
+                tabButton(.overview, title: "Overview", systemImage: "chart.bar.xaxis")
+                tabButton(.transactions, title: "Transactions", systemImage: "list.bullet.rectangle")
+                tabButton(.metrics, title: "Metrics", systemImage: "chart.xyaxis.line")
+                tabButton(.more, title: "More", systemImage: "ellipsis.circle")
+            }
+            .padding(5)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+            }
+            .glassEffect(.regular, in: Capsule())
+
+            Button(action: onAdd) {
+                Image(systemName: "plus")
+                    .font(.system(size: 22, weight: .medium))
+                    .frame(width: 54, height: 54)
+            }
+            .foregroundStyle(PocketLedgerTheme.textPrimary)
+            .background(.ultraThinMaterial, in: Circle())
+            .overlay {
+                Circle()
+                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+            }
+            .glassEffect(.regular.interactive(), in: Circle())
+            .accessibilityLabel("Add transaction")
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func tabButton(_ tab: AppTab, title: String, systemImage: String) -> some View {
+        let isSelected = selectedTab == tab
+
+        return Button {
+            selectedTab = tab
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .foregroundStyle(isSelected ? PocketLedgerTheme.accent : PocketLedgerTheme.textPrimary)
+            .background {
+                if isSelected {
+                    Capsule()
+                        .fill(PocketLedgerTheme.accent.opacity(0.16))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
 }
 
 private enum AppTab: Hashable {
@@ -123,6 +186,12 @@ private struct MoreView: View {
                         CategoriesView(store: store)
                     } label: {
                         Label("Categories", systemImage: "square.grid.2x2")
+                    }
+
+                    NavigationLink {
+                        ExchangeRatesView(store: store)
+                    } label: {
+                        Label("Exchange rates", systemImage: "arrow.left.arrow.right")
                     }
 
                     NavigationLink {
@@ -202,14 +271,13 @@ private struct DashboardView: View {
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
 
-            HStack(spacing: 16) {
-                balanceColumn(for: .usd)
-
-                Rectangle()
-                    .fill(PocketLedgerTheme.divider)
-                    .frame(width: 1, height: 54)
-
-                balanceColumn(for: .lbp)
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: LedgerCurrency.allCases.count),
+                spacing: 12
+            ) {
+                ForEach(LedgerCurrency.allCases) { currency in
+                    balanceColumn(for: currency)
+                }
             }
 
             Text("Loans are tracked separately in Accounts.")
@@ -269,9 +337,13 @@ private struct DashboardView: View {
             }
 
             VStack(spacing: 0) {
-                monthExpenseRow(currency: .usd, total: expenses[.usd] ?? 0)
-                Divider().overlay(PocketLedgerTheme.divider)
-                monthExpenseRow(currency: .lbp, total: expenses[.lbp] ?? 0)
+                ForEach(LedgerCurrency.allCases.indices, id: \.self) { index in
+                    if index > 0 {
+                        Divider().overlay(PocketLedgerTheme.divider)
+                    }
+                    let currency = LedgerCurrency.allCases[index]
+                    monthExpenseRow(currency: currency, total: expenses[currency] ?? 0)
+                }
             }
             .padding(14)
             .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 17))
@@ -545,15 +617,16 @@ private struct TransactionsView: View {
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
 
-            HStack(spacing: 10) {
-                transactionSummaryMetric(
-                    title: "USD spent",
-                    value: Money(currency: .usd, minorUnits: expenses[.usd] ?? 0).formatted
-                )
-                transactionSummaryMetric(
-                    title: "LBP spent",
-                    value: Money(currency: .lbp, minorUnits: expenses[.lbp] ?? 0).formatted
-                )
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: LedgerCurrency.allCases.count),
+                spacing: 10
+            ) {
+                ForEach(LedgerCurrency.allCases) { currency in
+                    transactionSummaryMetric(
+                        title: "\(currency.rawValue) spent",
+                        value: Money(currency: currency, minorUnits: expenses[currency] ?? 0).formatted
+                    )
+                }
             }
         }
         .pocketCard()
@@ -1198,6 +1271,18 @@ struct TransactionEditor: View {
         } ?? store.data.accounts.first
         let firstAccountID = firstAccount?.id ?? UUID()
         let amountDue = scheduledTransaction?.amountDue ?? initialBillTotal
+        let initialCurrencies = LedgerCurrency.allCases.filter { currency in
+            (scheduledTransaction?.outflows ?? []).contains { $0.money.currency == currency }
+                || (scheduledTransaction?.inflows ?? []).contains { $0.money.currency == currency }
+        }
+        let initialRateBase = scheduledTransaction?.exchangeRate?.baseCurrency
+            ?? initialCurrencies.first
+            ?? .usd
+        let initialRateQuote = scheduledTransaction?.exchangeRate?.quoteCurrency
+            ?? initialCurrencies.first(where: { $0 != initialRateBase })
+            ?? (initialRateBase == .usd ? .lbp : .usd)
+        let initialSavedRate = scheduledTransaction?.exchangeRate
+            ?? store.exchangeRate(base: initialRateBase, quote: initialRateQuote)
         _note = State(initialValue: scheduledTransaction?.note ?? initialNote ?? "")
         _date = State(initialValue: scheduledTransaction?.nextRunDate ?? .now)
         _kind = State(initialValue: scheduledTransaction?.kind ?? .expense)
@@ -1224,10 +1309,10 @@ struct TransactionEditor: View {
         _requestedChange = State(
             initialValue: scheduledTransaction?.changeAdjustment.map { Self.inputText(for: $0.requested) } ?? ""
         )
-        _rateBase = State(initialValue: scheduledTransaction?.exchangeRate?.baseCurrency ?? .usd)
-        _rateQuote = State(initialValue: scheduledTransaction?.exchangeRate?.quoteCurrency ?? .lbp)
+        _rateBase = State(initialValue: initialRateBase)
+        _rateQuote = State(initialValue: initialRateQuote)
         _rateText = State(
-            initialValue: scheduledTransaction?.exchangeRate.map {
+            initialValue: initialSavedRate.map {
                 NSDecimalNumber(decimal: $0.quoteUnitsPerBaseUnit).stringValue
             } ?? "100000"
         )
@@ -1398,11 +1483,31 @@ struct TransactionEditor: View {
                             }
                             TextField("Quote units per base unit", text: $rateText)
                                 .keyboardType(.decimalPad)
-                            Text("Example: 1 USD = 100000 LBP.")
+
+                            if let savedRate {
+                                Button {
+                                    rateText = NSDecimalNumber(decimal: savedRate.quoteUnitsPerBaseUnit).stringValue
+                                } label: {
+                                    Label("Use saved rate: \(savedRate.summary)", systemImage: "arrow.clockwise")
+                                }
+                            }
+
+                            Text("Enter how many \(rateQuote.rawValue) equal 1 \(rateBase.rawValue).")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
                     }
+                }
+            }
+            .onChange(of: selectedCurrencies) { _, currencies in
+                guard currencies.count > 1,
+                      !currencies.contains(rateBase) || !currencies.contains(rateQuote) else {
+                    return
+                }
+                rateBase = currencies[0]
+                rateQuote = currencies[1]
+                if let savedRate {
+                    rateText = NSDecimalNumber(decimal: savedRate.quoteUnitsPerBaseUnit).stringValue
                 }
             }
             .scrollContentBackground(.hidden)
@@ -1468,6 +1573,10 @@ struct TransactionEditor: View {
         return LedgerCurrency.allCases.filter { currencies.contains($0) }
     }
 
+    private var savedRate: ExchangeRate? {
+        store.exchangeRate(base: rateBase, quote: rateQuote)
+    }
+
     private var parsedOutflows: [MoneyMovement]? {
         guard kind != .income else { return [] }
         return parseMovements(outflows)
@@ -1514,6 +1623,8 @@ struct TransactionEditor: View {
 
         if selectedCurrencies.count > 1 && useCustomRate {
             guard rateBase != rateQuote,
+                  selectedCurrencies.contains(rateBase),
+                  selectedCurrencies.contains(rateQuote),
                   let rate = Decimal(string: rateText.replacingOccurrences(of: ",", with: ""), locale: Locale(identifier: "en_US_POSIX")),
                   rate > 0 else {
                 return false
@@ -1569,6 +1680,8 @@ struct TransactionEditor: View {
         var exchangeRate: ExchangeRate?
         if selectedCurrencies.count > 1 && useCustomRate {
             guard rateBase != rateQuote,
+                  selectedCurrencies.contains(rateBase),
+                  selectedCurrencies.contains(rateQuote),
                   let rate = Decimal(string: rateText.replacingOccurrences(of: ",", with: ""), locale: Locale(identifier: "en_US_POSIX")),
                   rate > 0 else {
                 errorMessage = "Enter a positive custom exchange rate with different currencies."

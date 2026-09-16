@@ -189,6 +189,7 @@ enum FinanceIntentTransactionKind: String, AppEnum, CaseIterable, Hashable, Send
 enum FinanceIntentCurrency: String, AppEnum, CaseIterable, Hashable, Sendable {
     case usd = "USD"
     case lbp = "LBP"
+    case eur = "EUR"
 
     var ledgerCurrency: LedgerCurrency {
         switch self {
@@ -196,13 +197,16 @@ enum FinanceIntentCurrency: String, AppEnum, CaseIterable, Hashable, Sendable {
             return .usd
         case .lbp:
             return .lbp
+        case .eur:
+            return .eur
         }
     }
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Currency"
     static let caseDisplayRepresentations: [FinanceIntentCurrency: DisplayRepresentation] = [
         .usd: DisplayRepresentation(title: "USD", subtitle: "US Dollar"),
-        .lbp: DisplayRepresentation(title: "LBP", subtitle: "Lebanese Pound")
+        .lbp: DisplayRepresentation(title: "LBP", subtitle: "Lebanese Pound"),
+        .eur: DisplayRepresentation(title: "EUR", subtitle: "Euro")
     ]
 }
 

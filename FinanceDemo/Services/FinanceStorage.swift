@@ -137,17 +137,19 @@ final class FinanceStorage {
             return balance
         }
 
-        let usdBalance = value.accounts
-            .filter { $0.currency == .usd && $0.type != .loan }
-            .reduce(Int64.zero) { $0 + balance(for: $1) }
-        let lbpBalance = value.accounts
-            .filter { $0.currency == .lbp && $0.type != .loan }
-            .reduce(Int64.zero) { $0 + balance(for: $1) }
+        func availableBalance(for currency: LedgerCurrency) -> Money {
+            let minorUnits = value.accounts
+                .filter { $0.currency == currency && $0.type != .loan }
+                .reduce(Int64.zero) { $0 + balance(for: $1) }
+            return Money(currency: currency, minorUnits: minorUnits)
+        }
+
         let latest = value.transactions.max { $0.date < $1.date }
 
         return FinanceWidgetSnapshot(
-            usdAvailable: Money(currency: .usd, minorUnits: usdBalance),
-            lbpAvailable: Money(currency: .lbp, minorUnits: lbpBalance),
+            usdAvailable: availableBalance(for: .usd),
+            lbpAvailable: availableBalance(for: .lbp),
+            eurAvailable: availableBalance(for: .eur),
             latestTransactionDescription: latest?.note ?? "No transactions yet",
             lastUpdated: latest?.date ?? .now,
             appGroupAvailable: isAppGroupAvailable

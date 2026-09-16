@@ -20,6 +20,7 @@ struct BalanceTimelineProvider: TimelineProvider {
             snapshot: FinanceWidgetSnapshot(
                 usdAvailable: Money(currency: .usd, minorUnits: 0),
                 lbpAvailable: Money(currency: .lbp, minorUnits: 0),
+                eurAvailable: Money(currency: .eur, minorUnits: 0),
                 latestTransactionDescription: "No transactions yet",
                 lastUpdated: .now,
                 appGroupAvailable: true
@@ -65,6 +66,10 @@ struct BalanceWidgetEntryView: View {
                 balanceRow(
                     currency: "LBP",
                     amount: entry.snapshot.lbpAvailable.formatted
+                )
+                balanceRow(
+                    currency: "EUR",
+                    amount: entry.snapshot.eurAvailable.formatted
                 )
 
                 Text(entry.snapshot.latestTransactionDescription)
@@ -121,7 +126,7 @@ struct BalanceWidgetEntryView: View {
         HStack(alignment: .firstTextBaseline) {
             Text(currency)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(currency == "USD" ? PocketWidgetTheme.income : Color.white.opacity(0.62))
+            .foregroundStyle(currency == "USD" ? PocketWidgetTheme.income : Color.white.opacity(0.62))
             Spacer(minLength: 6)
             Text(amount)
                 .font(.system(
@@ -143,7 +148,7 @@ struct BalanceWidget: Widget {
             BalanceWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("Pocket Ledger Balances")
-        .description("Shows available USD and LBP balances and the latest transaction.")
+        .description("Shows available USD, LBP, and EUR balances and the latest transaction.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

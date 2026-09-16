@@ -188,6 +188,62 @@ final class LedgerStore: ObservableObject {
         persist(updated, successMessage: "Category added")
     }
 
+    func exchangeRate(base: LedgerCurrency, quote: LedgerCurrency) -> ExchangeRate? {
+        guard base != quote else { return nil }
+
+        if let exact = data.exchangeRates.first(where: {
+            $0.baseCurrency == base && $0.quoteCurrency == quote
+        }) {
+            return exact
+        }
+
+        guard let reverse = data.exchangeRates.first(where: {
+            $0.baseCurrency == quote && $0.quoteCurrency == base
+        }), reverse.quoteUnitsPerBaseUnit > 0 else {
+            return nil
+        }
+
+        return ExchangeRate(
+            baseCurrency: base,
+            quoteCurrency: quote,
+            quoteUnitsPerBaseUnit: Decimal(1) / reverse.quoteUnitsPerBaseUnit
+        )
+    }
+
+    @discardableResult
+    func upsertExchangeRate(_ exchangeRate: ExchangeRate) -> Bool {
+        guard exchangeRate.baseCurrency != exchangeRate.quoteCurrency,
+              exchangeRate.quoteUnitsPerBaseUnit > 0 else {
+            lastActionStatus = "Enter a positive rate between two different currencies"
+            return false
+        }
+
+        var updated = data
+        updated.exchangeRates.removeAll {
+            Set([
+                $0.baseCurrency,
+                $0.quoteCurrency
+            ]) == Set([
+                exchangeRate.baseCurrency,
+                exchangeRate.quoteCurrency
+            ])
+        }
+        updated.exchangeRates.append(exchangeRate)
+        return persist(updated, successMessage: "Exchange rate saved")
+    }
+
+    @discardableResult
+    func deleteExchangeRate(_ exchangeRate: ExchangeRate) -> Bool {
+        var updated = data
+        let originalCount = updated.exchangeRates.count
+        updated.exchangeRates.removeAll { $0.id == exchangeRate.id }
+        guard updated.exchangeRates.count != originalCount else {
+            lastActionStatus = "Exchange rate not found"
+            return false
+        }
+        return persist(updated, successMessage: "Exchange rate deleted")
+    }
+
     func resetLedger() {
         persist(.empty, successMessage: "Ledger reset")
     }
@@ -211,6 +267,12 @@ final class LedgerStore: ObservableObject {
         updated.scheduledTransactions.append(
             contentsOf: imported.scheduledTransactions.filter { !scheduledTransactionIDs.contains($0.id) }
         )
+        for rate in imported.exchangeRates {
+            updated.exchangeRates.removeAll {
+                Set([$0.baseCurrency, $0.quoteCurrency]) == Set([rate.baseCurrency, rate.quoteCurrency])
+            }
+            updated.exchangeRates.append(rate)
+        }
 
         return persist(updated, successMessage: "Import completed")
     }

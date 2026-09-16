@@ -3,6 +3,7 @@ import Foundation
 enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
     case usd = "USD"
     case lbp = "LBP"
+    case eur = "EUR"
 
     var id: String { rawValue }
 
@@ -12,6 +13,8 @@ enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable, Send
             return "US Dollar"
         case .lbp:
             return "Lebanese Pound"
+        case .eur:
+            return "Euro"
         }
     }
 
@@ -21,6 +24,8 @@ enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable, Send
             return 2
         case .lbp:
             return 0
+        case .eur:
+            return 2
         }
     }
 
@@ -30,6 +35,8 @@ enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable, Send
             return 100
         case .lbp:
             return 1
+        case .eur:
+            return 100
         }
     }
 
@@ -50,6 +57,8 @@ enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable, Send
             return "\(sign)$\(number)"
         case .lbp:
             return "\(sign)LBP \(number)"
+        case .eur:
+            return "\(sign)€\(number)"
         }
     }
 }
@@ -222,10 +231,14 @@ struct MoneyMovement: Identifiable, Codable, Equatable {
     }
 }
 
-struct ExchangeRate: Codable, Equatable {
+struct ExchangeRate: Codable, Equatable, Identifiable {
     var baseCurrency: LedgerCurrency
     var quoteCurrency: LedgerCurrency
     var quoteUnitsPerBaseUnit: Decimal
+
+    var id: String {
+        "\(baseCurrency.rawValue)-\(quoteCurrency.rawValue)"
+    }
 
     var summary: String {
         let number = NSDecimalNumber(decimal: quoteUnitsPerBaseUnit).stringValue
@@ -378,12 +391,15 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
 struct FinanceWidgetSnapshot: Equatable, Sendable {
     let usdAvailable: Money
     let lbpAvailable: Money
+    let eurAvailable: Money
     let latestTransactionDescription: String
     let lastUpdated: Date
     let appGroupAvailable: Bool
 
     var balanceSummary: String {
-        "\(usdAvailable.formatted) · \(lbpAvailable.formatted)"
+        [usdAvailable, lbpAvailable, eurAvailable]
+            .map(\.formatted)
+            .joined(separator: " · ")
     }
 }
 
@@ -392,17 +408,20 @@ struct FinanceData: Codable, Equatable {
     var categories: [LedgerCategory]
     var transactions: [LedgerTransaction]
     var scheduledTransactions: [ScheduledTransaction]
+    var exchangeRates: [ExchangeRate]
 
     init(
         accounts: [Account],
         categories: [LedgerCategory],
         transactions: [LedgerTransaction],
-        scheduledTransactions: [ScheduledTransaction] = []
+        scheduledTransactions: [ScheduledTransaction] = [],
+        exchangeRates: [ExchangeRate] = []
     ) {
         self.accounts = accounts
         self.categories = categories
         self.transactions = transactions
         self.scheduledTransactions = scheduledTransactions
+        self.exchangeRates = exchangeRates
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -410,6 +429,7 @@ struct FinanceData: Codable, Equatable {
         case categories
         case transactions
         case scheduledTransactions
+        case exchangeRates
     }
 
     init(from decoder: Decoder) throws {
@@ -421,6 +441,10 @@ struct FinanceData: Codable, Equatable {
             [ScheduledTransaction].self,
             forKey: .scheduledTransactions
         ) ?? []
+        exchangeRates = try container.decodeIfPresent(
+            [ExchangeRate].self,
+            forKey: .exchangeRates
+        ) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -429,6 +453,7 @@ struct FinanceData: Codable, Equatable {
         try container.encode(categories, forKey: .categories)
         try container.encode(transactions, forKey: .transactions)
         try container.encode(scheduledTransactions, forKey: .scheduledTransactions)
+        try container.encode(exchangeRates, forKey: .exchangeRates)
     }
 
     static var empty: FinanceData {

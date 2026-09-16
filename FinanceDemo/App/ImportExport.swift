@@ -163,7 +163,7 @@ enum ImportField: String, CaseIterable, Identifiable, Hashable {
         case .amount:
             return "The transaction amount"
         case .currency:
-            return "USD, LBP, or another currency label"
+            return "USD, LBP, EUR, or another currency label"
         case .account:
             return "The account money leaves or enters"
         case .destinationAccount:
@@ -631,6 +631,9 @@ enum FinanceImportParser {
         let value = accountName.lowercased()
         if value.contains("lbp") || value.contains("leban") || value.contains("ل.ل") {
             return .lbp
+        }
+        if value.contains("eur") || value.contains("euro") || value.contains("€") {
+            return .eur
         }
         if value.contains("usd") || value.contains("dollar") || value.contains("$") {
             return .usd
@@ -1468,6 +1471,7 @@ enum FinanceImportBuilder {
         let value = rawValue.lowercased()
         if value.contains("usd") || value.contains("dollar") || value.contains("$") { return .usd }
         if value.contains("lbp") || value.contains("leban") || value.contains("ل.ل") { return .lbp }
+        if value.contains("eur") || value.contains("euro") || value.contains("€") { return .eur }
         return defaultCurrency
     }
 

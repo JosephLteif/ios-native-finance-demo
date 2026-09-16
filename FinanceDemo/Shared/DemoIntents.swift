@@ -121,7 +121,7 @@ struct ResetDemoDataIntent: AppIntent {
 
 struct GetDemoBalanceIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Pocket Ledger Balance"
-    static let description = IntentDescription("Reads the current USD and LBP balances.")
+    static let description = IntentDescription("Reads the current Pocket Ledger balances by currency.")
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
@@ -408,7 +408,7 @@ struct AddLedgerTransactionIntent: AppIntent {
                 guard sourceAccount.currency == destination.currency else {
                     return .result(
                         value: "Destination amount required",
-                        dialog: "Enter a destination amount when transferring between USD and LBP."
+                        dialog: "Enter a destination amount when transferring between different currencies."
                     )
                 }
                 destinationMoney = Money(
@@ -464,7 +464,7 @@ struct AddLedgerTransactionIntent: AppIntent {
                   let rate = financePositiveDecimal(exchangeRate) else {
                 return .result(
                     value: "Invalid exchange rate",
-                    dialog: "Enter a positive exchange rate only when the transaction uses both USD and LBP."
+                    dialog: "Enter a positive exchange rate only when the transaction uses multiple currencies."
                 )
             }
 
@@ -477,7 +477,7 @@ struct AddLedgerTransactionIntent: AppIntent {
                   movementCurrencies.contains(quoteCurrency) else {
                 return .result(
                     value: "Invalid exchange-rate currencies",
-                    dialog: "Choose USD and LBP as the exchange-rate currencies for this mixed-currency transaction."
+                    dialog: "Choose two currencies used by this mixed-currency transaction."
                 )
             }
             parsedExchangeRate = ExchangeRate(

@@ -219,7 +219,7 @@ private enum BillScannerParser {
         let itemName = cleanedName(from: trimmedLine, removing: tokens)
         let uppercasedName = itemName.uppercased()
         guard itemName.count >= 2,
-              !["USD", "LBP", "LL"].contains(uppercasedName) else {
+              !["USD", "LBP", "EUR", "LL"].contains(uppercasedName) else {
             return nil
         }
 
@@ -345,7 +345,7 @@ private enum BillScannerParser {
             .trimmingCharacters(in: removableSuffixCharacters)
             .uppercased()
         if normalizedSuffix.isEmpty { return true }
-        return ["USD", "LBP", "LL", "دولار", "ل.ل"].contains(normalizedSuffix)
+        return ["USD", "LBP", "EUR", "LL", "دولار", "ل.ل"].contains(normalizedSuffix)
     }
 
     private static func isMetadataLine(_ line: String) -> Bool {
@@ -374,7 +374,7 @@ private enum BillScannerParser {
         let tokens = numberTokens(in: line)
         let digitCount = line.unicodeScalars.filter { CharacterSet.decimalDigits.contains($0) }.count
         let hasCurrencyMarker = lowercasedLine.range(
-            of: #"(?:\$|€|£|\b(?:usd|lbp|ll)\b|ل\.ل)"#,
+            of: #"(?:\$|€|£|\b(?:usd|lbp|eur|ll)\b|ل\.ل)"#,
             options: .regularExpression
         ) != nil
         if digitCount >= 7 && tokens.count >= 2 && !hasCurrencyMarker {
@@ -396,6 +396,11 @@ private enum BillScannerParser {
             || uppercasedText.contains("ل.ل")
             || hasStandaloneLL {
             return .lbp
+        }
+        if uppercasedText.contains("EUR")
+            || uppercasedText.contains("EURO")
+            || uppercasedText.contains("€") {
+            return .eur
         }
         return .usd
     }
