@@ -280,6 +280,25 @@ final class LedgerStore: ObservableObject {
         return persist(updated, successMessage: "Budget deleted")
     }
 
+    @discardableResult
+    func addTemplate(_ template: LedgerTemplate) -> Bool {
+        var updated = data
+        updated.templates.append(template)
+        return persist(updated, successMessage: "Template saved")
+    }
+
+    @discardableResult
+    func deleteTemplate(id: UUID) -> Bool {
+        var updated = data
+        let originalCount = updated.templates.count
+        updated.templates.removeAll { $0.id == id }
+        guard updated.templates.count != originalCount else {
+            lastActionStatus = "Template not found"
+            return false
+        }
+        return persist(updated, successMessage: "Template deleted")
+    }
+
     func budgetSpent(_ budget: LedgerBudget, in interval: DateInterval? = nil) -> Money {
         let month = interval ?? (Calendar.current.dateInterval(of: .month, for: .now) ?? DateInterval(start: .distantPast, duration: .zero))
         let spent = data.transactions
@@ -368,6 +387,7 @@ final class LedgerStore: ObservableObject {
         let transactionIDs = Set(updated.transactions.map(\.id))
         let scheduledTransactionIDs = Set(updated.scheduledTransactions.map(\.id))
         let budgetIDs = Set(updated.budgets.map(\.id))
+        let templateIDs = Set(updated.templates.map(\.id))
 
         updated.accounts.append(contentsOf: imported.accounts.filter { !accountIDs.contains($0.id) })
         updated.categories.append(contentsOf: imported.categories.filter { !categoryIDs.contains($0.id) })
@@ -376,6 +396,7 @@ final class LedgerStore: ObservableObject {
             contentsOf: imported.scheduledTransactions.filter { !scheduledTransactionIDs.contains($0.id) }
         )
         updated.budgets.append(contentsOf: imported.budgets.filter { !budgetIDs.contains($0.id) })
+        updated.templates.append(contentsOf: imported.templates.filter { !templateIDs.contains($0.id) })
         for rate in imported.exchangeRates {
             updated.exchangeRates.removeAll {
                 Set([$0.baseCurrency, $0.quoteCurrency]) == Set([rate.baseCurrency, rate.quoteCurrency])

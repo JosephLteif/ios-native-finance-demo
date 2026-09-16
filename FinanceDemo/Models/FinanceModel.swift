@@ -467,6 +467,70 @@ struct LedgerBudget: Identifiable, Codable, Equatable {
     }
 }
 
+struct LedgerTemplate: Identifiable, Codable, Equatable {
+    let id: UUID
+    var name: String
+    var note: String
+    var kind: TransactionKind
+    var categoryID: UUID?
+    var amountDue: Money?
+    var outflows: [MoneyMovement]
+    var inflows: [MoneyMovement]
+    var exchangeRate: ExchangeRate?
+    var changeAdjustment: ChangeAdjustment?
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        note: String,
+        kind: TransactionKind,
+        categoryID: UUID?,
+        amountDue: Money?,
+        outflows: [MoneyMovement],
+        inflows: [MoneyMovement],
+        exchangeRate: ExchangeRate?,
+        changeAdjustment: ChangeAdjustment?
+    ) {
+        self.id = id
+        self.name = name
+        self.note = note
+        self.kind = kind
+        self.categoryID = categoryID
+        self.amountDue = amountDue
+        self.outflows = outflows
+        self.inflows = inflows
+        self.exchangeRate = exchangeRate
+        self.changeAdjustment = changeAdjustment
+    }
+
+    init(name: String, transaction: LedgerTransaction) {
+        self.init(
+            name: name,
+            note: transaction.note,
+            kind: transaction.kind,
+            categoryID: transaction.categoryID,
+            amountDue: transaction.amountDue,
+            outflows: transaction.outflows,
+            inflows: transaction.inflows,
+            exchangeRate: transaction.exchangeRate,
+            changeAdjustment: transaction.changeAdjustment
+        )
+    }
+
+    var transactionTemplate: LedgerTransaction {
+        LedgerTransaction(
+            note: note,
+            kind: kind,
+            categoryID: categoryID,
+            amountDue: amountDue,
+            outflows: outflows.map { MoneyMovement(accountID: $0.accountID, money: $0.money) },
+            inflows: inflows.map { MoneyMovement(accountID: $0.accountID, money: $0.money) },
+            exchangeRate: exchangeRate,
+            changeAdjustment: changeAdjustment
+        )
+    }
+}
+
 struct FinanceData: Codable, Equatable {
     var accounts: [Account]
     var categories: [LedgerCategory]
@@ -474,6 +538,7 @@ struct FinanceData: Codable, Equatable {
     var scheduledTransactions: [ScheduledTransaction]
     var exchangeRates: [ExchangeRate]
     var budgets: [LedgerBudget]
+    var templates: [LedgerTemplate]
 
     init(
         accounts: [Account],
@@ -481,7 +546,8 @@ struct FinanceData: Codable, Equatable {
         transactions: [LedgerTransaction],
         scheduledTransactions: [ScheduledTransaction] = [],
         exchangeRates: [ExchangeRate] = [],
-        budgets: [LedgerBudget] = []
+        budgets: [LedgerBudget] = [],
+        templates: [LedgerTemplate] = []
     ) {
         self.accounts = accounts
         self.categories = categories
@@ -489,6 +555,7 @@ struct FinanceData: Codable, Equatable {
         self.scheduledTransactions = scheduledTransactions
         self.exchangeRates = exchangeRates
         self.budgets = budgets
+        self.templates = templates
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -498,6 +565,7 @@ struct FinanceData: Codable, Equatable {
         case scheduledTransactions
         case exchangeRates
         case budgets
+        case templates
     }
 
     init(from decoder: Decoder) throws {
@@ -514,6 +582,7 @@ struct FinanceData: Codable, Equatable {
             forKey: .exchangeRates
         ) ?? []
         budgets = try container.decodeIfPresent([LedgerBudget].self, forKey: .budgets) ?? []
+        templates = try container.decodeIfPresent([LedgerTemplate].self, forKey: .templates) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -524,6 +593,7 @@ struct FinanceData: Codable, Equatable {
         try container.encode(scheduledTransactions, forKey: .scheduledTransactions)
         try container.encode(exchangeRates, forKey: .exchangeRates)
         try container.encode(budgets, forKey: .budgets)
+        try container.encode(templates, forKey: .templates)
     }
 
     static var empty: FinanceData {

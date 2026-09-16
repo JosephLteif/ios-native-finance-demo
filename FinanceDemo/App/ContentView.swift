@@ -176,6 +176,12 @@ private struct MoreView: View {
                     }
 
                     NavigationLink {
+                        TemplatesView(store: store)
+                    } label: {
+                        Label("Templates", systemImage: "rectangle.stack")
+                    }
+
+                    NavigationLink {
                         SecuritySettingsView(store: store, security: security)
                     } label: {
                         Label("Settings", systemImage: "gearshape")
@@ -404,6 +410,7 @@ private struct DashboardView: View {
                             onEdit: {},
                             onDuplicate: {},
                             onDelete: {},
+                            onSaveTemplate: {},
                             allowsActions: false
                         )
                         Divider().overlay(PocketLedgerTheme.divider)
@@ -534,6 +541,7 @@ private struct TransactionsView: View {
     @State private var searchText = ""
     @State private var editingTransaction: LedgerTransaction?
     @State private var transactionToDelete: LedgerTransaction?
+    @State private var transactionToTemplate: LedgerTransaction?
     @State private var isPresentingBillScanner = false
 
     var body: some View {
@@ -582,6 +590,7 @@ private struct TransactionsView: View {
                                             onEdit: { editingTransaction = transaction },
                                             onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
                                             onDelete: { transactionToDelete = transaction },
+                                            onSaveTemplate: { transactionToTemplate = transaction },
                                             allowsActions: true
                                         )
                                         Divider().overlay(PocketLedgerTheme.divider)
@@ -608,6 +617,9 @@ private struct TransactionsView: View {
             }
             .sheet(item: $editingTransaction) { transaction in
                 TransactionEditor(store: store, transaction: transaction)
+            }
+            .sheet(item: $transactionToTemplate) { transaction in
+                TemplateNameEditor(store: store, transaction: transaction)
             }
             .confirmationDialog(
                 "Delete transaction?",
@@ -769,6 +781,7 @@ private struct TransactionRow: View {
     let onEdit: () -> Void
     let onDuplicate: () -> Void
     let onDelete: () -> Void
+    let onSaveTemplate: () -> Void
     let allowsActions: Bool
 
     var body: some View {
@@ -826,6 +839,7 @@ private struct TransactionRow: View {
             if allowsActions {
                 Button("Edit", systemImage: "pencil", action: onEdit)
                 Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
+                Button("Save as template", systemImage: "rectangle.stack.badge.plus", action: onSaveTemplate)
                 Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
             }
         }
@@ -1380,11 +1394,13 @@ struct TransactionEditor: View {
         initialTiming: TransactionTiming = .now,
         initialFrequency: ScheduleFrequency = .once,
         scheduledTransaction: ScheduledTransaction? = nil,
-        transaction: LedgerTransaction? = nil
+        transaction: LedgerTransaction? = nil,
+        template: LedgerTemplate? = nil
     ) {
         _store = ObservedObject(wrappedValue: store)
-        let preferredCurrency = transaction?.outflows.first?.money.currency
-            ?? transaction?.inflows.first?.money.currency
+        let sourceTransaction = transaction ?? template?.transactionTemplate
+        let preferredCurrency = sourceTransaction?.outflows.first?.money.currency
+            ?? sourceTransaction?.inflows.first?.money.currency
             ?? scheduledTransaction?.outflows.first?.money.currency
             ?? scheduledTransaction?.inflows.first?.money.currency
             ?? initialAmount?.currency
@@ -1395,32 +1411,32 @@ struct TransactionEditor: View {
             return account.currency == preferredCurrency
         } ?? store.data.accounts.first
         let firstAccountID = firstAccount?.id ?? UUID()
-        let amountDue = transaction?.amountDue ?? scheduledTransaction?.amountDue ?? initialBillTotal
+        let amountDue = sourceTransaction?.amountDue ?? scheduledTransaction?.amountDue ?? initialBillTotal
         let initialCurrencies = LedgerCurrency.allCases.filter { currency in
-            (transaction?.outflows ?? scheduledTransaction?.outflows ?? []).contains { $0.money.currency == currency }
-                || (transaction?.inflows ?? scheduledTransaction?.inflows ?? []).contains { $0.money.currency == currency }
+            (sourceTransaction?.outflows ?? scheduledTransaction?.outflows ?? []).contains { $0.money.currency == currency }
+                || (sourceTransaction?.inflows ?? scheduledTransaction?.inflows ?? []).contains { $0.money.currency == currency }
         }
-        let initialRateBase = transaction?.exchangeRate?.baseCurrency
+        let initialRateBase = sourceTransaction?.exchangeRate?.baseCurrency
             ?? scheduledTransaction?.exchangeRate?.baseCurrency
             ?? initialCurrencies.first
             ?? .usd
-        let initialRateQuote = transaction?.exchangeRate?.quoteCurrency
+        let initialRateQuote = sourceTransaction?.exchangeRate?.quoteCurrency
             ?? scheduledTransaction?.exchangeRate?.quoteCurrency
             ?? initialCurrencies.first(where: { $0 != initialRateBase })
             ?? (initialRateBase == .usd ? .lbp : .usd)
-        let initialSavedRate = transaction?.exchangeRate
+        let initialSavedRate = sourceTransaction?.exchangeRate
             ?? scheduledTransaction?.exchangeRate
             ?? store.exchangeRate(base: initialRateBase, quote: initialRateQuote)
-        _note = State(initialValue: transaction?.note ?? scheduledTransaction?.note ?? initialNote ?? "")
+        _note = State(initialValue: sourceTransaction?.note ?? scheduledTransaction?.note ?? initialNote ?? "")
         _date = State(initialValue: transaction?.date ?? scheduledTransaction?.nextRunDate ?? .now)
-        _kind = State(initialValue: transaction?.kind ?? scheduledTransaction?.kind ?? initialKind)
+        _kind = State(initialValue: sourceTransaction?.kind ?? scheduledTransaction?.kind ?? initialKind)
         _timing = State(initialValue: transaction == nil && scheduledTransaction == nil ? initialTiming : transaction == nil ? .scheduled : .now)
         _scheduleFrequency = State(initialValue: scheduledTransaction?.frequency ?? initialFrequency)
         _scheduleEnabled = State(initialValue: scheduledTransaction?.isEnabled ?? true)
         _dueCurrency = State(initialValue: amountDue?.currency ?? preferredCurrency ?? .usd)
         _amountDue = State(initialValue: amountDue.map { Self.inputText(for: $0) } ?? "")
         _outflows = State(
-            initialValue: (transaction?.outflows ?? scheduledTransaction?.outflows)?.map {
+            initialValue: (sourceTransaction?.outflows ?? scheduledTransaction?.outflows)?.map {
                 MovementDraft(accountID: $0.accountID, amount: Self.inputText(for: $0.money))
             } ?? [
                 MovementDraft(
@@ -1430,12 +1446,12 @@ struct TransactionEditor: View {
             ]
         )
         _inflows = State(
-            initialValue: (transaction?.inflows ?? scheduledTransaction?.inflows ?? []).map {
+            initialValue: (sourceTransaction?.inflows ?? scheduledTransaction?.inflows)?.map {
                 MovementDraft(accountID: $0.accountID, amount: Self.inputText(for: $0.money))
             } ?? []
         )
         _requestedChange = State(
-            initialValue: (transaction?.changeAdjustment ?? scheduledTransaction?.changeAdjustment).map { Self.inputText(for: $0.requested) } ?? ""
+            initialValue: (sourceTransaction?.changeAdjustment ?? scheduledTransaction?.changeAdjustment).map { Self.inputText(for: $0.requested) } ?? ""
         )
         _rateBase = State(initialValue: initialRateBase)
         _rateQuote = State(initialValue: initialRateQuote)
@@ -1445,7 +1461,7 @@ struct TransactionEditor: View {
             } ?? "100000"
         )
         _categoryID = State(
-            initialValue: transaction?.categoryID
+            initialValue: sourceTransaction?.categoryID
                 ?? scheduledTransaction?.categoryID
                 ?? store.data.categories.first(where: { $0.parentID != nil })?.id
                 ?? store.data.categories.first?.id

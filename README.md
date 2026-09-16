@@ -30,6 +30,7 @@ The main app now contains the first local finance workflow for the Lebanese mark
 - The Overview tab reports available balances by currency, monthly expenses by currency, transaction count, and the most-used category.
 - Transactions can be searched, edited, duplicated, and deleted from the history surface.
 - Category budgets can be created, edited, and reviewed from both Overview and More, with monthly progress and over-budget states.
+- Transactions can be saved as reusable templates and used to prefill a new entry.
 - The widget and Shortcuts read and mutate the same shared finance ledger as the main app.
 - A native Control Center/Lock Screen control records the existing quick USD expense action after device authentication.
 
