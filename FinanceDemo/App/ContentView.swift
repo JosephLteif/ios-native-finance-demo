@@ -6,8 +6,10 @@ struct ContentView: View {
     @StateObject private var store = LedgerStore()
     @StateObject private var security = AppSecurityService()
     @State private var addAction: AddAction?
+    @State private var isShowingAddMenu = false
     @State private var isUnlocked = false
     @State private var selectedTab: AppTab = .overview
+    @State private var lastContentTab: AppTab = .overview
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
     @Environment(\.scenePhase) private var scenePhase
@@ -27,6 +29,7 @@ struct ContentView: View {
                 store.processDueScheduledTransactions()
             } else if phase == .inactive || phase == .background {
                 addAction = nil
+                isShowingAddMenu = false
                 if security.isPasscodeEnabled {
                     isUnlocked = false
                 }
@@ -42,20 +45,61 @@ struct ContentView: View {
     }
 
     private var unlockedContent: some View {
-        selectedContent
-            .tint(PocketLedgerTheme.accent)
-            .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                PocketTabBar(selectedTab: $selectedTab) { action in
-                    addAction = action
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+        TabView(selection: $selectedTab) {
+            Tab("Overview", systemImage: "chart.bar.xaxis", value: .overview) {
+                DashboardView(store: store)
             }
+
+            Tab("Transactions", systemImage: "list.bullet.rectangle", value: .transactions) {
+                TransactionsView(store: store)
+            }
+
+            Tab("Add", systemImage: "plus", value: .add, role: .prominent) {
+                Color.clear
+            }
+
+            Tab("Metrics", systemImage: "chart.xyaxis.line", value: .metrics) {
+                MetricsView(store: store)
+            }
+
+            Tab("More", systemImage: "ellipsis.circle", value: .more) {
+                MoreView(store: store, security: security)
+            }
+        }
+        .tint(PocketLedgerTheme.accent)
+        .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
+        .onChange(of: selectedTab) { _, tab in
+            if tab == .add {
+                selectedTab = lastContentTab
+                isShowingAddMenu = true
+            } else {
+                lastContentTab = tab
+            }
+        }
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
         )
+        .confirmationDialog(
+            "Add to your ledger",
+            isPresented: $isShowingAddMenu,
+            titleVisibility: .visible
+        ) {
+            Button("Scan bill", systemImage: "doc.text.viewfinder") {
+                addAction = .scanBill
+            }
+            Button("Expense", systemImage: "arrow.up.right") {
+                addAction = .expense
+            }
+            Button("Income", systemImage: "arrow.down.left") {
+                addAction = .income
+            }
+            Button("Transfer", systemImage: "arrow.left.arrow.right") {
+                addAction = .transfer
+            }
+            Button("Scheduled", systemImage: "calendar.badge.clock") {
+                addAction = .scheduled
+            }
+        }
         .sheet(item: $addAction) { action in
             switch action {
             case .scanBill:
@@ -72,20 +116,6 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
-    private var selectedContent: some View {
-        switch selectedTab {
-        case .overview:
-            DashboardView(store: store)
-        case .transactions:
-            TransactionsView(store: store)
-        case .metrics:
-            MetricsView(store: store)
-        case .more:
-            MoreView(store: store, security: security)
-        }
-    }
-
 }
 
 private enum AddAction: String, Identifiable {
@@ -98,115 +128,10 @@ private enum AddAction: String, Identifiable {
     var id: String { rawValue }
 }
 
-private struct PocketTabBar: View {
-    @Binding var selectedTab: AppTab
-    let onAdd: (AddAction) -> Void
-
-    var body: some View {
-        Group {
-            if #available(iOS 26, *) {
-                liquidGlassBar
-            } else {
-                HStack(spacing: 8) {
-                    tabItems
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .overlay {
-                            Capsule()
-                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                        }
-                    addMenu
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay {
-                            Circle()
-                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                        }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    @available(iOS 26, *)
-    private var liquidGlassBar: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(spacing: 8) {
-                tabItems
-                    .glassEffect(.regular.interactive(), in: Capsule())
-                addMenu
-                    .buttonStyle(.glassProminent)
-            }
-        }
-    }
-
-    private var tabItems: some View {
-        HStack(spacing: 2) {
-            tabButton(.overview, title: "Overview", systemImage: "chart.bar.xaxis")
-            tabButton(.transactions, title: "Transactions", systemImage: "list.bullet.rectangle")
-            tabButton(.metrics, title: "Metrics", systemImage: "chart.xyaxis.line")
-            tabButton(.more, title: "More", systemImage: "ellipsis.circle")
-        }
-        .padding(5)
-    }
-
-    private var addMenu: some View {
-        Menu {
-            Button("Scan bill", systemImage: "doc.text.viewfinder") {
-                onAdd(.scanBill)
-            }
-            Button("Expense", systemImage: "arrow.up.right") {
-                onAdd(.expense)
-            }
-            Button("Income", systemImage: "arrow.down.left") {
-                onAdd(.income)
-            }
-            Button("Transfer", systemImage: "arrow.left.arrow.right") {
-                onAdd(.transfer)
-            }
-            Button("Scheduled", systemImage: "calendar.badge.clock") {
-                onAdd(.scheduled)
-            }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 22, weight: .medium))
-                .frame(width: 54, height: 54)
-        }
-        .tint(PocketLedgerTheme.accent)
-        .foregroundStyle(PocketLedgerTheme.textPrimary)
-        .accessibilityLabel("Add")
-    }
-
-    private func tabButton(_ tab: AppTab, title: String, systemImage: String) -> some View {
-        let isSelected = selectedTab == tab
-
-        return Button {
-            selectedTab = tab
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .semibold))
-                Text(title)
-                    .font(.caption2.weight(.medium))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .foregroundStyle(isSelected ? PocketLedgerTheme.accent : PocketLedgerTheme.textPrimary)
-            .background {
-                if isSelected {
-                    Capsule()
-                        .fill(PocketLedgerTheme.accent.opacity(0.16))
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
 private enum AppTab: Hashable {
     case overview
     case transactions
+    case add
     case metrics
     case more
 }
