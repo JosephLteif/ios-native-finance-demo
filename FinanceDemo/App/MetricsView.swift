@@ -776,7 +776,7 @@ private struct CategoryMetricsDetailView: View {
     }
 
     private func accountNames(for transaction: LedgerTransaction) -> String {
-        let names = transaction.outflows.compactMap { movement in
+        let names = transaction.outflows.compactMap { movement -> String? in
             guard store.includesInTotals(accountID: movement.accountID) else { return nil }
             store.data.accounts.first(where: { $0.id == movement.accountID })?.name
         }
