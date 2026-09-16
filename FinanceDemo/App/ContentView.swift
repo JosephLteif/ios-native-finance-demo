@@ -8,7 +8,6 @@ struct ContentView: View {
     @State private var isPresentingTransaction = false
     @State private var isUnlocked = false
     @State private var selectedTab: AppTab = .overview
-    @State private var lastContentTab: AppTab = .overview
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -54,12 +53,6 @@ struct ContentView: View {
                 }
                 .tag(AppTab.transactions)
 
-            Color.clear
-                .tabItem {
-                    Label("Add", systemImage: "plus")
-                }
-                .tag(AppTab.add)
-
             MetricsView(store: store)
                 .tabItem {
                     Label("Metrics", systemImage: "chart.xyaxis.line")
@@ -73,13 +66,19 @@ struct ContentView: View {
                 .tag(AppTab.more)
         }
         .tint(PocketLedgerTheme.accent)
-        .onChange(of: selectedTab) { _, tab in
-            if tab == .add {
-                selectedTab = lastContentTab
+        .overlay(alignment: .bottomTrailing) {
+            Button {
                 isPresentingTransaction = true
-            } else {
-                lastContentTab = tab
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 20, weight: .bold))
+                    .frame(width: 54, height: 54)
             }
+            .foregroundStyle(PocketLedgerTheme.accent)
+            .glassEffect(.regular.interactive(), in: Circle())
+            .accessibilityLabel("Add transaction")
+            .padding(.trailing, 18)
+            .padding(.bottom, 76)
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $isPresentingTransaction) {
@@ -92,7 +91,6 @@ struct ContentView: View {
 private enum AppTab: Hashable {
     case overview
     case transactions
-    case add
     case metrics
     case more
 }
