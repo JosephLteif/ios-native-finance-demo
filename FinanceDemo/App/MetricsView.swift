@@ -27,6 +27,12 @@ private struct CategoryMonthPoint: Identifiable {
     var id: Date { date }
 }
 
+private struct MetricsReportShareItem: Identifiable {
+    let url: URL
+
+    var id: URL { url }
+}
+
 @MainActor
 struct MetricsView: View {
     @ObservedObject var store: LedgerStore
@@ -37,8 +43,7 @@ struct MetricsView: View {
     @State private var customStart = Calendar.current.date(byAdding: .month, value: -1, to: Date.now) ?? Date.now
     @State private var customEnd = Date.now
     @State private var selectedCategoryID: UUID?
-    @State private var reportURL: URL?
-    @State private var isSharingReport = false
+    @State private var reportToShare: MetricsReportShareItem?
     @State private var reportError: String?
 
     private var interval: DateInterval {
@@ -137,10 +142,8 @@ struct MetricsView: View {
             }
             .pocketScreen()
             .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $isSharingReport) {
-                if let reportURL {
-                    MetricsReportShareSheet(url: reportURL)
-                }
+            .sheet(item: $reportToShare) { report in
+                MetricsReportShareSheet(url: report.url)
             }
             .alert("Report not created", isPresented: reportErrorPresented) {
                 Button("OK") { reportError = nil }
@@ -559,11 +562,8 @@ struct MetricsView: View {
         )
 
         do {
-            let fileName = "Pocket-Ledger-Metrics-\(Date.now.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))).pdf"
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-            try MetricsReportPDF.data(for: report).write(to: url, options: .atomic)
-            reportURL = url
-            isSharingReport = true
+            let url = try MetricsReportPDF.writeShareableFile(for: report)
+            reportToShare = MetricsReportShareItem(url: url)
         } catch {
             reportError = error.localizedDescription
         }

@@ -5,7 +5,7 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var store = LedgerStore()
     @StateObject private var security = AppSecurityService()
-    @State private var isPresentingTransaction = false
+    @State private var addAction: AddAction?
     @State private var isUnlocked = false
     @State private var selectedTab: AppTab = .overview
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
@@ -26,7 +26,7 @@ struct ContentView: View {
                 store.reload()
                 store.processDueScheduledTransactions()
             } else if phase == .inactive || phase == .background {
-                isPresentingTransaction = false
+                addAction = nil
                 if security.isPasscodeEnabled {
                     isUnlocked = false
                 }
@@ -46,8 +46,8 @@ struct ContentView: View {
             .tint(PocketLedgerTheme.accent)
             .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                PocketTabBar(selectedTab: $selectedTab) {
-                    isPresentingTransaction = true
+                PocketTabBar(selectedTab: $selectedTab) { action in
+                    addAction = action
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -56,8 +56,19 @@ struct ContentView: View {
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
         )
-        .sheet(isPresented: $isPresentingTransaction) {
-            TransactionEditor(store: store)
+        .sheet(item: $addAction) { action in
+            switch action {
+            case .scanBill:
+                BillScannerView(store: store)
+            case .expense:
+                TransactionEditor(store: store, initialKind: .expense)
+            case .income:
+                TransactionEditor(store: store, initialKind: .income)
+            case .transfer:
+                TransactionEditor(store: store, initialKind: .transfer)
+            case .scheduled:
+                TransactionEditor(store: store, initialKind: .expense, initialTiming: .scheduled)
+            }
         }
     }
 
@@ -77,41 +88,91 @@ struct ContentView: View {
 
 }
 
+private enum AddAction: String, Identifiable {
+    case scanBill
+    case expense
+    case income
+    case transfer
+    case scheduled
+
+    var id: String { rawValue }
+}
+
 private struct PocketTabBar: View {
     @Binding var selectedTab: AppTab
-    let onAdd: () -> Void
+    let onAdd: (AddAction) -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 2) {
-                tabButton(.overview, title: "Overview", systemImage: "chart.bar.xaxis")
-                tabButton(.transactions, title: "Transactions", systemImage: "list.bullet.rectangle")
-                tabButton(.metrics, title: "Metrics", systemImage: "chart.xyaxis.line")
-                tabButton(.more, title: "More", systemImage: "ellipsis.circle")
+        Group {
+            if #available(iOS 26, *) {
+                liquidGlassBar
+            } else {
+                HStack(spacing: 8) {
+                    tabItems
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay {
+                            Capsule()
+                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                        }
+                    addMenu
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay {
+                            Circle()
+                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                        }
+                }
             }
-            .padding(5)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-            }
-            .glassEffect(.regular, in: Capsule())
-
-            Button(action: onAdd) {
-                Image(systemName: "plus")
-                    .font(.system(size: 22, weight: .medium))
-                    .frame(width: 54, height: 54)
-            }
-            .foregroundStyle(PocketLedgerTheme.textPrimary)
-            .background(.ultraThinMaterial, in: Circle())
-            .overlay {
-                Circle()
-                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-            }
-            .glassEffect(.regular.interactive(), in: Circle())
-            .accessibilityLabel("Add transaction")
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @available(iOS 26, *)
+    private var liquidGlassBar: some View {
+        GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 8) {
+                tabItems
+                    .glassEffect(.regular.interactive(), in: Capsule())
+                addMenu
+                    .buttonStyle(.glassProminent)
+            }
+        }
+    }
+
+    private var tabItems: some View {
+        HStack(spacing: 2) {
+            tabButton(.overview, title: "Overview", systemImage: "chart.bar.xaxis")
+            tabButton(.transactions, title: "Transactions", systemImage: "list.bullet.rectangle")
+            tabButton(.metrics, title: "Metrics", systemImage: "chart.xyaxis.line")
+            tabButton(.more, title: "More", systemImage: "ellipsis.circle")
+        }
+        .padding(5)
+    }
+
+    private var addMenu: some View {
+        Menu {
+            Button("Scan bill", systemImage: "doc.text.viewfinder") {
+                onAdd(.scanBill)
+            }
+            Button("Expense", systemImage: "arrow.up.right") {
+                onAdd(.expense)
+            }
+            Button("Income", systemImage: "arrow.down.left") {
+                onAdd(.income)
+            }
+            Button("Transfer", systemImage: "arrow.left.arrow.right") {
+                onAdd(.transfer)
+            }
+            Button("Scheduled", systemImage: "calendar.badge.clock") {
+                onAdd(.scheduled)
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 22, weight: .medium))
+                .frame(width: 54, height: 54)
+        }
+        .tint(PocketLedgerTheme.accent)
+        .foregroundStyle(PocketLedgerTheme.textPrimary)
+        .accessibilityLabel("Add")
     }
 
     private func tabButton(_ tab: AppTab, title: String, systemImage: String) -> some View {
@@ -1267,6 +1328,7 @@ struct TransactionEditor: View {
 
     init(
         store: LedgerStore,
+        initialKind: TransactionKind = .expense,
         initialAmount: Money? = nil,
         initialBillTotal: Money? = nil,
         initialNote: String? = nil,
@@ -1300,7 +1362,7 @@ struct TransactionEditor: View {
             ?? store.exchangeRate(base: initialRateBase, quote: initialRateQuote)
         _note = State(initialValue: scheduledTransaction?.note ?? initialNote ?? "")
         _date = State(initialValue: scheduledTransaction?.nextRunDate ?? .now)
-        _kind = State(initialValue: scheduledTransaction?.kind ?? .expense)
+        _kind = State(initialValue: scheduledTransaction?.kind ?? initialKind)
         _timing = State(initialValue: scheduledTransaction == nil ? initialTiming : .scheduled)
         _scheduleFrequency = State(initialValue: scheduledTransaction?.frequency ?? initialFrequency)
         _scheduleEnabled = State(initialValue: scheduledTransaction?.isEnabled ?? true)

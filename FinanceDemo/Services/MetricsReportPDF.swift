@@ -34,6 +34,24 @@ enum MetricsReportPDF {
             canvas.finishPage()
         }
     }
+
+    static func writeShareableFile(for report: MetricsReportData) throws -> URL {
+        let reportsDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MetricsReports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: reportsDirectory,
+            withIntermediateDirectories: true
+        )
+
+        let fileName = "Pocket-Ledger-Metrics-\(Date.now.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)))-\(UUID().uuidString).pdf"
+        let url = reportsDirectory.appendingPathComponent(fileName)
+        try data(for: report).write(to: url, options: .atomic)
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        return url
+    }
 }
 
 @MainActor
