@@ -76,6 +76,18 @@ struct MetricsReportShareSheet: UIViewControllerRepresentable {
 }
 
 private final class MetricsReportPDFCanvas {
+    private enum Palette {
+        static let pageBackground = UIColor.white
+        static let primary = UIColor(red: 0.10, green: 0.12, blue: 0.16, alpha: 1)
+        static let secondary = UIColor(red: 0.36, green: 0.40, blue: 0.47, alpha: 1)
+        static let accent = UIColor(red: 0.08, green: 0.36, blue: 0.82, alpha: 1)
+        static let income = UIColor(red: 0.10, green: 0.55, blue: 0.28, alpha: 1)
+        static let expense = UIColor(red: 0.78, green: 0.18, blue: 0.18, alpha: 1)
+        static let scopeFill = UIColor(red: 0.92, green: 0.95, blue: 1.0, alpha: 1)
+        static let cardFill = UIColor(red: 0.96, green: 0.97, blue: 0.98, alpha: 1)
+        static let separator = UIColor(red: 0.82, green: 0.84, blue: 0.88, alpha: 1)
+    }
+
     private let context: UIGraphicsPDFRendererContext
     private let pageRect: CGRect
     private let contentRect: CGRect
@@ -93,11 +105,14 @@ private final class MetricsReportPDFCanvas {
         pageNumber += 1
         y = 42
 
+        Palette.pageBackground.setFill()
+        UIBezierPath(rect: pageRect).fill()
+
         drawFixed(
             "Pocket Ledger",
             in: CGRect(x: contentRect.minX, y: y, width: contentRect.width, height: 16),
             font: .systemFont(ofSize: 10, weight: .semibold),
-            color: .systemBlue
+            color: Palette.accent
         )
         y += 28
         drawLine()
@@ -109,7 +124,7 @@ private final class MetricsReportPDFCanvas {
             "Metrics report - page \(pageNumber)",
             in: CGRect(x: contentRect.minX, y: pageRect.maxY - 38, width: contentRect.width, height: 14),
             font: .systemFont(ofSize: 8),
-            color: .secondaryLabel
+            color: Palette.secondary
         )
     }
 
@@ -117,13 +132,13 @@ private final class MetricsReportPDFCanvas {
         drawText(
             "Metrics report",
             font: .systemFont(ofSize: 26, weight: .bold),
-            color: .label,
+            color: Palette.primary,
             spacingAfter: 4
         )
         drawText(
             "Generated \(report.generatedAt.formatted(date: .abbreviated, time: .shortened))",
             font: .systemFont(ofSize: 10),
-            color: .secondaryLabel,
+            color: Palette.secondary,
             spacingAfter: 20
         )
 
@@ -134,7 +149,7 @@ private final class MetricsReportPDFCanvas {
         drawText(
             "\(report.activityCounts[.expense] ?? 0) expenses   \(report.activityCounts[.income] ?? 0) income   \(report.activityCounts[.transfer] ?? 0) transfers   \(report.entryCount) total entries",
             font: .systemFont(ofSize: 11),
-            color: .label,
+            color: Palette.primary,
             spacingAfter: 18
         )
         drawSectionTitle("Spending by category")
@@ -143,7 +158,7 @@ private final class MetricsReportPDFCanvas {
             drawText(
                 "No included expense activity was recorded in this range.",
                 font: .systemFont(ofSize: 11),
-                color: .secondaryLabel,
+                color: Palette.secondary,
                 spacingAfter: 12
             )
         } else {
@@ -155,7 +170,7 @@ private final class MetricsReportPDFCanvas {
         drawText(
             "Excluded accounts are omitted from this report, matching the Metrics screen.",
             font: .systemFont(ofSize: 9),
-            color: .secondaryLabel,
+            color: Palette.secondary,
             spacingAfter: 0
         )
     }
@@ -163,47 +178,47 @@ private final class MetricsReportPDFCanvas {
     private func drawScope(_ report: MetricsReportData) {
         ensureSpace(82)
         let box = CGRect(x: contentRect.minX, y: y, width: contentRect.width, height: 70)
-        UIColor.systemBlue.withAlphaComponent(0.08).setFill()
+        Palette.scopeFill.setFill()
         UIBezierPath(roundedRect: box, cornerRadius: 12).fill()
 
-        drawFixed("Period", in: CGRect(x: box.minX + 16, y: box.minY + 12, width: 70, height: 14), font: .systemFont(ofSize: 9, weight: .semibold), color: .secondaryLabel)
-        drawFixed(report.periodTitle, in: CGRect(x: box.minX + 92, y: box.minY + 10, width: box.width - 108, height: 18), font: .systemFont(ofSize: 12, weight: .semibold), color: .label)
-        drawFixed("Range", in: CGRect(x: box.minX + 16, y: box.minY + 39, width: 70, height: 14), font: .systemFont(ofSize: 9, weight: .semibold), color: .secondaryLabel)
+        drawFixed("Period", in: CGRect(x: box.minX + 16, y: box.minY + 12, width: 70, height: 14), font: .systemFont(ofSize: 9, weight: .semibold), color: Palette.secondary)
+        drawFixed(report.periodTitle, in: CGRect(x: box.minX + 92, y: box.minY + 10, width: box.width - 108, height: 18), font: .systemFont(ofSize: 12, weight: .semibold), color: Palette.primary)
+        drawFixed("Range", in: CGRect(x: box.minX + 16, y: box.minY + 39, width: 70, height: 14), font: .systemFont(ofSize: 9, weight: .semibold), color: Palette.secondary)
         let normalizedRange = report.dateRange.replacingOccurrences(of: "–", with: "-")
-        drawFixed("\(normalizedRange) | \(report.currency.rawValue) | \(report.categoryScope)", in: CGRect(x: box.minX + 92, y: box.minY + 37, width: box.width - 108, height: 18), font: .systemFont(ofSize: 10), color: .label)
+        drawFixed("\(normalizedRange) | \(report.currency.rawValue) | \(report.categoryScope)", in: CGRect(x: box.minX + 92, y: box.minY + 37, width: box.width - 108, height: 18), font: .systemFont(ofSize: 10), color: Palette.primary)
         y = box.maxY + 20
     }
 
     private func drawSummary(_ report: MetricsReportData) {
         ensureSpace(96)
         let box = CGRect(x: contentRect.minX, y: y, width: contentRect.width, height: 84)
-        UIColor.secondarySystemBackground.setFill()
+        Palette.cardFill.setFill()
         UIBezierPath(roundedRect: box, cornerRadius: 12).fill()
 
-        drawSummaryMetric("Income", value: report.income.formatted, color: .systemGreen, x: box.minX + 16, width: 150, y: box.minY + 16)
-        drawSummaryMetric("Expenses", value: report.expenses.formatted, color: .systemRed, x: box.minX + 177, width: 150, y: box.minY + 16)
-        drawSummaryMetric("Net", value: Money(currency: report.currency, minorUnits: report.income.minorUnits - report.expenses.minorUnits).formatted, color: .systemBlue, x: box.minX + 338, width: 150, y: box.minY + 16)
+        drawSummaryMetric("Income", value: report.income.formatted, color: Palette.income, x: box.minX + 16, width: 150, y: box.minY + 16)
+        drawSummaryMetric("Expenses", value: report.expenses.formatted, color: Palette.expense, x: box.minX + 177, width: 150, y: box.minY + 16)
+        drawSummaryMetric("Net", value: Money(currency: report.currency, minorUnits: report.income.minorUnits - report.expenses.minorUnits).formatted, color: Palette.accent, x: box.minX + 338, width: 150, y: box.minY + 16)
         y = box.maxY + 18
     }
 
     private func drawSummaryMetric(_ title: String, value: String, color: UIColor, x: CGFloat, width: CGFloat, y: CGFloat) {
-        drawFixed(title.uppercased(), in: CGRect(x: x, y: y, width: width, height: 14), font: .systemFont(ofSize: 9, weight: .semibold), color: .secondaryLabel)
+        drawFixed(title.uppercased(), in: CGRect(x: x, y: y, width: width, height: 14), font: .systemFont(ofSize: 9, weight: .semibold), color: Palette.secondary)
         drawFixed(value, in: CGRect(x: x, y: y + 21, width: width, height: 24), font: .systemFont(ofSize: 16, weight: .bold), color: color)
     }
 
     private func drawCategory(_ category: MetricsReportCategory) {
         ensureSpace(42)
         let row = CGRect(x: contentRect.minX, y: y, width: contentRect.width, height: 34)
-        drawFixed(category.title, in: CGRect(x: row.minX, y: row.minY, width: 300, height: 17), font: .systemFont(ofSize: 11, weight: .semibold), color: .label)
-        drawFixed("\(category.count) entr\(category.count == 1 ? "y" : "ies") - \(category.percentage)% of expenses", in: CGRect(x: row.minX, y: row.minY + 18, width: 300, height: 14), font: .systemFont(ofSize: 9), color: .secondaryLabel)
-        drawFixed(category.amount.formatted, in: CGRect(x: row.maxX - 150, y: row.minY + 5, width: 150, height: 18), font: .systemFont(ofSize: 11, weight: .semibold), color: .label, alignment: .right)
+        drawFixed(category.title, in: CGRect(x: row.minX, y: row.minY, width: 300, height: 17), font: .systemFont(ofSize: 11, weight: .semibold), color: Palette.primary)
+        drawFixed("\(category.count) entr\(category.count == 1 ? "y" : "ies") - \(category.percentage)% of expenses", in: CGRect(x: row.minX, y: row.minY + 18, width: 300, height: 14), font: .systemFont(ofSize: 9), color: Palette.secondary)
+        drawFixed(category.amount.formatted, in: CGRect(x: row.maxX - 150, y: row.minY + 5, width: 150, height: 18), font: .systemFont(ofSize: 11, weight: .semibold), color: Palette.primary, alignment: .right)
         drawLine(at: row.maxY + 5)
         y = row.maxY + 12
     }
 
     private func drawSectionTitle(_ title: String) {
         ensureSpace(30)
-        drawText(title, font: .systemFont(ofSize: 16, weight: .bold), color: .label, spacingAfter: 10)
+        drawText(title, font: .systemFont(ofSize: 16, weight: .bold), color: Palette.primary, spacingAfter: 10)
     }
 
     private func drawText(_ text: String, font: UIFont, color: UIColor, spacingAfter: CGFloat) {
@@ -246,7 +261,7 @@ private final class MetricsReportPDFCanvas {
 
     private func drawLine(at yPosition: CGFloat? = nil) {
         let lineY = yPosition ?? y
-        UIColor.separator.setStroke()
+        Palette.separator.setStroke()
         let path = UIBezierPath()
         path.move(to: CGPoint(x: contentRect.minX, y: lineY))
         path.addLine(to: CGPoint(x: contentRect.maxX, y: lineY))

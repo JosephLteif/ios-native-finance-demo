@@ -10,6 +10,11 @@ final class FinanceDemoUITests: XCTestCase {
             skipButton.tap()
         }
 
-        XCTAssertTrue(app.buttons["add-transaction-button"].waitForExistence(timeout: 5))
+        let addAction = app.buttons["add-transaction-button"]
+        let nativeAddButton = app.buttons["Add"]
+        XCTAssertTrue(
+            addAction.waitForExistence(timeout: 1) ||
+                nativeAddButton.waitForExistence(timeout: 5)
+        )
     }
 }

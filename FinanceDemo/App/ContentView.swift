@@ -10,7 +10,6 @@ struct ContentView: View {
     @State private var isShowingAddMenu = false
     @State private var isShowingSetup = false
     @State private var isUnlocked = false
-    @State private var selectedTab: AppTab = .overview
     @AppStorage(SetupWizardView.completedKey) private var setupCompleted = false
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
@@ -53,34 +52,34 @@ struct ContentView: View {
     }
 
     private var unlockedContent: some View {
-        TabView(selection: $selectedTab) {
-            Tab("Overview", systemImage: "chart.bar.xaxis", value: .overview) {
-                DashboardView(store: store)
-            }
+        TabView {
+            TabSection("Ledger") {
+                Tab("Overview", systemImage: "chart.bar.xaxis") {
+                    DashboardView(store: store)
+                }
 
-            Tab("Transactions", systemImage: "list.bullet.rectangle", value: .transactions) {
-                TransactionsView(store: store)
-            }
+                Tab("Transactions", systemImage: "list.bullet.rectangle") {
+                    TransactionsView(store: store)
+                }
 
-            Tab("Metrics", systemImage: "chart.xyaxis.line", value: .metrics) {
-                MetricsView(store: store)
-            }
+                Tab("Metrics", systemImage: "chart.xyaxis.line") {
+                    MetricsView(store: store)
+                }
 
-            Tab("More", systemImage: "ellipsis.circle", value: .more) {
-                MoreView(store: store, security: security)
+                Tab("More", systemImage: "ellipsis.circle") {
+                    MoreView(store: store, security: security)
+                }
             }
+        }
+        .tabViewStyle(.sidebarAdaptable)
+        .tabViewBottomAccessory {
+            Button("Add", systemImage: "plus") {
+                isShowingAddMenu = true
+            }
+            .accessibilityIdentifier("add-transaction-button")
         }
         .tint(PocketLedgerTheme.accent)
         .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            PocketTabBar(selectedTab: $selectedTab) {
-                isShowingAddMenu = true
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-        }
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
         )
@@ -175,139 +174,6 @@ private enum AddAction: Identifiable {
         case .recent(let id):
             return "recent-\(id.uuidString)"
         }
-    }
-}
-
-private enum AppTab: Hashable {
-    case overview
-    case transactions
-    case metrics
-    case more
-
-    var title: String {
-        switch self {
-        case .overview:
-            return "Overview"
-        case .transactions:
-            return "Transactions"
-        case .metrics:
-            return "Metrics"
-        case .more:
-            return "More"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .overview:
-            return "chart.bar.xaxis"
-        case .transactions:
-            return "list.bullet.rectangle"
-        case .metrics:
-            return "chart.xyaxis.line"
-        case .more:
-            return "ellipsis.circle"
-        }
-    }
-}
-
-private struct PocketTabBar: View {
-    @Binding var selectedTab: AppTab
-    let onAdd: () -> Void
-
-    var body: some View {
-        Group {
-            if #available(iOS 26, *) {
-                liquidGlassBar
-            } else {
-                legacyBar
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    @available(iOS 26, *)
-    private var liquidGlassBar: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
-                tabItems
-                    .glassEffect(.regular.interactive(), in: Capsule())
-
-                addButton
-                    .glassEffect(.regular.interactive(), in: Circle())
-            }
-        }
-    }
-
-    private var legacyBar: some View {
-        HStack(alignment: .center, spacing: 8) {
-            tabItems
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                }
-
-            addButton
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay {
-                    Circle()
-                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                }
-        }
-    }
-
-    private var tabItems: some View {
-        HStack(spacing: 2) {
-            tabButton(.overview)
-            tabButton(.transactions)
-            tabButton(.metrics)
-            tabButton(.more)
-        }
-        .padding(5)
-        .frame(maxWidth: .infinity)
-        .frame(height: 72)
-    }
-
-    private var addButton: some View {
-        Button(action: onAdd) {
-            Image(systemName: "plus")
-                .font(.system(size: 22, weight: .medium))
-                .frame(width: 54, height: 54)
-        }
-        .foregroundStyle(PocketLedgerTheme.textPrimary)
-        .tint(PocketLedgerTheme.accent)
-        .accessibilityIdentifier("add-transaction-button")
-        .accessibilityLabel("Add")
-    }
-
-    private func tabButton(_ tab: AppTab) -> some View {
-        let isSelected = selectedTab == tab
-
-        return Button {
-            selectedTab = tab
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: tab.systemImage)
-                    .font(.system(size: 18, weight: .semibold))
-
-                Text(tab.title)
-                    .font(.caption2.weight(.medium))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            .frame(maxWidth: .infinity, minHeight: 60)
-            .foregroundStyle(isSelected ? PocketLedgerTheme.accent : PocketLedgerTheme.textPrimary)
-            .background {
-                if isSelected {
-                    Capsule()
-                        .fill(PocketLedgerTheme.accent.opacity(0.16))
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(tab.title)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -1104,9 +970,8 @@ private struct AccountsView: View {
     @State private var editingAccount: Account?
 
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
                     screenHeader
 
                     ForEach(LedgerCurrency.allCases) { currency in
@@ -1124,16 +989,16 @@ private struct AccountsView: View {
                         .font(.caption)
                         .foregroundStyle(PocketLedgerTheme.textTertiary)
                         .padding(.horizontal, 4)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
             }
-            .pocketScreen()
-            .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $isPresentingAccount, onDismiss: { editingAccount = nil }) {
-                AccountEditor(store: store, account: editingAccount)
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+        }
+        .pocketScreen()
+        .navigationTitle("Accounts")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $isPresentingAccount, onDismiss: { editingAccount = nil }) {
+            AccountEditor(store: store, account: editingAccount)
         }
     }
 
@@ -1294,9 +1159,8 @@ private struct CategoriesView: View {
     @State private var editingCategory: LedgerCategory?
 
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
                     screenHeader
 
                     ForEach(store.rootCategories) { parent in
@@ -1329,16 +1193,16 @@ private struct CategoriesView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .pocketCard()
                     }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
             }
-            .pocketScreen()
-            .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $isPresentingCategory, onDismiss: { editingCategory = nil }) {
-                CategoryEditor(store: store, category: editingCategory)
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+        }
+        .pocketScreen()
+        .navigationTitle("Categories")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $isPresentingCategory, onDismiss: { editingCategory = nil }) {
+            CategoryEditor(store: store, category: editingCategory)
         }
     }
 

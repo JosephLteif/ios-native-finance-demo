@@ -7,9 +7,8 @@ struct TemplatesView: View {
     @State private var templateToDelete: LedgerTemplate?
 
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Templates")
                             .font(.system(size: 29, weight: .bold, design: .rounded))
@@ -39,26 +38,26 @@ struct TemplatesView: View {
                             templateCard(template)
                         }
                     }
+            }
+            .padding(16)
+        }
+        .pocketScreen()
+        .navigationTitle("Templates")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $templateToUse) { template in
+            TransactionEditor(store: store, template: template)
+        }
+        .confirmationDialog("Delete template?", isPresented: Binding(
+            get: { templateToDelete != nil },
+            set: { if !$0 { templateToDelete = nil } }
+        ), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if let templateToDelete {
+                    _ = store.deleteTemplate(id: templateToDelete.id)
                 }
-                .padding(16)
+                self.templateToDelete = nil
             }
-            .pocketScreen()
-            .toolbar(.hidden, for: .navigationBar)
-            .sheet(item: $templateToUse) { template in
-                TransactionEditor(store: store, template: template)
-            }
-            .confirmationDialog("Delete template?", isPresented: Binding(
-                get: { templateToDelete != nil },
-                set: { if !$0 { templateToDelete = nil } }
-            ), titleVisibility: .visible) {
-                Button("Delete", role: .destructive) {
-                    if let templateToDelete {
-                        _ = store.deleteTemplate(id: templateToDelete.id)
-                    }
-                    self.templateToDelete = nil
-                }
-                Button("Cancel", role: .cancel) { templateToDelete = nil }
-            }
+            Button("Cancel", role: .cancel) { templateToDelete = nil }
         }
     }
 

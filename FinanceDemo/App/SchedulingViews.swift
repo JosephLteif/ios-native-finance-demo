@@ -10,10 +10,9 @@ struct ScheduledTransactionsView: View {
     @State private var reminderStatus: String?
 
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
-                    screenHeader
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                screenHeader
 
                     Text("Due entries are added to Transactions when Pocket Ledger opens or returns to the foreground.")
                         .font(.footnote)
@@ -50,33 +49,33 @@ struct ScheduledTransactionsView: View {
                             scheduleCard(schedule)
                         }
                     }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
             }
-            .pocketScreen()
-            .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $isPresentingEditor, onDismiss: { editingSchedule = nil }) {
-                TransactionEditor(
-                    store: store,
-                    initialTiming: .scheduled,
-                    scheduledTransaction: editingSchedule
-                )
-            }
-            .confirmationDialog("Delete scheduled transaction?", isPresented: isShowingDeleteConfirmation) {
-                Button("Delete", role: .destructive) {
-                    if let scheduleToDelete {
-                        _ = store.deleteScheduledTransaction(id: scheduleToDelete.id)
-                    }
-                    self.scheduleToDelete = nil
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+        }
+        .pocketScreen()
+        .navigationTitle("Scheduled")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $isPresentingEditor, onDismiss: { editingSchedule = nil }) {
+            TransactionEditor(
+                store: store,
+                initialTiming: .scheduled,
+                scheduledTransaction: editingSchedule
+            )
+        }
+        .confirmationDialog("Delete scheduled transaction?", isPresented: isShowingDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                if let scheduleToDelete {
+                    _ = store.deleteScheduledTransaction(id: scheduleToDelete.id)
                 }
-                Button("Cancel", role: .cancel) {
-                    scheduleToDelete = nil
-                }
-            } message: {
-                Text(scheduleToDelete?.note ?? "")
+                self.scheduleToDelete = nil
             }
+            Button("Cancel", role: .cancel) {
+                scheduleToDelete = nil
+            }
+        } message: {
+            Text(scheduleToDelete?.note ?? "")
         }
     }
 

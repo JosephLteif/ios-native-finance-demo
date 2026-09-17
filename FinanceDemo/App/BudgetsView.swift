@@ -8,9 +8,8 @@ struct BudgetsView: View {
     @State private var budgetToDelete: LedgerBudget?
 
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Budgets")
@@ -52,24 +51,24 @@ struct BudgetsView: View {
                             budgetCard(budget)
                         }
                     }
-                }
-                .padding(16)
             }
-            .pocketScreen()
-            .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $isPresentingEditor, onDismiss: { editingBudget = nil }) {
-                BudgetEditor(store: store, budget: editingBudget)
+            .padding(16)
+        }
+        .pocketScreen()
+        .navigationTitle("Budgets")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $isPresentingEditor, onDismiss: { editingBudget = nil }) {
+            BudgetEditor(store: store, budget: editingBudget)
+        }
+        .confirmationDialog("Delete budget?", isPresented: Binding(
+            get: { budgetToDelete != nil },
+            set: { if !$0 { budgetToDelete = nil } }
+        ), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if let budgetToDelete { _ = store.deleteBudget(id: budgetToDelete.id) }
+                self.budgetToDelete = nil
             }
-            .confirmationDialog("Delete budget?", isPresented: Binding(
-                get: { budgetToDelete != nil },
-                set: { if !$0 { budgetToDelete = nil } }
-            ), titleVisibility: .visible) {
-                Button("Delete", role: .destructive) {
-                    if let budgetToDelete { _ = store.deleteBudget(id: budgetToDelete.id) }
-                    self.budgetToDelete = nil
-                }
-                Button("Cancel", role: .cancel) { budgetToDelete = nil }
-            }
+            Button("Cancel", role: .cancel) { budgetToDelete = nil }
         }
     }
 
