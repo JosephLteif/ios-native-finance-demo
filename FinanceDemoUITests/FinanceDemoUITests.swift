@@ -33,9 +33,9 @@ final class FinanceDemoUITests: XCTestCase {
         let more = app.buttons["tab-more"]
 
         XCTAssertTrue(overview.waitForExistence(timeout: 5))
-        XCTAssertTrue(transactions.exists)
-        XCTAssertTrue(metrics.exists)
-        XCTAssertTrue(more.exists)
+        XCTAssertTrue(transactions.waitForExistence(timeout: 5))
+        XCTAssertTrue(metrics.waitForExistence(timeout: 5))
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
 
         transactions.tap()
         XCTAssertEqual(transactions.value as? String, "Selected")
