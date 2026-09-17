@@ -7,7 +7,7 @@ extension Notification.Name {
     )
 }
 
-final class WatchConnectivityService: NSObject, WCSessionDelegate {
+final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Sendable {
     static let shared = WatchConnectivityService()
 
     private let session = WCSession.default

@@ -665,7 +665,8 @@ private struct ImportReviewView: View {
 
                                 Picker("Account type", selection: $account.type) {
                                     ForEach(AccountType.allCases) { type in
-                                        Text(type.displayName).tag(type)
+                                        let displayName = type.displayName
+                                        Text(displayName).tag(type)
                                     }
                                 }
 
