@@ -43,11 +43,21 @@ enum MetricsReportPDF {
             withIntermediateDirectories: true
         )
 
-        let fileName = "Pocket-Ledger-Metrics-\(Date.now.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)))-\(UUID().uuidString).pdf"
+        let dateFormatter = DateFormatter()
+        dateFormatter.calendar = Calendar(identifier: .gregorian)
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let fileName = "Pocket-Ledger-Metrics-\(dateFormatter.string(from: .now))-\(UUID().uuidString).pdf"
         let url = reportsDirectory.appendingPathComponent(fileName)
-        try data(for: report).write(to: url, options: .atomic)
+        let pdfData = data(for: report)
+        guard !pdfData.isEmpty else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try pdfData.write(to: url, options: .atomic)
 
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
             throw CocoaError(.fileNoSuchFile)
         }
         return url

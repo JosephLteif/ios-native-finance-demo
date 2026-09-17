@@ -2,6 +2,31 @@ import XCTest
 @testable import FinanceDemo
 
 final class FinanceModelTests: XCTestCase {
+    func testMetricsReportWritesExistingShareablePDF() throws {
+        let report = MetricsReportData(
+            periodTitle: "September 2026",
+            dateRange: "Sep 1, 2026 – Sep 30, 2026",
+            currency: .usd,
+            categoryScope: "All categories",
+            income: Money(currency: .usd, minorUnits: 0),
+            expenses: Money(currency: .usd, minorUnits: 0),
+            entryCount: 0,
+            activityCounts: [:],
+            categories: [],
+            generatedAt: .now
+        )
+
+        let url = try MetricsReportPDF.writeShareableFile(for: report)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory))
+        XCTAssertFalse(isDirectory.boolValue)
+        XCTAssertFalse(url.lastPathComponent.contains("/"))
+        XCTAssertEqual(url.pathExtension, "pdf")
+        XCTAssertGreaterThan(try Data(contentsOf: url).count, 0)
+    }
+
     func testLegacyModelFieldsDecodeToSafeDefaults() throws {
         let account = Account(
             name: "Cash",
