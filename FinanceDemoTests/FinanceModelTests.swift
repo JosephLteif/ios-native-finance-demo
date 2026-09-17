@@ -145,7 +145,11 @@ final class FinanceModelTests: XCTestCase {
         )
         let decoded = try LedgerBackupCodec.decodeBundle(encoded)
 
-        XCTAssertEqual(decoded.data.attachments, [attachment])
+        let decodedAttachment = try XCTUnwrap(decoded.data.attachments.first)
+        XCTAssertEqual(decodedAttachment.id, attachment.id)
+        XCTAssertEqual(decodedAttachment.fileName, attachment.fileName)
+        XCTAssertEqual(decodedAttachment.contentType, attachment.contentType)
+        XCTAssertEqual(decodedAttachment.relativePath, attachment.relativePath)
         XCTAssertEqual(decoded.attachments.first?.data, bytes)
     }
 
