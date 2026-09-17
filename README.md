@@ -33,6 +33,7 @@ The main app now contains the first local finance workflow for the Lebanese mark
 - Transactions can be saved as reusable templates and used to prefill a new entry.
 - The widget and Shortcuts read and mutate the same shared finance ledger as the main app.
 - A native Control Center/Lock Screen control records the existing quick USD expense action after device authentication.
+- The Control Center action can be configured with a USD amount; the widget keeps a separate fixed quick-expense preset.
 
 The current slice is local-only and intentionally keeps currency totals separate. It records the exchange rate for each mixed-currency transaction but does not yet convert all historical balances into one net-worth number.
 
@@ -121,7 +122,7 @@ The storage notice reports either:
 - `Persistent local database is working; widget sharing is unavailable`
 - `Persistent database unavailable`
 
-Only the last state rejects writes. Third-party free signing is the highest-risk part of this proof of concept: it may strip, reject, or fail to preserve App Group capabilities, in which case the main app remains persistent but widget sharing requires a properly provisioned App Group.
+The unavailable and undecodable states reject normal writes; an explicit restore or reset is required to replace corrupted data. Third-party free signing is the highest-risk part of this proof of concept: it may strip, reject, or fail to preserve App Group capabilities, in which case the main app remains persistent but widget sharing requires a properly provisioned App Group.
 A successful GitHub build proves compilation and embedding only; it does not prove App Groups work on the physical iPhone.
 
 ## Finance acceptance checklist

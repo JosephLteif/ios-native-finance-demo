@@ -22,22 +22,11 @@ struct GetBudgetStatusIntent: AppIntent {
         let data = FinanceStorage(context: "app-intent").load()
         let month = Calendar.current.dateInterval(of: .month, for: .now)
         let lines = data.budgets.map { budget -> String in
-            let spent = data.transactions
-                .filter {
-                    $0.kind == .expense
-                        && $0.categoryID == budget.categoryID
-                        && (month?.contains($0.date) ?? true)
-                }
-                .flatMap(\.outflows)
-                .filter { movement in
-                    data.accounts.first(where: { $0.id == movement.accountID })?.includeInTotals == true
-                        && movement.money.currency == budget.currency
-                }
-                .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+            let spentMoney = financeBudgetSpent(budget, in: data, interval: month)
+            let allowance = financeBudgetAllowance(budget, in: data, interval: month)
             let category = data.categories.first(where: { $0.id == budget.categoryID })?.name ?? "Uncategorized"
-            let spentMoney = Money(currency: budget.currency, minorUnits: spent)
-            let remaining = Money(currency: budget.currency, minorUnits: budget.monthlyLimit.minorUnits - spent)
-            return "\(category): \(spentMoney.formatted) of \(budget.monthlyLimit.formatted), \(remaining.minorUnits >= 0 ? "\(remaining.formatted) remaining" : "\(Money(currency: budget.currency, minorUnits: -remaining.minorUnits).formatted) over")"
+            let remaining = Money(currency: budget.currency, minorUnits: allowance.minorUnits - spentMoney.minorUnits)
+            return "\(category): \(spentMoney.formatted) of \(allowance.formatted), \(remaining.minorUnits >= 0 ? "\(remaining.formatted) remaining" : "\(Money(currency: budget.currency, minorUnits: -remaining.minorUnits).formatted) over")"
         }
         let summary = lines.isEmpty ? "No budgets configured." : lines.joined(separator: "\n")
         return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))

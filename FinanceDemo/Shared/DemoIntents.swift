@@ -50,6 +50,75 @@ struct AddDemoExpenseIntent: AppIntent {
     }
 }
 
+struct QuickExpenseControlConfiguration: ControlConfigurationIntent {
+    static let title: LocalizedStringResource = "Pocket Ledger Quick Expense"
+    static let description = IntentDescription("Choose the USD amount used by the Pocket Ledger Control Center action.")
+
+    @Parameter(title: "USD amount", default: "5")
+    var amount: String
+}
+
+struct AddConfiguredExpenseIntent: AppIntent {
+    static let title: LocalizedStringResource = "Add Pocket Ledger Quick Expense"
+    static let description = IntentDescription("Adds the configured USD quick expense to the first included USD account.")
+    static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+
+    @Parameter(title: "USD amount")
+    var amount: String
+
+    init() {
+        amount = "5"
+    }
+
+    init(amount: String) {
+        self.amount = amount
+    }
+
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        let storage = FinanceStorage(context: "app-intent")
+        guard storage.isPersistent else {
+            return .result(
+                value: "Persistent database unavailable",
+                dialog: "The expense was not saved because the persistent database is unavailable."
+            )
+        }
+
+        let data = storage.load()
+        guard let account = data.accounts.first(where: {
+            $0.currency == .usd && $0.type != .loan && $0.includeInTotals
+        }), let category = data.categories.first(where: { $0.parentID != nil }),
+              let money = financeMoney(amount, currency: .usd) else {
+            return .result(
+                value: "Quick expense unavailable",
+                dialog: "Pocket Ledger could not find a valid USD account, expense category, or amount."
+            )
+        }
+
+        let transaction = LedgerTransaction(
+            note: "Quick expense",
+            kind: .expense,
+            categoryID: category.id,
+            amountDue: money,
+            outflows: [MoneyMovement(accountID: account.id, money: money)],
+            inflows: []
+        )
+        guard storage.appendTransaction(transaction) else {
+            return .result(
+                value: "Persistent database unavailable",
+                dialog: "The expense was not saved because the persistent database is unavailable."
+            )
+        }
+
+        await FinanceIntentIndexing.shared.refresh()
+        WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
+        return .result(
+            value: money.formatted,
+            dialog: "Saved a \(money.formatted) quick expense."
+        )
+    }
+}
+
 struct AddDemoIncomeIntent: AppIntent {
     static let title: LocalizedStringResource = "Add Pocket Ledger Income"
     static let description = IntentDescription("Adds one hundred dollars to the USD cash ledger.")

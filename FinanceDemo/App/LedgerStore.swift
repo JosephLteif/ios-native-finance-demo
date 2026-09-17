@@ -14,7 +14,7 @@ final class LedgerStore: ObservableObject {
     }
 
     var storageAvailable: Bool {
-        storage.isPersistent
+        storage.isPersistent && !storage.isCorrupted
     }
 
     var sharedStorageAvailable: Bool {
@@ -22,6 +22,9 @@ final class LedgerStore: ObservableObject {
     }
 
     var storageStatus: String {
+        if storage.isCorrupted {
+            return "Persistent database could not be decoded; restore or reset required"
+        }
         if storage.isAppGroupAvailable {
             return "Persistent database is working"
         }
@@ -300,17 +303,11 @@ final class LedgerStore: ObservableObject {
     }
 
     func budgetSpent(_ budget: LedgerBudget, in interval: DateInterval? = nil) -> Money {
-        let month = interval ?? (Calendar.current.dateInterval(of: .month, for: .now) ?? DateInterval(start: .distantPast, duration: .zero))
-        let spent = data.transactions
-            .filter { transaction in
-                transaction.kind == .expense
-                    && month.contains(transaction.date)
-                    && transaction.categoryID == budget.categoryID
-            }
-            .flatMap(\.outflows)
-            .filter { includesInTotals(accountID: $0.accountID) && $0.money.currency == budget.currency }
-            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
-        return Money(currency: budget.currency, minorUnits: spent)
+        financeBudgetSpent(budget, in: data, interval: interval)
+    }
+
+    func budgetAllowance(_ budget: LedgerBudget, for interval: DateInterval? = nil) -> Money {
+        financeBudgetAllowance(budget, in: data, interval: interval)
     }
 
     func exchangeRate(base: LedgerCurrency, quote: LedgerCurrency) -> ExchangeRate? {
@@ -371,12 +368,12 @@ final class LedgerStore: ObservableObject {
 
     @discardableResult
     func resetLedger() -> Bool {
-        persist(.empty, successMessage: "Ledger reset")
+        persist(.empty, successMessage: "Ledger reset", allowingCorruptedReplacement: true)
     }
 
     @discardableResult
     func replaceData(_ imported: FinanceData) -> Bool {
-        persist(imported, successMessage: "Ledger restored")
+        persist(imported, successMessage: "Ledger restored", allowingCorruptedReplacement: true)
     }
 
     @discardableResult
@@ -557,10 +554,20 @@ final class LedgerStore: ObservableObject {
     }
 
     @discardableResult
-    private func persist(_ updated: FinanceData, successMessage: String) -> Bool {
-        let persisted = storage.save(updated)
+    private func persist(
+        _ updated: FinanceData,
+        successMessage: String,
+        allowingCorruptedReplacement: Bool = false
+    ) -> Bool {
+        let persisted = storage.save(
+            updated,
+            allowingCorruptedReplacement: allowingCorruptedReplacement
+        )
         guard persisted else {
-            lastActionStatus = "\(successMessage) was not saved because the persistent database is unavailable."
+            let reason = storage.isCorrupted
+                ? "the persistent database could not be decoded; restore or reset it"
+                : "the persistent database is unavailable"
+            lastActionStatus = "\(successMessage) was not saved because \(reason)."
             return false
         }
 

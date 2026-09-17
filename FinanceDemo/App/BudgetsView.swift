@@ -75,8 +75,9 @@ struct BudgetsView: View {
 
     private func budgetCard(_ budget: LedgerBudget) -> some View {
         let spent = store.budgetSpent(budget)
-        let ratio = min(Double(spent.minorUnits) / Double(max(budget.monthlyLimit.minorUnits, 1)), 1)
-        let over = spent.minorUnits > budget.monthlyLimit.minorUnits
+        let allowance = store.budgetAllowance(budget)
+        let ratio = min(Double(spent.minorUnits) / Double(max(allowance.minorUnits, 1)), 1)
+        let over = spent.minorUnits > allowance.minorUnits
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -87,14 +88,14 @@ struct BudgetsView: View {
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
                 }
                 Spacer()
-                Text("\(spent.formatted) / \(budget.monthlyLimit.formatted)")
+                Text("\(spent.formatted) / \(allowance.formatted)")
                     .font(.subheadline.weight(.semibold).monospacedDigit())
                     .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.textPrimary)
             }
             ProgressView(value: ratio)
                 .tint(over ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
             HStack {
-                Text(over ? "Over by \(Money(currency: budget.currency, minorUnits: spent.minorUnits - budget.monthlyLimit.minorUnits).formatted)" : "Remaining \(Money(currency: budget.currency, minorUnits: budget.monthlyLimit.minorUnits - spent.minorUnits).formatted)")
+                Text(over ? "Over by \(Money(currency: budget.currency, minorUnits: spent.minorUnits - allowance.minorUnits).formatted)" : "Remaining \(Money(currency: budget.currency, minorUnits: allowance.minorUnits - spent.minorUnits).formatted)")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.positive)
                 Spacer()
@@ -173,7 +174,16 @@ private struct BudgetEditor: View {
             errorMessage = "Enter a positive monthly limit."
             return
         }
-        let saved = store.upsertBudget(LedgerBudget(id: budget?.id ?? UUID(), categoryID: categoryID, currency: currency, monthlyLimit: limit, rollover: rollover))
+        let saved = store.upsertBudget(
+            LedgerBudget(
+                id: budget?.id ?? UUID(),
+                categoryID: categoryID,
+                currency: currency,
+                monthlyLimit: limit,
+                rollover: rollover,
+                startedAt: budget?.startedAt ?? .now
+            )
+        )
         if saved { dismiss() }
     }
 }

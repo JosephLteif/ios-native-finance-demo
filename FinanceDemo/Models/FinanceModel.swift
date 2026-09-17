@@ -451,20 +451,85 @@ struct LedgerBudget: Identifiable, Codable, Equatable {
     var currency: LedgerCurrency
     var monthlyLimit: Money
     var rollover: Bool
+    var startedAt: Date?
 
     init(
         id: UUID = UUID(),
         categoryID: UUID,
         currency: LedgerCurrency,
         monthlyLimit: Money,
-        rollover: Bool = false
+        rollover: Bool = false,
+        startedAt: Date? = .now
     ) {
         self.id = id
         self.categoryID = categoryID
         self.currency = currency
         self.monthlyLimit = monthlyLimit
         self.rollover = rollover
+        self.startedAt = startedAt
     }
+}
+
+func financeBudgetSpent(
+    _ budget: LedgerBudget,
+    in data: FinanceData,
+    interval: DateInterval? = nil
+) -> Money {
+    let period = interval ?? (
+        Calendar.current.dateInterval(of: .month, for: .now)
+            ?? DateInterval(start: .distantPast, duration: .zero)
+    )
+    let spent = data.transactions
+        .filter {
+            $0.kind == .expense
+                && period.contains($0.date)
+                && $0.categoryID == budget.categoryID
+        }
+        .flatMap(\.outflows)
+        .filter { movement in
+            data.accounts.first(where: { $0.id == movement.accountID })?.includeInTotals == true
+                && movement.money.currency == budget.currency
+        }
+        .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+    return Money(currency: budget.currency, minorUnits: spent)
+}
+
+func financeBudgetAllowance(
+    _ budget: LedgerBudget,
+    in data: FinanceData,
+    interval: DateInterval? = nil
+) -> Money {
+    let currentMonth = interval ?? (
+        Calendar.current.dateInterval(of: .month, for: .now)
+            ?? DateInterval(start: .distantPast, duration: .zero)
+    )
+    guard budget.rollover else { return budget.monthlyLimit }
+
+    let calendar = Calendar.current
+    let startingMonth = calendar.dateInterval(
+        of: .month,
+        for: budget.startedAt ?? currentMonth.start
+    )?.start ?? currentMonth.start
+    var month = startingMonth
+    var carry = Int64.zero
+
+    while month < currentMonth.start {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
+            break
+        }
+        let spent = financeBudgetSpent(budget, in: data, interval: monthInterval).minorUnits
+        carry += max(budget.monthlyLimit.minorUnits - spent, 0)
+        guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: month),
+              nextMonth > month else {
+            break
+        }
+        month = nextMonth
+    }
+
+    return Money(
+        currency: budget.currency,
+        minorUnits: budget.monthlyLimit.minorUnits + carry
+    )
 }
 
 struct LedgerTemplate: Identifiable, Codable, Equatable {

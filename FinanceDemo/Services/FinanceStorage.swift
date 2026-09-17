@@ -10,8 +10,16 @@ final class FinanceStorage {
         case unavailable
     }
 
+    enum LoadStatus {
+        case notLoaded
+        case empty
+        case loaded
+        case corrupted
+    }
+
     private let modelContainer: ModelContainer?
     private let storageLocation: StorageLocation
+    private(set) var loadStatus: LoadStatus = .notLoaded
 
     init(context: String) {
         if let groupURL = FileManager.default.containerURL(
@@ -70,20 +78,39 @@ final class FinanceStorage {
         storageLocation == .local
     }
 
+    var isCorrupted: Bool {
+        loadStatus == .corrupted
+    }
+
     func load() -> FinanceData {
-        guard let context = makeContext(),
-              let records = try? context.fetch(FetchDescriptor<FinanceDatabaseRecord>()),
-              let record = records.first,
-              let decoded = try? JSONDecoder().decode(FinanceData.self, from: record.payload) else {
+        guard let context = makeContext() else {
+            loadStatus = .empty
             return .empty
         }
 
+        guard let records = try? context.fetch(FetchDescriptor<FinanceDatabaseRecord>()) else {
+            loadStatus = .corrupted
+            return .empty
+        }
+
+        guard let record = records.first else {
+            loadStatus = .empty
+            return .empty
+        }
+
+        guard let decoded = try? JSONDecoder().decode(FinanceData.self, from: record.payload) else {
+            loadStatus = .corrupted
+            return .empty
+        }
+
+        loadStatus = .loaded
         return decoded
     }
 
     @discardableResult
-    func save(_ value: FinanceData) -> Bool {
-        guard let modelContainer,
+    func save(_ value: FinanceData, allowingCorruptedReplacement: Bool = false) -> Bool {
+        guard allowingCorruptedReplacement || !isCorrupted,
+              let modelContainer,
               let encoded = try? JSONEncoder().encode(value) else {
             return false
         }
@@ -99,6 +126,7 @@ final class FinanceStorage {
             }
 
             try context.save()
+            loadStatus = .loaded
             return true
         } catch {
             return false

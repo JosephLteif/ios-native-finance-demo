@@ -445,9 +445,10 @@ private struct DashboardView: View {
                 VStack(spacing: 12) {
                     ForEach(Array(store.data.budgets.prefix(3))) { budget in
                         let spent = store.budgetSpent(budget)
-                        let over = spent.minorUnits > budget.monthlyLimit.minorUnits
+                        let allowance = store.budgetAllowance(budget)
+                        let over = spent.minorUnits > allowance.minorUnits
                         let ratio = min(
-                            Double(spent.minorUnits) / Double(max(budget.monthlyLimit.minorUnits, 1)),
+                            Double(spent.minorUnits) / Double(max(allowance.minorUnits, 1)),
                             1
                         )
 
@@ -457,7 +458,7 @@ private struct DashboardView: View {
                                     .font(.subheadline.weight(.semibold))
                                     .lineLimit(1)
                                 Spacer()
-                                Text("\(spent.formatted) / \(budget.monthlyLimit.formatted)")
+                                Text("\(spent.formatted) / \(allowance.formatted)")
                                     .font(.caption.weight(.semibold).monospacedDigit())
                                     .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.textSecondary)
                             }
@@ -474,7 +475,7 @@ private struct DashboardView: View {
 
     private var storageNotice: some View {
         HStack(spacing: 8) {
-            Image(systemName: store.sharedStorageAvailable
+            Image(systemName: store.storageAvailable && store.sharedStorageAvailable
                   ? "checkmark.shield.fill"
                   : store.storageAvailable
                   ? "internaldrive.fill"
@@ -909,7 +910,7 @@ private struct AccountsView: View {
                         }
                     }
 
-                    Text(store.sharedStorageAvailable
+                    Text(store.storageAvailable && store.sharedStorageAvailable
                          ? "Stored locally in the shared app container."
                          : store.storageAvailable
                          ? "Stored persistently on this device; widget sharing is unavailable."
