@@ -673,15 +673,18 @@ private struct ImportReviewView: View {
                             .foregroundStyle(PocketLedgerTheme.textSecondary)
                     } else {
                         ForEach(filteredTransactionIndices, id: \.self) { index in
+                            let rowNumber = index + 1
+                            let rowAccounts = availableAccounts
+                            let rowCategories = availableCategories
                             let transactionBinding = Binding<LedgerTransaction>(
                                 get: { importedData.transactions[index] },
                                 set: { importedData.transactions[index] = $0 }
                             )
                             ImportReviewTransactionRow(
                                 transaction: transactionBinding,
-                                rowNumber: index + 1,
-                                accounts: availableAccounts,
-                                categories: availableCategories
+                                rowNumber: rowNumber,
+                                accounts: rowAccounts,
+                                categories: rowCategories
                             )
                         }
                     }
