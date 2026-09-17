@@ -661,13 +661,10 @@ private struct ImportReviewView: View {
                 }
 
                 if !importedData.categories.isEmpty {
-                    Section("Categories that may be created") {
-                        ForEach(importedData.categories) { category in
-                            Label(categoryPath(for: category.id), systemImage: category.systemImage)
-                        }
-                    } footer: {
-                        Text("Use the category picker on each row to keep, change, or remove a provisional category.")
-                    }
+                    ImportReviewCategoriesSection(
+                        categories: importedData.categories,
+                        allCategories: availableCategories
+                    )
                 }
 
                 Section("Imported transactions") {
@@ -817,12 +814,42 @@ private struct ImportReviewAccountsSection: View {
 
     var body: some View {
         Section("Accounts that may be created") {
-            ForEach($accounts) { $account in
-                ImportReviewAccountRow(account: $account)
+            ForEach(accounts.indices, id: \.self) { index in
+                ImportReviewAccountRow(account: $accounts[index])
             }
         } footer: {
             Text("These accounts are provisional. If you assign their rows to existing accounts, unused provisional accounts will not be created.")
         }
+    }
+}
+
+private struct ImportReviewCategoriesSection: View {
+    let categories: [LedgerCategory]
+    let allCategories: [LedgerCategory]
+
+    var body: some View {
+        Section("Categories that may be created") {
+            ForEach(categories) { category in
+                Label(categoryPath(for: category.id), systemImage: category.systemImage)
+            }
+        } footer: {
+            Text("Use the category picker on each row to keep, change, or remove a provisional category.")
+        }
+    }
+
+    private func categoryPath(for categoryID: UUID) -> String {
+        var names: [String] = []
+        var currentID: UUID? = categoryID
+        var visited: Set<UUID> = []
+
+        while let id = currentID,
+              visited.insert(id).inserted,
+              let category = allCategories.first(where: { $0.id == id }) {
+            names.append(category.name)
+            currentID = category.parentID
+        }
+
+        return names.reversed().joined(separator: " / ")
     }
 }
 
