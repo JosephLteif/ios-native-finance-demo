@@ -4,12 +4,15 @@ options:
   bundleIdPrefix: com.josephlteif
   deploymentTarget:
     iOS: 26.0
+    watchOS: 26.0
   createIntermediateGroups: true
   groupSortPosition: top
+  postGenCommand: bash scripts/patch-watch-embedding.sh
 
 settings:
   base:
     IPHONEOS_DEPLOYMENT_TARGET: 26.0
+    WATCHOS_DEPLOYMENT_TARGET: 26.0
     SWIFT_VERSION: 6.0
 
 packages:
@@ -26,6 +29,7 @@ targets:
       - path: FinanceDemo/Models
       - path: FinanceDemo/Services
       - path: FinanceDemo/Shared
+      - path: FinanceDemo/WatchShared
       - path: FinanceDemo/Resources/Assets.xcassets
     settings:
       base:
@@ -59,6 +63,9 @@ targets:
       - target: FinanceDemoWidget
         embed: true
         codeSign: false
+      - target: FinanceDemoWatch
+        embed: true
+        codeSign: false
     scheme:
       gatherCoverageData: false
       testTargets:
@@ -90,6 +97,64 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
       path: FinanceDemoWidget/Config/FinanceDemoWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.josephlteif.financedemo
+
+  FinanceDemoWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: FinanceDemo/Models/FinanceModel.swift
+      - path: FinanceDemo/WatchShared
+      - path: FinanceDemoWatch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        SUPPORTS_MACCATALYST: NO
+    info:
+      path: FinanceDemoWatch/Config/Info.plist
+      properties:
+        CFBundleDisplayName: Pocket Ledger
+        CFBundleName: Pocket Ledger
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        WKCompanionAppBundleIdentifier: com.josephlteif.financedemo
+        WKRunsIndependentlyOfCompanionApp: false
+    entitlements:
+      path: FinanceDemoWatch/Config/FinanceDemoWatch.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.josephlteif.financedemo
+    dependencies:
+      - target: FinanceDemoWatchWidget
+        embed: true
+        codeSign: false
+    scheme: {}
+
+  FinanceDemoWatchWidget:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: FinanceDemo/Models/FinanceModel.swift
+      - path: FinanceDemo/WatchShared
+      - path: FinanceDemoWatchWidget
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.watchkitapp.widget
+        TARGETED_DEVICE_FAMILY: "4"
+    info:
+      path: FinanceDemoWatchWidget/Config/Info.plist
+      properties:
+        CFBundleDisplayName: Pocket Ledger Complication
+        CFBundleName: Pocket Ledger Complication
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: FinanceDemoWatchWidget/Config/FinanceDemoWatchWidget.entitlements
       properties:
         com.apple.security.application-groups:
           - group.com.josephlteif.financedemo

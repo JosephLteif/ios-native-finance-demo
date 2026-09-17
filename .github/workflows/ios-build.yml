@@ -50,6 +50,22 @@ jobs:
             DEVELOPMENT_TEAM="" \
             clean build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
 
+      - name: Compile watch app and complication for a generic watch simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios-native-finance-demo.xcodeproj \
+            -target FinanceDemoWatch \
+            -configuration Debug \
+            -sdk watchsimulator \
+            -destination "generic/platform=watchOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/WatchDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild-watch.log"
+
       - name: Compile unit tests for the iOS simulator
         run: |
           set -o pipefail
@@ -92,6 +108,12 @@ jobs:
           APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
           test -d "$APP_PATH" || { echo "Missing app: $APP_PATH"; exit 1; }
           test -d "$APP_PATH/PlugIns" || { echo "Missing PlugIns directory: $APP_PATH/PlugIns"; exit 1; }
+          WATCH_APP_PATH="$APP_PATH/PlugIns/FinanceDemoWatch.app"
+          test -d "$WATCH_APP_PATH" || { echo "Missing embedded watch app: $WATCH_APP_PATH"; exit 1; }
+          test -d "$WATCH_APP_PATH/PlugIns/FinanceDemoWatchWidget.appex" || {
+            echo "Missing embedded watch complication: $WATCH_APP_PATH/PlugIns/FinanceDemoWatchWidget.appex"
+            exit 1
+          }
           WIDGET_PATH=""
           for candidate in "$APP_PATH"/PlugIns/*.appex; do
             if [ -d "$candidate" ]; then
@@ -107,6 +129,7 @@ jobs:
             exit 1
           }
           echo "App: $APP_PATH"
+          echo "Watch app: $WATCH_APP_PATH"
           echo "Widget extension: $WIDGET_PATH"
           echo "Compiled app icon catalog: $APP_PATH/Assets.car"
           echo "Display name: $DISPLAY_NAME"
@@ -127,6 +150,10 @@ jobs:
           unzip -t "$IPA_PATH"
           unzip -Z1 "$IPA_PATH" | grep -Eq '^Payload/FinanceDemo\.app/PlugIns/[^/]+\.appex(/|$)' || {
             echo "Packaged IPA does not contain an embedded widget extension."
+            exit 1
+          }
+          unzip -Z1 "$IPA_PATH" | grep -Eq '^Payload/FinanceDemo\.app/PlugIns/FinanceDemoWatch\.app(/|$)' || {
+            echo "Packaged IPA does not contain the embedded watch app."
             exit 1
           }
           unzip -l "$IPA_PATH"

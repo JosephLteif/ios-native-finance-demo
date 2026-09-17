@@ -350,4 +350,57 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(copy.outflows.first?.accountID, account.id)
         XCTAssertEqual(copy.outflows.first?.money, transaction.outflows.first?.money)
     }
+
+    func testWatchExpenseCommandRoundTripsThroughConnectivityCodec() throws {
+        let command = WatchExpenseCommand(
+            id: UUID(),
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            amount: Money(currency: .usd, minorUnits: 1_250),
+            accountID: UUID(),
+            categoryID: UUID(),
+            note: "Coffee"
+        )
+
+        let context = try XCTUnwrap(WatchSyncCodec.dictionary(for: command))
+        let decoded = try XCTUnwrap(WatchSyncCodec.expenseCommand(from: context))
+
+        XCTAssertEqual(decoded, command)
+    }
+
+    func testWatchSnapshotIncludesBalancesAndRecentActivity() {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 10_000)
+        )
+        let category = LedgerCategory(name: "Food")
+        let transaction = LedgerTransaction(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            note: "Lunch",
+            kind: .expense,
+            categoryID: category.id,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 1_250)
+                )
+            ],
+            inflows: []
+        )
+
+        let snapshot = WatchSyncPublisher.makeSnapshot(
+            from: FinanceData(
+                accounts: [account],
+                categories: [category],
+                transactions: [transaction]
+            ),
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_100)
+        )
+
+        XCTAssertEqual(snapshot.balances.first { $0.currency == .usd }?.balance.minorUnits, 8_750)
+        XCTAssertEqual(snapshot.accounts.first?.name, \"Cash\")
+        XCTAssertEqual(snapshot.recentTransactions.first?.categoryPath, \"Food\")
+        XCTAssertEqual(snapshot.recentTransactions.first?.amount.minorUnits, 1_250)
+    }
 }

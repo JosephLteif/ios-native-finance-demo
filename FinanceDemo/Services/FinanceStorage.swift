@@ -172,6 +172,7 @@ final class FinanceStorage {
 
             try context.save()
             loadStatus = .loaded
+            WatchSyncPublisher.publish(data: value)
             return true
         } catch {
             return false

@@ -4,6 +4,7 @@ import SwiftUI
 struct FinanceDemoApp: App {
     init() {
         FinanceDemoShortcuts.updateAppShortcutParameters()
+        WatchConnectivityService.shared.activate()
     }
 
     var body: some Scene {
