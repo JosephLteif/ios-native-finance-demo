@@ -673,8 +673,12 @@ private struct ImportReviewView: View {
                             .foregroundStyle(PocketLedgerTheme.textSecondary)
                     } else {
                         ForEach(filteredTransactionIndices, id: \.self) { index in
+                            let transactionBinding = Binding<LedgerTransaction>(
+                                get: { importedData.transactions[index] },
+                                set: { importedData.transactions[index] = $0 }
+                            )
                             ImportReviewTransactionRow(
-                                transaction: $importedData.transactions[index],
+                                transaction: transactionBinding,
                                 rowNumber: index + 1,
                                 accounts: availableAccounts,
                                 categories: availableCategories
@@ -813,13 +817,19 @@ private struct ImportReviewAccountsSection: View {
     @Binding var accounts: [Account]
 
     var body: some View {
-        Section("Accounts that may be created") {
-            ForEach(accounts.indices, id: \.self) { index in
-                ImportReviewAccountRow(account: $accounts[index])
+        Section(
+            content: {
+                ForEach(accounts.indices, id: \.self) { index in
+                    ImportReviewAccountRow(account: $accounts[index])
+                }
+            },
+            header: {
+                Text("Accounts that may be created")
+            },
+            footer: {
+                Text("These accounts are provisional. If you assign their rows to existing accounts, unused provisional accounts will not be created.")
             }
-        } footer: {
-            Text("These accounts are provisional. If you assign their rows to existing accounts, unused provisional accounts will not be created.")
-        }
+        )
     }
 }
 
@@ -828,13 +838,19 @@ private struct ImportReviewCategoriesSection: View {
     let allCategories: [LedgerCategory]
 
     var body: some View {
-        Section("Categories that may be created") {
-            ForEach(categories) { category in
-                Label(categoryPath(for: category.id), systemImage: category.systemImage)
+        Section(
+            content: {
+                ForEach(categories) { category in
+                    Label(categoryPath(for: category.id), systemImage: category.systemImage)
+                }
+            },
+            header: {
+                Text("Categories that may be created")
+            },
+            footer: {
+                Text("Use the category picker on each row to keep, change, or remove a provisional category.")
             }
-        } footer: {
-            Text("Use the category picker on each row to keep, change, or remove a provisional category.")
-        }
+        )
     }
 
     private func categoryPath(for categoryID: UUID) -> String {
