@@ -399,8 +399,8 @@ final class FinanceModelTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.balances.first { $0.currency == .usd }?.balance.minorUnits, 8_750)
-        XCTAssertEqual(snapshot.accounts.first?.name, \"Cash\")
-        XCTAssertEqual(snapshot.recentTransactions.first?.categoryPath, \"Food\")
+        XCTAssertEqual(snapshot.accounts.first?.name, "Cash")
+        XCTAssertEqual(snapshot.recentTransactions.first?.categoryPath, "Food")
         XCTAssertEqual(snapshot.recentTransactions.first?.amount.minorUnits, 1_250)
     }
 }
