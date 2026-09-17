@@ -79,6 +79,7 @@ targets:
       - path: FinanceDemo/Models
       - path: FinanceDemo/Services/FinanceStorage.swift
       - path: FinanceDemo/Shared
+      - path: FinanceDemo/WatchShared
       - path: FinanceDemoWidget
     settings:
       base:
