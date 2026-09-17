@@ -642,17 +642,14 @@ private struct ImportReviewView: View {
     }
 
     var body: some View {
-        let importedRowCount = importedData.transactions.count
-        let skippedRowCount = candidate.result.skippedRows
-
         NavigationStack {
             Form {
                 Section("Review before importing") {
                     LabeledContent("File", value: candidate.fileName)
                     LabeledContent("Table", value: candidate.tableName)
-                    LabeledContent("Ready to import", value: "\(importedRowCount) rows")
-                    if skippedRowCount > 0 {
-                        LabeledContent("Skipped while parsing", value: "\(skippedRowCount) rows")
+                    LabeledContent("Ready to import", value: importedRowCountLabel)
+                    if candidate.result.skippedRows > 0 {
+                        LabeledContent("Skipped while parsing", value: skippedRowCountLabel)
                     }
                     Text("Nothing has been saved yet. Assign accounts and categories below, then confirm the import.")
                         .font(.footnote)
@@ -770,6 +767,14 @@ private struct ImportReviewView: View {
                 .joined(separator: " ")
             return haystack.localizedCaseInsensitiveContains(searchText)
         }
+    }
+
+    private var importedRowCountLabel: String {
+        String(importedData.transactions.count) + " rows"
+    }
+
+    private var skippedRowCountLabel: String {
+        String(candidate.result.skippedRows) + " rows"
     }
 
     private var errorPresented: Binding<Bool> {
