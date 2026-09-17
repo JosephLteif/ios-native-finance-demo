@@ -12,7 +12,6 @@ struct ContentView: View {
     @State private var isUnlocked = false
     @SceneStorage("pocketLedger.selectedTab") private var selectedTabRawValue = AppTab.overview.rawValue
     @AppStorage(SetupWizardView.completedKey) private var setupCompleted = false
-    @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
     @Environment(\.scenePhase) private var scenePhase
 
@@ -97,7 +96,6 @@ struct ContentView: View {
             .padding(.bottom, 4)
         }
         .tint(PocketLedgerTheme.accent)
-        .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
         )
