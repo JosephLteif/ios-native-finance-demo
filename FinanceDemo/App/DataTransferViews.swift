@@ -657,13 +657,7 @@ private struct ImportReviewView: View {
                 }
 
                 if !importedData.accounts.isEmpty {
-                    Section("Accounts that may be created") {
-                        ForEach($importedData.accounts) { $account in
-                            ImportReviewAccountRow(account: $account)
-                        }
-                    } footer: {
-                        Text("These accounts are provisional. If you assign their rows to existing accounts, unused provisional accounts will not be created.")
-                    }
+                    ImportReviewAccountsSection(accounts: $importedData.accounts)
                 }
 
                 if !importedData.categories.isEmpty {
@@ -815,6 +809,20 @@ private struct ImportReviewView: View {
         }
         onImported()
         dismiss()
+    }
+}
+
+private struct ImportReviewAccountsSection: View {
+    @Binding var accounts: [Account]
+
+    var body: some View {
+        Section("Accounts that may be created") {
+            ForEach($accounts) { $account in
+                ImportReviewAccountRow(account: $account)
+            }
+        } footer: {
+            Text("These accounts are provisional. If you assign their rows to existing accounts, unused provisional accounts will not be created.")
+        }
     }
 }
 
