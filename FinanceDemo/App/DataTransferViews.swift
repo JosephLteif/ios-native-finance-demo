@@ -667,30 +667,12 @@ private struct ImportReviewView: View {
                     )
                 }
 
-                Section("Imported transactions") {
-                    if filteredTransactionIndices.isEmpty {
-                        Text("No matching transactions")
-                            .foregroundStyle(PocketLedgerTheme.textSecondary)
-                    } else {
-                        ForEach(filteredTransactionIndices, id: \.self) { index in
-                            let rowNumber = index + 1
-                            let rowAccounts = availableAccounts
-                            let rowCategories = availableCategories
-                            let transactionBinding = Binding<LedgerTransaction>(
-                                get: { importedData.transactions[index] },
-                                set: { importedData.transactions[index] = $0 }
-                            )
-                            ImportReviewTransactionRow(
-                                transaction: transactionBinding,
-                                rowNumber: rowNumber,
-                                accounts: rowAccounts,
-                                categories: rowCategories
-                            )
-                        }
-                    }
-                } footer: {
-                    Text("Search by note, account, category, or amount. Changes stay local until you tap Import.")
-                }
+                ImportReviewTransactionsSection(
+                    transactions: $importedData.transactions,
+                    indices: filteredTransactionIndices,
+                    accounts: availableAccounts,
+                    categories: availableCategories
+                )
 
                 if !candidate.result.warnings.isEmpty {
                     Section("Warnings") {
@@ -869,6 +851,40 @@ private struct ImportReviewCategoriesSection: View {
         }
 
         return names.reversed().joined(separator: " / ")
+    }
+}
+
+private struct ImportReviewTransactionsSection: View {
+    @Binding var transactions: [LedgerTransaction]
+    let indices: [Int]
+    let accounts: [Account]
+    let categories: [LedgerCategory]
+
+    var body: some View {
+        Section("Imported transactions") {
+            if indices.isEmpty {
+                Text("No matching transactions")
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+            } else {
+                ForEach(indices, id: \.self) { index in
+                    ImportReviewTransactionRow(
+                        transaction: transactionBinding(at: index),
+                        rowNumber: index + 1,
+                        accounts: accounts,
+                        categories: categories
+                    )
+                }
+            }
+        } footer: {
+            Text("Search by note, account, category, or amount. Changes stay local until you tap Import.")
+        }
+    }
+
+    private func transactionBinding(at index: Int) -> Binding<LedgerTransaction> {
+        Binding(
+            get: { transactions[index] },
+            set: { transactions[index] = $0 }
+        )
     }
 }
 
