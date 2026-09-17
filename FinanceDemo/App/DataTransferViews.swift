@@ -861,23 +861,29 @@ private struct ImportReviewTransactionsSection: View {
     let categories: [LedgerCategory]
 
     var body: some View {
-        Section("Imported transactions") {
-            if indices.isEmpty {
-                Text("No matching transactions")
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-            } else {
-                ForEach(indices, id: \.self) { index in
-                    ImportReviewTransactionRow(
-                        transaction: transactionBinding(at: index),
-                        rowNumber: index + 1,
-                        accounts: accounts,
-                        categories: categories
-                    )
+        Section(
+            content: {
+                if indices.isEmpty {
+                    Text("No matching transactions")
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                } else {
+                    ForEach(indices, id: \.self) { index in
+                        ImportReviewTransactionRow(
+                            transaction: transactionBinding(at: index),
+                            rowNumber: index + 1,
+                            accounts: accounts,
+                            categories: categories
+                        )
+                    }
                 }
+            },
+            header: {
+                Text("Imported transactions")
+            },
+            footer: {
+                Text("Search by note, account, category, or amount. Changes stay local until you tap Import.")
             }
-        } footer: {
-            Text("Search by note, account, category, or amount. Changes stay local until you tap Import.")
-        }
+        )
     }
 
     private func transactionBinding(at index: Int) -> Binding<LedgerTransaction> {
