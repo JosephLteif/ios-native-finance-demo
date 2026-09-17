@@ -7,6 +7,7 @@ struct ScheduledTransactionsView: View {
     @State private var isPresentingEditor = false
     @State private var editingSchedule: ScheduledTransaction?
     @State private var scheduleToDelete: ScheduledTransaction?
+    @State private var reminderStatus: String?
 
     var body: some View {
         NavigationStack {
@@ -18,6 +19,29 @@ struct ScheduledTransactionsView: View {
                         .font(.footnote)
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
                         .padding(.horizontal, 4)
+
+                    if !schedules.isEmpty {
+                        Button {
+                            Task {
+                                reminderStatus = await NotificationService
+                                    .requestScheduledTransactionNotifications(
+                                        schedules: schedules
+                                    )
+                            }
+                        } label: {
+                            Label("Enable due reminders", systemImage: "bell.badge")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(PocketLedgerTheme.accent)
+                        .padding(.horizontal, 4)
+                    }
+
+                    if let reminderStatus {
+                        Text(reminderStatus)
+                            .font(.caption)
+                            .foregroundStyle(PocketLedgerTheme.textTertiary)
+                            .padding(.horizontal, 4)
+                    }
 
                     if schedules.isEmpty {
                         emptyState

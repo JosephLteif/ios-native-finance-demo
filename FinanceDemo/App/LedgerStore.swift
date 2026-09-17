@@ -577,6 +577,12 @@ final class LedgerStore: ObservableObject {
         Task {
             await FinanceIntentIndexing.shared.refresh()
         }
+        let schedules = updated.scheduledTransactions
+        Task {
+            await NotificationService.refreshScheduledTransactionNotifications(
+                schedules: schedules
+            )
+        }
         lastActionStatus = successMessage
         return true
     }

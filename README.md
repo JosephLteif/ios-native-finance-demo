@@ -31,6 +31,7 @@ The main app now contains the first local finance workflow for the Lebanese mark
 - Transactions can be searched, edited, duplicated, and deleted from the history surface.
 - Category budgets can be created, edited, and reviewed from both Overview and More, with monthly progress and over-budget states.
 - Transactions can be saved as reusable templates and used to prefill a new entry.
+- Scheduled transactions can opt into local due-date reminders; ledger entries are still materialized when the app returns to the foreground.
 - The widget and Shortcuts read and mutate the same shared finance ledger as the main app.
 - A native Control Center/Lock Screen control records the existing quick USD expense action after device authentication.
 - The Control Center action can be configured with a USD amount; the widget keeps a separate fixed quick-expense preset.
