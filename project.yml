@@ -99,7 +99,7 @@ targets:
           - group.com.josephlteif.financedemo
 
   FinanceDemoWatch:
-    type: application.watchapp2
+    type: application
     platform: watchOS
     sources:
       - path: FinanceDemo/Models/FinanceModel.swift
