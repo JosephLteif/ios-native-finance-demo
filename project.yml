@@ -62,9 +62,6 @@ targets:
       - target: FinanceDemoWidget
         embed: true
         codeSign: false
-      - target: FinanceDemoWatch
-        embed: true
-        codeSign: false
     scheme:
       gatherCoverageData: false
       testTargets:

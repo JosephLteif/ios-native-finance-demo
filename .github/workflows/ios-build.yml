@@ -66,6 +66,32 @@ jobs:
             DEVELOPMENT_TEAM="" \
             build 2>&1 | tee "$RUNNER_TEMP/xcodebuild-watch.log"
 
+      - name: Compile watch app for device packaging
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios-native-finance-demo.xcodeproj \
+            -scheme FinanceDemoWatch \
+            -configuration Release \
+            -sdk watchos \
+            -destination "generic/platform=watchOS" \
+            -derivedDataPath "$RUNNER_TEMP/WatchDeviceDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild-watch-device.log"
+
+      - name: Embed watch app for IPA packaging
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
+          WATCH_SOURCE_PATH="$RUNNER_TEMP/WatchDeviceDerivedData/Build/Products/Release-watchos/FinanceDemoWatch.app"
+          test -d "$APP_PATH" || { echo "Missing iOS app: $APP_PATH"; exit 1; }
+          test -d "$WATCH_SOURCE_PATH" || { echo "Missing watch app: $WATCH_SOURCE_PATH"; exit 1; }
+          mkdir -p "$APP_PATH/Watch"
+          ditto "$WATCH_SOURCE_PATH" "$APP_PATH/Watch/FinanceDemoWatch.app"
+
       - name: Compile unit tests for the iOS simulator
         run: |
           set -o pipefail
@@ -110,6 +136,10 @@ jobs:
           test -d "$APP_PATH/PlugIns" || { echo "Missing PlugIns directory: $APP_PATH/PlugIns"; exit 1; }
           WATCH_APP_PATH="$APP_PATH/Watch/FinanceDemoWatch.app"
           test -d "$WATCH_APP_PATH" || { echo "Missing embedded watch app: $WATCH_APP_PATH"; exit 1; }
+          test ! -e "$APP_PATH/PlugIns/FinanceDemoWatch.app" || {
+            echo "Watch app was embedded as an iOS plug-in instead of a Watch bundle."
+            exit 1
+          }
           test -d "$WATCH_APP_PATH/PlugIns/FinanceDemoWatchWidget.appex" || {
             echo "Missing embedded watch complication: $WATCH_APP_PATH/PlugIns/FinanceDemoWatchWidget.appex"
             exit 1
