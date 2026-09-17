@@ -59,23 +59,21 @@ struct BalanceWidgetEntryView: View {
                 .foregroundStyle(PocketWidgetTheme.accent)
 
             if entry.snapshot.appGroupAvailable {
-                balanceRow(
-                    currency: "USD",
-                    amount: entry.snapshot.usdAvailable.formatted
-                )
-                balanceRow(
-                    currency: "LBP",
-                    amount: entry.snapshot.lbpAvailable.formatted
-                )
-                balanceRow(
-                    currency: "EUR",
-                    amount: entry.snapshot.eurAvailable.formatted
-                )
+                if family == .systemSmall {
+                    balanceRow(currency: "USD", amount: entry.snapshot.usdAvailable.formatted)
+                    balanceRow(currency: "LBP", amount: entry.snapshot.lbpAvailable.formatted)
+                    balanceRow(currency: "EUR", amount: entry.snapshot.eurAvailable.formatted)
+                } else {
+                    balanceRow(currency: "USD", amount: entry.snapshot.usdAvailable.formatted)
+                    balanceRow(currency: "LBP", amount: entry.snapshot.lbpAvailable.formatted)
+                    balanceRow(currency: "EUR", amount: entry.snapshot.eurAvailable.formatted)
 
-                Text(entry.snapshot.latestTransactionDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(family == .systemSmall ? 2 : 1)
+                    Text(entry.snapshot.latestTransactionDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .privacySensitive()
+                }
             } else {
                 Text("Shared storage unavailable")
                     .font(.headline)
@@ -105,13 +103,15 @@ struct BalanceWidgetEntryView: View {
                 Spacer(minLength: 4)
 
                 if entry.snapshot.appGroupAvailable {
-                    Button(intent: AddDemoExpenseIntent()) {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(PocketWidgetTheme.accent)
+                    if family == .systemMedium {
+                        Button(intent: AddDemoExpenseIntent()) {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(PocketWidgetTheme.accent)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Add a five dollar USD expense")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add a five dollar USD expense")
                 } else {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(PocketWidgetTheme.warning)
@@ -120,22 +120,22 @@ struct BalanceWidgetEntryView: View {
             }
         }
         .containerBackground(PocketWidgetTheme.background, for: .widget)
+        .widgetURL(URL(string: family == .systemSmall
+            ? "pocketledger://overview"
+            : "pocketledger://transactions"))
     }
 
     private func balanceRow(currency: String, amount: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(currency)
                 .font(.caption.weight(.semibold))
-            .foregroundStyle(currency == "USD" ? PocketWidgetTheme.income : Color.white.opacity(0.62))
+                .foregroundStyle(currency == "USD" ? PocketWidgetTheme.income : .secondary)
             Spacer(minLength: 6)
             Text(amount)
-                .font(.system(
-                    size: family == .systemSmall ? 17 : 21,
-                    weight: .bold,
-                    design: .rounded
-                ))
-                .minimumScaleFactor(0.55)
+                .font((family == .systemSmall ? Font.body : Font.title3).weight(.bold).monospacedDigit())
+                .minimumScaleFactor(0.80)
                 .lineLimit(1)
+                .privacySensitive()
         }
     }
 }

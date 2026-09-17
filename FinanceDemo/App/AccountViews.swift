@@ -171,10 +171,9 @@ struct AccountDetailView: View {
             }
 
             Text(store.balance(for: account).formatted)
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .font(.largeTitle.weight(.bold).monospacedDigit())
                 .monospacedDigit()
-                .minimumScaleFactor(0.65)
-                .lineLimit(1)
+                .lineLimit(2)
 
             HStack(spacing: 6) {
                 Image(systemName: "pencil.circle")
@@ -204,10 +203,9 @@ struct AccountDetailView: View {
                 .foregroundStyle(tint)
             Text(value)
                 .font(.subheadline.weight(.semibold).monospacedDigit())
-                .minimumScaleFactor(0.65)
-                .lineLimit(1)
+                .lineLimit(2)
             Text(title.uppercased())
-                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .font(.caption2.weight(.bold))
                 .tracking(0.4)
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
         }

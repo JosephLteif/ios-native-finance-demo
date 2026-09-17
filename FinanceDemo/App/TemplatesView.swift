@@ -10,8 +10,8 @@ struct TemplatesView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Templates")
-                            .font(.system(size: 29, weight: .bold, design: .rounded))
+                            Text("Templates")
+                                .font(.largeTitle.weight(.bold))
                         Text("Reuse repeat expenses, income, and transfers")
                             .font(.subheadline)
                             .foregroundStyle(PocketLedgerTheme.textSecondary)

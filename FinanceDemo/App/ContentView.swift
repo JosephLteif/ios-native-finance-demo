@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var isShowingAddMenu = false
     @State private var isShowingSetup = false
     @State private var isUnlocked = false
+    @SceneStorage("pocketLedger.selectedTab") private var selectedTabRawValue = AppTab.overview.rawValue
     @AppStorage(SetupWizardView.completedKey) private var setupCompleted = false
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
@@ -49,37 +50,56 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .pocketLedgerWatchLedgerDidChange)) { _ in
             store.reload()
         }
+        .onOpenURL(perform: handleDeepLink)
         .sheet(isPresented: $isShowingSetup) {
             SetupWizardView(store: store)
         }
     }
 
+    private var selectedTab: AppTab {
+        get { AppTab(rawValue: selectedTabRawValue) ?? .overview }
+        set { selectedTabRawValue = newValue.rawValue }
+    }
+
+    private var selectedTabBinding: Binding<AppTab> {
+        Binding(
+            get: { selectedTab },
+            set: { selectedTab = $0 }
+        )
+    }
+
+    private func handleDeepLink(_ url: URL) {
+        if let tab = AppTab(url: url) {
+            selectedTab = tab
+        }
+    }
+
     private var unlockedContent: some View {
-        TabView {
-            TabSection("Ledger") {
-                Tab("Overview", systemImage: "chart.bar.xaxis") {
-                    DashboardView(store: store)
-                }
+        TabView(selection: selectedTabBinding) {
+            Tab("Overview", systemImage: "chart.bar.xaxis", value: .overview) {
+                DashboardView(store: store)
+            }
 
-                Tab("Transactions", systemImage: "list.bullet.rectangle") {
-                    TransactionsView(store: store)
-                }
+            Tab("Transactions", systemImage: "list.bullet.rectangle", value: .transactions) {
+                TransactionsView(store: store)
+            }
 
-                Tab("Metrics", systemImage: "chart.xyaxis.line") {
-                    MetricsView(store: store)
-                }
+            Tab("Metrics", systemImage: "chart.xyaxis.line", value: .metrics) {
+                MetricsView(store: store)
+            }
 
-                Tab("More", systemImage: "ellipsis.circle") {
-                    MoreView(store: store, security: security)
-                }
+            Tab("More", systemImage: "ellipsis.circle", value: .more) {
+                MoreView(store: store, security: security)
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
-        .tabViewBottomAccessory {
-            Button("Add", systemImage: "plus") {
+        .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            PocketTabBar(selectedTab: selectedTabBinding) {
                 isShowingAddMenu = true
             }
-            .accessibilityIdentifier("add-transaction-button")
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
         }
         .tint(PocketLedgerTheme.accent)
         .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
@@ -177,6 +197,181 @@ private enum AddAction: Identifiable {
         case .recent(let id):
             return "recent-\(id.uuidString)"
         }
+    }
+}
+
+enum AppTab: String, Hashable {
+    case overview
+    case transactions
+    case metrics
+    case more
+
+    var title: String {
+        switch self {
+        case .overview:
+            return "Overview"
+        case .transactions:
+            return "Transactions"
+        case .metrics:
+            return "Metrics"
+        case .more:
+            return "More"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview:
+            return "chart.bar.xaxis"
+        case .transactions:
+            return "list.bullet.rectangle"
+        case .metrics:
+            return "chart.xyaxis.line"
+        case .more:
+            return "ellipsis.circle"
+        }
+    }
+
+    init?(url: URL) {
+        guard url.scheme == "pocketledger" else { return nil }
+        let destination = url.host ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard destination == Self.overview.rawValue || destination == Self.transactions.rawValue else {
+            return nil
+        }
+        self.init(rawValue: destination)
+    }
+}
+
+private struct PocketTabBar: View {
+    @Binding var selectedTab: AppTab
+    let onAdd: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityContrast) private var accessibilityContrast
+
+    var body: some View {
+        Group {
+            if #available(iOS 26, *) {
+                liquidGlassBar
+            } else {
+                legacyBar
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @available(iOS 26, *)
+    private var liquidGlassBar: some View {
+        GlassEffectContainer(spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                tabItems
+                    .glassEffect(.regular.interactive(), in: Capsule())
+
+                addButton
+                    .glassEffect(.regular.interactive(), in: Circle())
+            }
+        }
+    }
+
+    private var legacyBar: some View {
+        HStack(alignment: .center, spacing: 8) {
+            tabItems
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                }
+
+            addButton
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay {
+                    Circle()
+                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                }
+        }
+    }
+
+    private var tabItems: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    tabItemsContent
+                }
+            } else {
+                tabItemsContent
+            }
+        }
+        .padding(5)
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 72)
+    }
+
+    private var tabItemsContent: some View {
+        HStack(spacing: 2) {
+            tabButton(.overview)
+            tabButton(.transactions)
+            tabButton(.metrics)
+            tabButton(.more)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var addButton: some View {
+        Button(action: onAdd) {
+            Image(systemName: "plus")
+                .font(.title3.weight(.medium))
+                .frame(minWidth: 54, minHeight: 54)
+        }
+        .buttonStyle(PocketTabButtonStyle())
+        .foregroundStyle(PocketLedgerTheme.textPrimary)
+        .tint(PocketLedgerTheme.accent)
+        .accessibilityIdentifier("add-transaction-button")
+        .accessibilityLabel("Add")
+        .accessibilityHint("Opens options for adding a transaction")
+    }
+
+    private func tabButton(_ tab: AppTab) -> some View {
+        let isSelected = selectedTab == tab
+
+        return Button {
+            selectedTab = tab
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: tab.systemImage)
+                    .font(.body.weight(.semibold))
+
+                Text(tab.title)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(
+                maxWidth: .infinity,
+                minWidth: dynamicTypeSize.isAccessibilitySize ? 92 : 60,
+                minHeight: 60
+            )
+            .foregroundStyle(isSelected ? PocketLedgerTheme.accent : PocketLedgerTheme.textSecondary)
+            .background {
+                if isSelected {
+                    Capsule()
+                        .fill(PocketLedgerTheme.accent.opacity(accessibilityContrast == .high ? 0.30 : 0.18))
+                }
+            }
+        }
+        .buttonStyle(PocketTabButtonStyle())
+        .contentShape(Capsule())
+        .accessibilityLabel(tab.title)
+        .accessibilityIdentifier("tab-\(tab.rawValue)")
+        .accessibilityValue(isSelected ? "Selected" : "")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct PocketTabButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.64 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -298,7 +493,7 @@ private struct DashboardView: View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Pocket Ledger")
-                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .font(.largeTitle.weight(.bold))
                 Text(Date.now, style: .date)
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -318,7 +513,7 @@ private struct DashboardView: View {
                 Spacer()
 
                 Text("SEPARATE CURRENCIES")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .font(.caption2.weight(.bold))
                     .tracking(0.8)
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
@@ -358,10 +553,8 @@ private struct DashboardView: View {
                 .foregroundStyle(currency == .usd ? PocketLedgerTheme.income : PocketLedgerTheme.textSecondary)
 
             Text(store.availableBalance(for: currency).formatted)
-                .font(.system(size: 27, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .minimumScaleFactor(0.65)
-                .lineLimit(1)
+                .font(.title.weight(.bold).monospacedDigit())
+                .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -411,7 +604,7 @@ private struct DashboardView: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.8)
             Text(title.uppercased())
-                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .font(.caption2.weight(.bold))
                 .tracking(0.6)
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
         }
@@ -713,7 +906,7 @@ private struct TransactionsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Transactions")
-                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .font(.largeTitle.weight(.bold))
                 Text("Every inflow and outflow, in one place")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -725,9 +918,9 @@ private struct TransactionsView: View {
                 isPresentingBillScanner = true
             } label: {
                 Image(systemName: "doc.viewfinder")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.body.weight(.bold))
                     .foregroundStyle(PocketLedgerTheme.background)
-                    .frame(width: 42, height: 42)
+                    .frame(minWidth: 44, minHeight: 44)
                     .background(PocketLedgerTheme.positive, in: Circle())
             }
             .accessibilityLabel("Scan bill")
@@ -807,7 +1000,7 @@ private struct TransactionsView: View {
                 .minimumScaleFactor(0.75)
                 .lineLimit(1)
             Text(title.uppercased())
-                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .font(.caption2.weight(.bold))
                 .tracking(0.5)
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
         }
@@ -820,7 +1013,7 @@ private struct TransactionsView: View {
                 Text(day.date.formatted(.dateTime.day()))
                     .font(.title3.weight(.bold))
                 Text(day.date.formatted(.dateTime.weekday(.abbreviated)))
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
             .frame(width: 46, height: 46)
@@ -852,6 +1045,30 @@ private struct TransactionRow: View {
     let allowsActions: Bool
 
     var body: some View {
+        Button(action: onEdit) {
+            rowContent
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(transaction.note), \(rowSubtitle), \(amountText)")
+        .accessibilityHint("Opens transaction details")
+        .contextMenu {
+            if allowsActions {
+                Button("Edit", systemImage: "pencil", action: onEdit)
+                Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
+                Button("Save as template", systemImage: "rectangle.stack.badge.plus", action: onSaveTemplate)
+                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if allowsActions {
+                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                Button("Edit", systemImage: "pencil", action: onEdit)
+            }
+        }
+    }
+
+    private var rowContent: some View {
         HStack(spacing: 12) {
             Image(systemName: iconName)
                 .font(.system(size: 16, weight: .semibold))
@@ -862,11 +1079,11 @@ private struct TransactionRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(transaction.note)
                     .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Text(rowSubtitle)
                     .font(.caption)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
                 if let amountDue = transaction.amountDue {
                     Text("Bill total · \(amountDue.formatted)")
@@ -902,22 +1119,6 @@ private struct TransactionRow: View {
         }
         .padding(.vertical, 11)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onEdit)
-        .accessibilityAddTraits(.isButton)
-        .contextMenu {
-            if allowsActions {
-                Button("Edit", systemImage: "pencil", action: onEdit)
-                Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
-                Button("Save as template", systemImage: "rectangle.stack.badge.plus", action: onSaveTemplate)
-                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-            }
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if allowsActions {
-                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-                Button("Edit", systemImage: "pencil", action: onEdit)
-            }
-        }
     }
 
     private var rowSubtitle: String {
@@ -1009,7 +1210,7 @@ private struct AccountsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Accounts")
-                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .font(.largeTitle.weight(.bold))
                 Text("Tap an account for activity and balance tools")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -1021,9 +1222,9 @@ private struct AccountsView: View {
                 presentAccount(nil)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.body.weight(.bold))
                     .foregroundStyle(PocketLedgerTheme.background)
-                    .frame(width: 42, height: 42)
+                    .frame(minWidth: 44, minHeight: 44)
                     .background(PocketLedgerTheme.accent, in: Circle())
             }
             .accessibilityLabel("Add account")
@@ -1213,7 +1414,7 @@ private struct CategoriesView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Categories")
-                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .font(.largeTitle.weight(.bold))
                 Text("Make every expense easy to understand")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -1225,9 +1426,9 @@ private struct CategoriesView: View {
                 presentCategory(nil)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.body.weight(.bold))
                     .foregroundStyle(PocketLedgerTheme.background)
-                    .frame(width: 42, height: 42)
+                    .frame(minWidth: 44, minHeight: 44)
                     .background(PocketLedgerTheme.accent, in: Circle())
             }
             .accessibilityLabel("Add category")

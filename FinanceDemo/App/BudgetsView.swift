@@ -13,17 +13,17 @@ struct BudgetsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Budgets")
-                                .font(.system(size: 29, weight: .bold, design: .rounded))
+                                .font(.largeTitle.weight(.bold))
                             Text("Keep monthly spending intentional")
                                 .font(.subheadline)
                                 .foregroundStyle(PocketLedgerTheme.textSecondary)
                         }
                         Spacer()
                         Button { presentNewBudget() } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 17, weight: .bold))
-                                .foregroundStyle(PocketLedgerTheme.background)
-                                .frame(width: 42, height: 42)
+                                Image(systemName: "plus")
+                                    .font(.body.weight(.bold))
+                                    .foregroundStyle(PocketLedgerTheme.background)
+                                    .frame(minWidth: 44, minHeight: 44)
                                 .background(PocketLedgerTheme.accent, in: Circle())
                         }
                     }
@@ -104,6 +104,8 @@ struct BudgetsView: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel("Delete budget")
             }
         }
         .padding(16)

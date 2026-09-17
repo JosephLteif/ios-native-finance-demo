@@ -140,7 +140,7 @@ struct SecuritySettingsView: View {
                 }
 
                 Section("Privacy note") {
-                    Text("This lock protects the Pocket Ledger app. Widgets are separate system surfaces and may continue to show their configured balance.")
+                    Text("Financial values in widgets and watch complications are marked private so the system can redact them on the Lock Screen and during Always On. Actions that change your ledger still require authentication.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

@@ -58,18 +58,21 @@ struct WatchBalanceWidgetView: View {
     var body: some View {
         switch family {
         case .accessoryCircular:
-            Text(usdBalance?.formatted ?? "—")
-                .font(.caption2)
-                .minimumScaleFactor(0.5)
+            Text(usdBalance?.compactFormatted() ?? "—")
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .privacySensitive()
         case .accessoryInline:
-            Text("Pocket Ledger: \(usdBalance?.formatted ?? "—")")
+            Text("Pocket Ledger: \(usdBalance?.compactFormatted() ?? "—")")
+                .font(.caption)
+                .privacySensitive()
         default:
             VStack(alignment: .leading) {
                 Text("Pocket Ledger")
                     .font(.caption2)
                 Text(usdBalance?.formatted ?? "—")
                     .font(.headline)
-                    .minimumScaleFactor(0.6)
+                    .monospacedDigit()
+                    .privacySensitive()
             }
         }
     }

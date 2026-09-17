@@ -193,12 +193,29 @@ final class FinanceModelTests: XCTestCase {
 
     func testMoneyParsingUsesCurrencyMinorUnits() {
         XCTAssertEqual(
-            Money.parse("12.50", currency: .usd),
+            Money.parse("12.50", currency: .usd, locale: Locale(identifier: "en_US_POSIX")),
             .some(Money(currency: .usd, minorUnits: 1_250))
         )
         XCTAssertEqual(
-            Money.parse("125000", currency: .lbp),
+            Money.parse("125000", currency: .lbp, locale: Locale(identifier: "en_US_POSIX")),
             .some(Money(currency: .lbp, minorUnits: 125_000))
+        )
+    }
+
+    func testMoneyDisplayFormattingIsLocaleAwareAndExportsRemainStable() {
+        let money = Money(currency: .usd, minorUnits: 1_250)
+
+        XCTAssertEqual(
+            money.formatted(locale: Locale(identifier: "en_US_POSIX")),
+            "$12.50"
+        )
+        XCTAssertTrue(
+            money.formatted(locale: Locale(identifier: "de_DE")).contains(",50")
+        )
+        XCTAssertEqual(money.stableFormatted, "$12.50")
+        XCTAssertEqual(
+            Money.parse("1.234,50", currency: .usd, locale: Locale(identifier: "de_DE")),
+            Money(currency: .usd, minorUnits: 123_450)
         )
     }
 

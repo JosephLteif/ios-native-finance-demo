@@ -194,10 +194,10 @@ enum PocketLedgerTheme {
     static var background: Color { palette.background }
     static var surface: Color { palette.surface }
     static var surfaceElevated: Color { palette.surfaceElevated }
-    static var divider: Color { palette.divider }
-    static var textPrimary: Color { palette.textPrimary }
-    static var textSecondary: Color { palette.textSecondary }
-    static var textTertiary: Color { palette.textTertiary }
+    static var divider: Color { Color(uiColor: .separator) }
+    static var textPrimary: Color { .primary }
+    static var textSecondary: Color { .secondary }
+    static var textTertiary: Color { .secondary.opacity(0.75) }
     static var accent: Color { palette.accent }
     static var income: Color { palette.income }
     static var positive: Color { palette.positive }

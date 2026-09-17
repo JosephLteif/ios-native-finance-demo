@@ -40,25 +40,37 @@ enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable, Send
         }
     }
 
-    func formatted(minorUnits: Int64) -> String {
+    func formatted(minorUnits: Int64, locale: Locale = .current) -> String {
+        let amount = Decimal(minorUnits) / Decimal(minorUnitScale)
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .currency
+        formatter.currencyCode = rawValue
+        formatter.minimumFractionDigits = fractionDigits
+        formatter.maximumFractionDigits = fractionDigits
+        return formatter.string(from: NSDecimalNumber(decimal: amount))
+            ?? stableFormatted(minorUnits: minorUnits)
+    }
+
+    func stableFormatted(minorUnits: Int64) -> String {
         let isNegative = minorUnits < 0
-        let absoluteMinorUnits = Swift.abs(minorUnits)
-        let amount = Decimal(absoluteMinorUnits) / Decimal(minorUnitScale)
+        let amount = Decimal(minorUnits) / Decimal(minorUnitScale)
         let formatter = NumberFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = fractionDigits
         formatter.maximumFractionDigits = fractionDigits
         let number = formatter.string(from: NSDecimalNumber(decimal: amount)) ?? String(describing: amount)
+        let unsignedNumber = number.hasPrefix("-") ? String(number.dropFirst()) : number
         let sign = isNegative ? "-" : ""
 
         switch self {
         case .usd:
-            return "\(sign)$\(number)"
+            return "\(sign)$\(unsignedNumber)"
         case .lbp:
-            return "\(sign)LBP \(number)"
+            return "\(sign)LBP \(unsignedNumber)"
         case .eur:
-            return "\(sign)€\(number)"
+            return "\(sign)€\(unsignedNumber)"
         }
     }
 }
@@ -68,18 +80,69 @@ struct Money: Codable, Equatable, Sendable {
     let minorUnits: Int64
 
     var formatted: String {
-        currency.formatted(minorUnits: minorUnits)
+        formatted(locale: .current)
     }
 
-    static func parse(_ rawValue: String, currency: LedgerCurrency) -> Money? {
-        let normalized = rawValue
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: ",", with: "")
+    func formatted(locale: Locale) -> String {
+        currency.formatted(minorUnits: minorUnits, locale: locale)
+    }
 
-        guard !normalized.isEmpty,
-              let decimal = Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX")) else {
+    var stableFormatted: String {
+        currency.stableFormatted(minorUnits: minorUnits)
+    }
+
+    func compactFormatted(locale: Locale = .current) -> String {
+        let rawAmount = abs(NSDecimalNumber(decimal: Decimal(minorUnits) / Decimal(currency.minorUnitScale)).doubleValue)
+        let (scaledAmount, suffix): (Double, String) = {
+            switch rawAmount {
+            case 1_000_000_000...:
+                return (rawAmount / 1_000_000_000, "B")
+            case 1_000_000...:
+                return (rawAmount / 1_000_000, "M")
+            case 1_000...:
+                return (rawAmount / 1_000, "K")
+            default:
+                return (rawAmount, "")
+            }
+        }()
+
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = suffix.isEmpty ? currency.fractionDigits : 1
+        let number = formatter.string(from: NSNumber(value: scaledAmount)) ?? String(scaledAmount)
+        let sign = minorUnits < 0 ? "-" : ""
+        let prefix: String
+        switch currency {
+        case .usd:
+            prefix = "$"
+        case .lbp:
+            prefix = "LBP "
+        case .eur:
+            prefix = "€"
+        }
+        return "\(sign)\(prefix)\(number)\(suffix)"
+    }
+
+    static func parse(_ rawValue: String, currency: LedgerCurrency, locale: Locale = .current) -> Money? {
+        let groupingSeparator = locale.groupingSeparator ?? ","
+        let decimalSeparator = locale.decimalSeparator ?? "."
+        var normalized = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: groupingSeparator, with: "")
+
+        if decimalSeparator != "." {
+            normalized = normalized.replacingOccurrences(of: decimalSeparator, with: ".")
+        }
+
+        guard !normalized.isEmpty else {
             return nil
         }
+
+        let decimal = Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX"))
+            ?? NumberFormatter.localizedDecimalFormatter(locale: locale).number(from: rawValue)?.decimalValue
+        guard let decimal else { return nil }
 
         let scaled = decimal * Decimal(currency.minorUnitScale)
         var rounded = Decimal()
@@ -89,6 +152,16 @@ struct Money: Codable, Equatable, Sendable {
             currency: currency,
             minorUnits: NSDecimalNumber(decimal: rounded).int64Value
         )
+    }
+}
+
+private extension NumberFormatter {
+    static func localizedDecimalFormatter(locale: Locale) -> NumberFormatter {
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .decimal
+        formatter.generatesDecimalNumbers = true
+        return formatter
     }
 }
 

@@ -157,7 +157,7 @@ struct MetricsView: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Metrics")
-                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .font(.largeTitle.weight(.bold))
                 Text("See how your money moves")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -168,7 +168,7 @@ struct MetricsView: View {
             Button(action: generateReport) {
                 Image(systemName: "square.and.arrow.up")
                     .font(.headline.weight(.semibold))
-                    .frame(width: 40, height: 40)
+                    .frame(minWidth: 44, minHeight: 44)
                     .background(PocketLedgerTheme.surfaceElevated, in: Circle())
                     .overlay {
                         Circle().stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -176,6 +176,7 @@ struct MetricsView: View {
             }
             .foregroundStyle(PocketLedgerTheme.accent)
             .accessibilityLabel("Share metrics PDF report")
+            .accessibilityHint("Creates a shareable PDF report")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 14)
@@ -233,9 +234,10 @@ struct MetricsView: View {
                     } label: {
                         Image(systemName: "chevron.left")
                             .font(.headline.weight(.semibold))
-                            .frame(width: 36, height: 36)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Previous period")
 
                     Spacer()
 
@@ -249,9 +251,10 @@ struct MetricsView: View {
                     } label: {
                         Image(systemName: "chevron.right")
                             .font(.headline.weight(.semibold))
-                            .frame(width: 36, height: 36)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Next period")
                 }
             }
 
@@ -333,10 +336,10 @@ struct MetricsView: View {
                     VStack(spacing: 3) {
                         Text(Money(currency: selectedCurrency, minorUnits: selectedCurrencyExpense).formatted)
                             .font(.headline.weight(.bold).monospacedDigit())
-                            .minimumScaleFactor(0.7)
+                            .minimumScaleFactor(0.8)
                             .lineLimit(1)
                         Text("TOTAL SPENT")
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .font(.caption2.weight(.bold))
                             .tracking(0.8)
                             .foregroundStyle(PocketLedgerTheme.textTertiary)
                     }
@@ -662,9 +665,10 @@ private struct CategoryMetricsDetailView: View {
                     moveMonth(by: -1)
                 } label: {
                     Image(systemName: "chevron.left")
-                        .frame(width: 36, height: 36)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Previous month")
 
                 Spacer()
 
@@ -677,9 +681,10 @@ private struct CategoryMetricsDetailView: View {
                     moveMonth(by: 1)
                 } label: {
                     Image(systemName: "chevron.right")
-                        .frame(width: 36, height: 36)
+                        .frame(minWidth: 44, minHeight: 44)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Next month")
             }
 
             HStack {

@@ -24,6 +24,22 @@ struct WatchHomeView: View {
                     }
                 }
 
+                Section {
+                    Button {
+                        isShowingExpense = true
+                    } label: {
+                        Label("Add expense", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(store.snapshot?.accounts.contains(where: \.canUseForExpense) != true)
+
+                    if !store.pendingExpenses.isEmpty {
+                        Text("\(store.pendingExpenses.count) expense queued")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 if let snapshot = store.snapshot {
                     Section("Balances") {
                         ForEach(snapshot.balances) { balance in
@@ -32,6 +48,8 @@ struct WatchHomeView: View {
                                 Spacer()
                                 Text(balance.balance.formatted)
                                     .fontWeight(.semibold)
+                                    .monospacedDigit()
+                                    .privacySensitive()
                             }
                         }
                     }
@@ -46,9 +64,12 @@ struct WatchHomeView: View {
                                     HStack {
                                         Text(transaction.note)
                                             .lineLimit(1)
+                                            .privacySensitive()
                                         Spacer()
                                         Text(transaction.amount.formatted)
                                             .fontWeight(.semibold)
+                                            .monospacedDigit()
+                                            .privacySensitive()
                                     }
                                     Text(transaction.categoryPath ?? transaction.kind)
                                         .font(.caption2)
@@ -64,20 +85,6 @@ struct WatchHomeView: View {
                     }
                 }
 
-                Section {
-                    Button {
-                        isShowingExpense = true
-                    } label: {
-                        Label("Add expense", systemImage: "plus.circle.fill")
-                    }
-                    .disabled(store.snapshot?.accounts.contains(where: \.canUseForExpense) != true)
-
-                    if !store.pendingExpenses.isEmpty {
-                        Text("\(store.pendingExpenses.count) expense queued")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
             }
             .navigationTitle("Pocket Ledger")
         }

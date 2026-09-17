@@ -1552,7 +1552,11 @@ enum FinanceImportBuilder {
             character.isNumber || character == "." || character == "-" || character == "+"
         }
         let normalized = hasParentheses && !filtered.hasPrefix("-") ? "-\(filtered)" : String(filtered)
-        guard let amount = Money.parse(normalized, currency: currency) else {
+        guard let amount = Money.parse(
+            normalized,
+            currency: currency,
+            locale: Locale(identifier: "en_US_POSIX")
+        ) else {
             throw FinanceImportError.row("Could not read amount \"\(rawValue)\".")
         }
         return amount
@@ -1595,7 +1599,7 @@ enum LedgerCSVExporter {
                 let values = [
                     transaction.date.formatted(.iso8601.year().month().day()),
                     transaction.kind.displayName,
-                    Money(currency: movement.money.currency, minorUnits: Swift.abs(movement.money.minorUnits)).formatted,
+                    Money(currency: movement.money.currency, minorUnits: Swift.abs(movement.money.minorUnits)).stableFormatted,
                     movement.money.currency.rawValue,
                     accountName,
                     destination,

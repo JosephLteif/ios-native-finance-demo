@@ -103,7 +103,7 @@ struct ScheduledTransactionsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Scheduled")
-                    .font(.system(size: 29, weight: .bold, design: .rounded))
+                    .font(.largeTitle.weight(.bold))
                 Text("Plan bills, income, and recurring transfers")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -113,9 +113,9 @@ struct ScheduledTransactionsView: View {
 
             Button(action: presentNewSchedule) {
                 Image(systemName: "plus")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.body.weight(.bold))
                     .foregroundStyle(PocketLedgerTheme.background)
-                    .frame(width: 42, height: 42)
+                    .frame(minWidth: 44, minHeight: 44)
                     .background(PocketLedgerTheme.accent, in: Circle())
             }
             .accessibilityLabel("Add scheduled transaction")
@@ -158,8 +158,12 @@ struct ScheduledTransactionsView: View {
 
                 Spacer(minLength: 8)
 
-                Toggle("", isOn: enabledBinding(for: schedule))
+                Toggle(
+                    "Enable \(schedule.note.isEmpty ? schedule.kind.displayName : schedule.note)",
+                    isOn: enabledBinding(for: schedule)
+                )
                 .labelsHidden()
+                .accessibilityValue(schedule.isEnabled ? "On" : "Off")
                 .disabled(isCompletedOneTime(schedule))
             }
 
