@@ -50,6 +50,22 @@ jobs:
             DEVELOPMENT_TEAM="" \
             clean build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
 
+      - name: Compile unit tests for the iOS simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ios-native-finance-demo.xcodeproj \
+            -scheme FinanceDemo \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/TestDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build-for-testing 2>&1 | tee "$RUNNER_TEMP/xcodebuild-tests.log"
+
       - name: Verify app and embedded widget
         run: |
           set -euo pipefail

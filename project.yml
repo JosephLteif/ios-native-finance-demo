@@ -61,7 +61,8 @@ targets:
         codeSign: false
     scheme:
       gatherCoverageData: false
-      testTargets: []
+      testTargets:
+        - FinanceDemoTests
 
   FinanceDemoWidget:
     type: app-extension
@@ -91,3 +92,15 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.josephlteif.financedemo
+
+  FinanceDemoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: FinanceDemoTests
+    dependencies:
+      - target: FinanceDemo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.tests
+        GENERATE_INFOPLIST_FILE: YES

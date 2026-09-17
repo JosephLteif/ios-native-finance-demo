@@ -67,6 +67,8 @@ Pocket Ledger uses a dark navy, teal, emerald, and warm gold wallet/ledger mark.
 
 The workflow runs on the `macos-26` GitHub-hosted runner and prints the macOS, Xcode, and Swift versions used for each build. It is intentionally not triggered for ordinary pushes to `main`.
 
+The workflow also compiles the unit-test target for the iOS Simulator with a build-for-testing pass; executing tests still requires a simulator-capable test run.
+
 To build:
 
 1. Open the repository on GitHub.
