@@ -202,6 +202,47 @@ final class FinanceModelTests: XCTestCase {
         )
     }
 
+    func testImportReviewDropsUnusedCreatedRecordsAndKeepsCategoryAncestors() {
+        let usedAccount = Account(
+            name: "Imported cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let unusedAccount = Account(
+            name: "Unused account",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let root = LedgerCategory(name: "Living")
+        let child = LedgerCategory(name: "Food", parentID: root.id)
+        let unusedCategory = LedgerCategory(name: "Unused")
+        let transaction = LedgerTransaction(
+            note: "Lunch",
+            kind: .expense,
+            categoryID: child.id,
+            outflows: [
+                MoneyMovement(
+                    accountID: usedAccount.id,
+                    money: Money(currency: .usd, minorUnits: 500)
+                )
+            ],
+            inflows: []
+        )
+
+        let prepared = FinanceImportReview.removingUnusedCreatedRecords(
+            from: FinanceData(
+                accounts: [usedAccount, unusedAccount],
+                categories: [root, child, unusedCategory],
+                transactions: [transaction]
+            )
+        )
+
+        XCTAssertEqual(prepared.accounts.map(\.id), [usedAccount.id])
+        XCTAssertEqual(Set(prepared.categories.map(\.id)), Set([root.id, child.id]))
+    }
+
     func testRolloverCarriesUnusedPriorMonthAllowance() {
         let calendar = Calendar(identifier: .gregorian)
         let currentMonth = calendar.dateInterval(of: .month, for: .now)!

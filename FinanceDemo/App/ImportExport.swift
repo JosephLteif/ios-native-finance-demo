@@ -262,6 +262,31 @@ struct FinanceImportResult {
     let warnings: [String]
 }
 
+enum FinanceImportReview {
+    static func removingUnusedCreatedRecords(from data: FinanceData) -> FinanceData {
+        var prepared = data
+        let referencedAccountIDs = Set(
+            prepared.transactions.flatMap { transaction in
+                transaction.outflows.map(\.accountID) + transaction.inflows.map(\.accountID)
+            }
+        )
+        prepared.accounts.removeAll { !referencedAccountIDs.contains($0.id) }
+
+        var referencedCategoryIDs = Set(
+            prepared.transactions.compactMap(\.categoryID)
+        )
+        while let category = prepared.categories.first(where: {
+            guard referencedCategoryIDs.contains($0.id), let parentID = $0.parentID else { return false }
+            return !referencedCategoryIDs.contains(parentID)
+        }), let parentID = category.parentID {
+            referencedCategoryIDs.insert(parentID)
+        }
+        prepared.categories.removeAll { !referencedCategoryIDs.contains($0.id) }
+
+        return prepared
+    }
+}
+
 enum FinanceImportError: LocalizedError {
     case invalidFile(String)
     case missingMapping(ImportField)

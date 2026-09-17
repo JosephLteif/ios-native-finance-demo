@@ -415,7 +415,7 @@ private struct ImportMappingView: View {
     @State private var createMissingAccounts = true
     @State private var createMissingCategories = true
     @State private var errorMessage: String?
-    @State private var successMessage: String?
+    @State private var reviewCandidate: ImportReviewCandidate?
 
     init(store: LedgerStore, document: ImportedDocument) {
         _store = ObservedObject(wrappedValue: store)
@@ -502,6 +502,10 @@ private struct ImportMappingView: View {
 
                     Toggle("Create missing accounts", isOn: $createMissingAccounts)
                     Toggle("Create missing categories", isOn: $createMissingCategories)
+
+                    Text("The next screen reviews every parsed row before anything is saved. These options decide whether you may keep provisional accounts or categories.")
+                        .font(.footnote)
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
                 }
 
                 Section("Preview") {
@@ -529,7 +533,7 @@ private struct ImportMappingView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Import", action: importRows)
+                    Button("Review import", action: reviewImport)
                         .disabled(!isReadyToImport)
                 }
             }
@@ -537,15 +541,15 @@ private struct ImportMappingView: View {
                 guard let table = document.tables.first(where: { $0.id == newValue }) else { return }
                 mapping = FinanceImportParser.suggestedMapping(columns: table.columns)
             }
-            .alert("Import completed", isPresented: successPresented) {
-                Button("Done") { dismiss() }
-            } message: {
-                Text(successMessage ?? "")
-            }
             .alert("Import failed", isPresented: errorPresented) {
                 Button("OK") { errorMessage = nil }
             } message: {
                 Text(errorMessage ?? "")
+            }
+            .sheet(item: $reviewCandidate) { candidate in
+                ImportReviewView(store: store, candidate: candidate) {
+                    dismiss()
+                }
             }
         }
     }
@@ -573,21 +577,16 @@ private struct ImportMappingView: View {
         )
     }
 
-    private var successPresented: Binding<Bool> {
-        Binding(
-            get: { successMessage != nil },
-            set: { if !$0 { successMessage = nil } }
-        )
-    }
-
-    private func importRows() {
+    private func reviewImport() {
         let options = ImportOptions(
             defaultKind: defaultKind,
             defaultCurrency: defaultCurrency,
             defaultAccountID: defaultAccountID,
             defaultDestinationAccountID: defaultDestinationAccountID,
-            createMissingAccounts: createMissingAccounts,
-            createMissingCategories: createMissingCategories
+            // Missing records are provisional until the review is confirmed. This keeps
+            // rows available so the user can map them to an existing record first.
+            createMissingAccounts: true,
+            createMissingCategories: true
         )
 
         do {
@@ -597,21 +596,344 @@ private struct ImportMappingView: View {
                 options: options,
                 existing: store.data
             )
-            guard store.mergeData(result.data) else {
-                errorMessage = store.lastActionStatus ?? "The imported rows could not be saved."
-                return
-            }
-
-            var message = "Imported \(result.importedRows) rows."
-            if result.skippedRows > 0 {
-                message += " Skipped \(result.skippedRows) rows."
-                if !result.warnings.isEmpty {
-                    message += "\n\n" + result.warnings.prefix(3).joined(separator: "\n")
-                }
-            }
-            successMessage = message
+            reviewCandidate = ImportReviewCandidate(
+                fileName: document.fileName,
+                tableName: selectedTable.name,
+                result: result,
+                createMissingAccounts: createMissingAccounts,
+                createMissingCategories: createMissingCategories
+            )
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+private struct ImportReviewCandidate: Identifiable {
+    let id = UUID()
+    let fileName: String
+    let tableName: String
+    let result: FinanceImportResult
+    let createMissingAccounts: Bool
+    let createMissingCategories: Bool
+}
+
+@MainActor
+private struct ImportReviewView: View {
+    @ObservedObject var store: LedgerStore
+    let candidate: ImportReviewCandidate
+    let onImported: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var importedData: FinanceData
+    @State private var searchText = ""
+    @State private var isShowingConfirmation = false
+    @State private var errorMessage: String?
+
+    init(
+        store: LedgerStore,
+        candidate: ImportReviewCandidate,
+        onImported: @escaping () -> Void
+    ) {
+        _store = ObservedObject(wrappedValue: store)
+        self.candidate = candidate
+        self.onImported = onImported
+        _importedData = State(initialValue: candidate.result.data)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Review before importing") {
+                    LabeledContent("File", value: candidate.fileName)
+                    LabeledContent("Table", value: candidate.tableName)
+                    LabeledContent("Ready to import", value: "\(importedData.transactions.count) rows")
+                    if candidate.result.skippedRows > 0 {
+                        LabeledContent("Skipped while parsing", value: "\(candidate.result.skippedRows) rows")
+                    }
+                    Text("Nothing has been saved yet. Assign accounts and categories below, then confirm the import.")
+                        .font(.footnote)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
+
+                if !importedData.accounts.isEmpty {
+                    Section("Accounts that may be created") {
+                        ForEach($importedData.accounts) { $account in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label("\(account.name) · \(account.currency.rawValue)", systemImage: account.type.systemImage)
+                                    .font(.subheadline.weight(.semibold))
+
+                                Picker("Account type", selection: $account.type) {
+                                    ForEach(AccountType.allCases) { type in
+                                        Text(type.displayName).tag(type)
+                                    }
+                                }
+
+                                Toggle("Include in totals", isOn: $account.includeInTotals)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    } footer: {
+                        Text("These accounts are provisional. If you assign their rows to existing accounts, unused provisional accounts will not be created.")
+                    }
+                }
+
+                if !importedData.categories.isEmpty {
+                    Section("Categories that may be created") {
+                        ForEach(importedData.categories) { category in
+                            Label(categoryPath(for: category.id), systemImage: category.systemImage)
+                        }
+                    } footer: {
+                        Text("Use the category picker on each row to keep, change, or remove a provisional category.")
+                    }
+                }
+
+                Section("Imported transactions") {
+                    if filteredTransactionIndices.isEmpty {
+                        Text("No matching transactions")
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    } else {
+                        ForEach(filteredTransactionIndices, id: \.self) { index in
+                            ImportReviewTransactionRow(
+                                transaction: $importedData.transactions[index],
+                                rowNumber: index + 1,
+                                accounts: availableAccounts,
+                                categories: availableCategories
+                            )
+                        }
+                    }
+                } footer: {
+                    Text("Search by note, account, category, or amount. Changes stay local until you tap Import.")
+                }
+
+                if !candidate.result.warnings.isEmpty {
+                    Section("Warnings") {
+                        ForEach(candidate.result.warnings, id: \.self) { warning in
+                            Text(warning)
+                                .font(.footnote)
+                        }
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(PocketLedgerTheme.background)
+            .listRowBackground(PocketLedgerTheme.surface)
+            .tint(PocketLedgerTheme.accent)
+            .searchable(text: $searchText, prompt: "Search imported rows")
+            .navigationTitle("Review import")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Back") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Import \(importedData.transactions.count)") {
+                        isShowingConfirmation = true
+                    }
+                }
+            }
+            .confirmationDialog(
+                "Import these transactions?",
+                isPresented: $isShowingConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Import rows", action: importRows)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The reviewed accounts, categories, and transactions will be merged into your current ledger.")
+            }
+            .alert("Import failed", isPresented: errorPresented) {
+                Button("OK") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
+        }
+    }
+
+    private var availableAccounts: [Account] {
+        var accounts = store.data.accounts
+        for account in importedData.accounts where !accounts.contains(where: { $0.id == account.id }) {
+            accounts.append(account)
+        }
+        return accounts
+    }
+
+    private var availableCategories: [LedgerCategory] {
+        var categories = store.data.categories
+        for category in importedData.categories where !categories.contains(where: { $0.id == category.id }) {
+            categories.append(category)
+        }
+        return categories
+    }
+
+    private var filteredTransactionIndices: [Int] {
+        importedData.transactions.indices.filter { index in
+            guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
+            let transaction = importedData.transactions[index]
+            let accountText = (transaction.outflows + transaction.inflows)
+                .compactMap { movement in availableAccounts.first(where: { $0.id == movement.accountID })?.name }
+                .joined(separator: " ")
+            let categoryText = categoryPath(for: transaction.categoryID)
+            let amountText = (transaction.outflows.first?.money ?? transaction.inflows.first?.money)?.formatted ?? ""
+            let haystack = [transaction.note, accountText, categoryText, amountText]
+                .joined(separator: " ")
+            return haystack.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    private var errorPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
+
+    private func categoryPath(for categoryID: UUID?) -> String {
+        guard let categoryID else { return "Uncategorized" }
+
+        var names: [String] = []
+        var currentID: UUID? = categoryID
+        var visited: Set<UUID> = []
+        while let id = currentID,
+              visited.insert(id).inserted,
+              let category = availableCategories.first(where: { $0.id == id }) {
+            names.append(category.name)
+            currentID = category.parentID
+        }
+        return names.reversed().joined(separator: " / ")
+    }
+
+    private func importRows() {
+        let prepared = FinanceImportReview.removingUnusedCreatedRecords(from: importedData)
+        if !candidate.createMissingAccounts && !prepared.accounts.isEmpty {
+            errorMessage = "Map the remaining new accounts to existing accounts, or enable account creation before importing."
+            return
+        }
+        if !candidate.createMissingCategories && !prepared.categories.isEmpty {
+            errorMessage = "Map the remaining new categories to existing categories, or enable category creation before importing."
+            return
+        }
+        guard store.mergeData(prepared) else {
+            errorMessage = store.lastActionStatus ?? "The imported rows could not be saved."
+            return
+        }
+        onImported()
+        dismiss()
+    }
+}
+
+private struct ImportReviewTransactionRow: View {
+    @Binding var transaction: LedgerTransaction
+    let rowNumber: Int
+    let accounts: [Account]
+    let categories: [LedgerCategory]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: transaction.kind == .income ? "arrow.down.left" : transaction.kind == .transfer ? "arrow.left.arrow.right" : "arrow.up.right")
+                    .foregroundStyle(transaction.kind == .income ? PocketLedgerTheme.income : PocketLedgerTheme.accent)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(transaction.note)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(2)
+                    Text("Imported row \(rowNumber) · \(transaction.date.formatted(.dateTime.month(.abbreviated).day().year())) · \(transaction.kind.displayName)")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
+                Spacer(minLength: 8)
+                Text((transaction.outflows.first?.money ?? transaction.inflows.first?.money)?.formatted ?? "—")
+                    .font(.subheadline.weight(.semibold))
+                    .multilineTextAlignment(.trailing)
+            }
+
+            Picker("Account", selection: sourceAccountBinding) {
+                ForEach(sourceAccountOptions) { account in
+                    Text(accountLabel(account)).tag(Optional(account.id))
+                }
+            }
+
+            if transaction.kind == .transfer {
+                Picker("Destination", selection: destinationAccountBinding) {
+                    ForEach(destinationAccountOptions) { account in
+                        Text(accountLabel(account)).tag(Optional(account.id))
+                    }
+                }
+            }
+
+            Picker("Category", selection: $transaction.categoryID) {
+                Text("Uncategorized").tag(UUID?.none)
+                ForEach(categories) { category in
+                    Text(categoryPath(for: category.id)).tag(Optional(category.id))
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var sourceAccountOptions: [Account] {
+        guard let money = transaction.kind == .income
+            ? transaction.inflows.first?.money
+            : transaction.outflows.first?.money else {
+            return accounts
+        }
+        return accounts.filter { $0.currency == money.currency }
+    }
+
+    private var destinationAccountOptions: [Account] {
+        guard let money = transaction.inflows.first?.money else { return accounts }
+        return accounts.filter { $0.currency == money.currency }
+    }
+
+    private var sourceAccountBinding: Binding<UUID?> {
+        Binding(
+            get: {
+                transaction.kind == .income
+                    ? transaction.inflows.first?.accountID
+                    : transaction.outflows.first?.accountID
+            },
+            set: { id in updateAccount(id, destination: false) }
+        )
+    }
+
+    private var destinationAccountBinding: Binding<UUID?> {
+        Binding(
+            get: { transaction.inflows.first?.accountID },
+            set: { id in updateAccount(id, destination: true) }
+        )
+    }
+
+    private func updateAccount(_ id: UUID?, destination: Bool) {
+        guard let id else { return }
+        if destination {
+            guard !transaction.inflows.isEmpty else { return }
+            transaction.inflows[0].accountID = id
+        } else if transaction.kind == .income {
+            guard !transaction.inflows.isEmpty else { return }
+            transaction.inflows[0].accountID = id
+        } else {
+            guard !transaction.outflows.isEmpty else { return }
+            transaction.outflows[0].accountID = id
+        }
+    }
+
+    private func accountLabel(_ account: Account) -> String {
+        "\(account.name) · \(account.currency.rawValue)\(account.isArchived ? " · Archived" : "")"
+    }
+
+    private func categoryPath(for categoryID: UUID?) -> String {
+        guard let categoryID else { return "Uncategorized" }
+
+        var names: [String] = []
+        var currentID: UUID? = categoryID
+        var visited: Set<UUID> = []
+        while let id = currentID,
+              visited.insert(id).inserted,
+              let category = categories.first(where: { $0.id == id }) {
+            names.append(category.name)
+            currentID = category.parentID
+        }
+        return names.reversed().joined(separator: " / ")
     }
 }
