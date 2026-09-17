@@ -7,7 +7,6 @@ options:
     watchOS: 26.0
   createIntermediateGroups: true
   groupSortPosition: top
-  postGenCommand: bash scripts/patch-watch-embedding.sh
 
 settings:
   base:
@@ -103,7 +102,7 @@ targets:
           - group.com.josephlteif.financedemo
 
   FinanceDemoWatch:
-    type: application
+    type: application.watchapp2
     platform: watchOS
     sources:
       - path: FinanceDemo/Models/FinanceModel.swift
@@ -117,6 +116,7 @@ targets:
     info:
       path: FinanceDemoWatch/Config/Info.plist
       properties:
+        WKWatchKitApp: true
         CFBundleDisplayName: Pocket Ledger
         CFBundleName: Pocket Ledger
         CFBundleShortVersionString: "1.0"

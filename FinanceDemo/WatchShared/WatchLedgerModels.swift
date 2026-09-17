@@ -147,16 +147,8 @@ enum WatchSyncCodec {
 final class WatchLedgerCacheStore {
     private let defaults: UserDefaults
 
-    let usesSharedContainer: Bool
-
     init() {
-        if let sharedDefaults = UserDefaults(suiteName: WatchLedgerConstants.appGroupIdentifier) {
-            defaults = sharedDefaults
-            usesSharedContainer = true
-        } else {
-            defaults = .standard
-            usesSharedContainer = false
-        }
+        defaults = UserDefaults(suiteName: WatchLedgerConstants.appGroupIdentifier) ?? .standard
     }
 
     func load() -> WatchLedgerCache {

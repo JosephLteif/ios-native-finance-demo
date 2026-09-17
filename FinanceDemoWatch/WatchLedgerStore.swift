@@ -60,7 +60,7 @@ final class WatchLedgerStore: NSObject, ObservableObject, WCSessionDelegate {
         snapshot = cache.snapshot
         pendingExpenses = cache.pendingExpenses
         lastSyncedAt = cache.lastSyncDate
-        status = WCSession.isSupported() && cacheStore.usesSharedContainer
+        status = WCSession.isSupported()
             ? (cache.pendingExpenses.isEmpty ? .connecting : .queued)
             : .unavailable
         errorMessage = cache.lastError
@@ -68,7 +68,7 @@ final class WatchLedgerStore: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     func activate() {
-        guard WCSession.isSupported(), cacheStore.usesSharedContainer else {
+        guard WCSession.isSupported() else {
             status = .unavailable
             return
         }

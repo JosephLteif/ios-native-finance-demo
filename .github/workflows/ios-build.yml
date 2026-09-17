@@ -108,7 +108,7 @@ jobs:
           APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
           test -d "$APP_PATH" || { echo "Missing app: $APP_PATH"; exit 1; }
           test -d "$APP_PATH/PlugIns" || { echo "Missing PlugIns directory: $APP_PATH/PlugIns"; exit 1; }
-          WATCH_APP_PATH="$APP_PATH/PlugIns/FinanceDemoWatch.app"
+          WATCH_APP_PATH="$APP_PATH/Watch/FinanceDemoWatch.app"
           test -d "$WATCH_APP_PATH" || { echo "Missing embedded watch app: $WATCH_APP_PATH"; exit 1; }
           test -d "$WATCH_APP_PATH/PlugIns/FinanceDemoWatchWidget.appex" || {
             echo "Missing embedded watch complication: $WATCH_APP_PATH/PlugIns/FinanceDemoWatchWidget.appex"
@@ -152,7 +152,7 @@ jobs:
             echo "Packaged IPA does not contain an embedded widget extension."
             exit 1
           }
-          unzip -Z1 "$IPA_PATH" | grep -Eq '^Payload/FinanceDemo\.app/PlugIns/FinanceDemoWatch\.app(/|$)' || {
+          unzip -Z1 "$IPA_PATH" | grep -Eq '^Payload/FinanceDemo\.app/Watch/FinanceDemoWatch\.app(/|$)' || {
             echo "Packaged IPA does not contain the embedded watch app."
             exit 1
           }
