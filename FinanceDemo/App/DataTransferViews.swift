@@ -665,8 +665,7 @@ private struct ImportReviewView: View {
 
                                 Picker("Account type", selection: $account.type) {
                                     ForEach(AccountType.allCases) { type in
-                                        let displayName = type.displayName
-                                        Text(displayName).tag(type)
+                                        accountTypeOption(for: type)
                                     }
                                 }
 
@@ -802,6 +801,11 @@ private struct ImportReviewView: View {
             currentID = category.parentID
         }
         return names.reversed().joined(separator: " / ")
+    }
+
+    private func accountTypeOption(for type: AccountType) -> some View {
+        Text(verbatim: type.displayName)
+            .tag(type)
     }
 
     private func importRows() {
