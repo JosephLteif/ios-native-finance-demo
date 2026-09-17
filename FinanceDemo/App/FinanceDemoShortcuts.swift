@@ -118,7 +118,7 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Summarize Budget",
             systemImageName: "sparkles"
-        ),
+        )
         AppShortcut(
             intent: GetBudgetStatusIntent(),
             phrases: [
