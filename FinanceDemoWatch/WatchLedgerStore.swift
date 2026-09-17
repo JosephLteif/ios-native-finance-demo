@@ -119,7 +119,7 @@ final class WatchLedgerStore: NSObject, ObservableObject, WCSessionDelegate {
             return
         }
 
-        errorMessage = nil
+        self.errorMessage = nil
         status = pendingExpenses.isEmpty ? .synced : .queued
         sendPendingExpenses()
         saveCache()
@@ -199,4 +199,13 @@ final class WatchLedgerStore: NSObject, ObservableObject, WCSessionDelegate {
         }
     }
 
+#if os(iOS)
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+
+    nonisolated func sessionDidDeactivate(_ session: WCSession) {
+        Task { @MainActor [weak self] in
+            self?.activate()
+        }
+    }
+#endif
 }
