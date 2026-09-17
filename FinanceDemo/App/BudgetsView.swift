@@ -26,6 +26,8 @@ struct BudgetsView: View {
                                     .frame(minWidth: 44, minHeight: 44)
                                 .background(PocketLedgerTheme.accent, in: Circle())
                         }
+                        .accessibilityLabel("Add budget")
+                        .accessibilityHint("Creates a new monthly budget")
                     }
 
                     if store.data.budgets.isEmpty {

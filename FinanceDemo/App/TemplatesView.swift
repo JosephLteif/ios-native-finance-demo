@@ -87,6 +87,8 @@ struct TemplatesView: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel("Delete template")
             }
         }
         .padding(16)

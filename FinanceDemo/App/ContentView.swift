@@ -1455,6 +1455,8 @@ private struct CategoriesView: View {
                     Image(systemName: "ellipsis.circle")
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
                 }
+                .accessibilityLabel("Category actions")
+                .accessibilityHint("Opens actions for this category")
             }
 
             if children.isEmpty {
