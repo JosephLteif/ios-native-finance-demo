@@ -56,21 +56,16 @@ struct ContentView: View {
         }
     }
 
-    private var selectedTab: AppTab {
-        get { AppTab(rawValue: selectedTabRawValue) ?? .overview }
-        set { selectedTabRawValue = newValue.rawValue }
-    }
-
     private var selectedTabBinding: Binding<AppTab> {
         Binding(
-            get: { selectedTab },
-            set: { selectedTab = $0 }
+            get: { AppTab(rawValue: selectedTabRawValue) ?? .overview },
+            set: { selectedTabRawValue = $0.rawValue }
         )
     }
 
     private func handleDeepLink(_ url: URL) {
         if let tab = AppTab(url: url) {
-            selectedTab = tab
+            selectedTabRawValue = tab.rawValue
         }
     }
 
@@ -246,7 +241,6 @@ private struct PocketTabBar: View {
     @Binding var selectedTab: AppTab
     let onAdd: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.accessibilityContrast) private var accessibilityContrast
 
     var body: some View {
         Group {
@@ -353,7 +347,7 @@ private struct PocketTabBar: View {
             .background {
                 if isSelected {
                     Capsule()
-                        .fill(PocketLedgerTheme.accent.opacity(accessibilityContrast == .high ? 0.30 : 0.18))
+                        .fill(PocketLedgerTheme.accent.opacity(0.22))
                 }
             }
         }
