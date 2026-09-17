@@ -339,8 +339,8 @@ private struct PocketTabBar: View {
                     .multilineTextAlignment(.center)
             }
             .frame(
-                maxWidth: .infinity,
                 minWidth: dynamicTypeSize.isAccessibilitySize ? 92 : 60,
+                maxWidth: .infinity,
                 minHeight: 60
             )
             .foregroundStyle(isSelected ? PocketLedgerTheme.accent : PocketLedgerTheme.textSecondary)
