@@ -33,7 +33,6 @@ struct WatchExpenseView: View {
                     .foregroundStyle(.secondary)
             } else {
                 TextField("Amount", text: $amount)
-                    .keyboardType(.decimalPad)
 
                 Picker("Account", selection: $accountID) {
                     Text("Choose account").tag(nil as UUID?)
