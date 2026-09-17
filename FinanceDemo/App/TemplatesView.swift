@@ -100,7 +100,7 @@ struct TemplatesView: View {
 }
 
 @MainActor
-private struct TemplateNameEditor: View {
+struct TemplateNameEditor: View {
     @ObservedObject var store: LedgerStore
     @Environment(\.dismiss) private var dismiss
     let transaction: LedgerTransaction

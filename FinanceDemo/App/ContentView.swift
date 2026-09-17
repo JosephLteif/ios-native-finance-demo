@@ -54,7 +54,7 @@ struct ContentView: View {
                 TransactionsView(store: store)
             }
 
-            Tab("Add", systemImage: "plus", value: .add, role: .prominent) {
+            Tab("Add", systemImage: "plus", value: .add) {
                 Color.clear
             }
 
