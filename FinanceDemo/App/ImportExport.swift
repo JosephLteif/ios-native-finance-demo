@@ -21,6 +21,34 @@ struct PocketLedgerBackup: Codable {
     }
 }
 
+struct PocketLedgerBackupAttachment: Codable {
+    let id: UUID
+    let data: Data
+}
+
+struct PocketLedgerBackupBundle: Codable {
+    static let format = "pocket-ledger-backup-bundle"
+    static let currentVersion = 1
+
+    let format: String
+    let version: Int
+    let exportedAt: Date
+    let data: FinanceData
+    let attachments: [PocketLedgerBackupAttachment]
+
+    init(data: FinanceData, attachmentData: [UUID: Data], exportedAt: Date = .now) {
+        format = Self.format
+        version = Self.currentVersion
+        self.exportedAt = exportedAt
+        self.data = data
+        attachments = data.attachments.compactMap { attachment in
+            attachmentData[attachment.id].map {
+                PocketLedgerBackupAttachment(id: attachment.id, data: $0)
+            }
+        }
+    }
+}
+
 enum LedgerBackupCodec {
     static func encode(_ data: FinanceData) throws -> Data {
         let encoder = JSONEncoder()
@@ -39,10 +67,48 @@ enum LedgerBackupCodec {
         }
         return backup
     }
+
+    static func encodeBundle(_ data: FinanceData, attachmentData: [UUID: Data]) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(
+            PocketLedgerBackupBundle(data: data, attachmentData: attachmentData)
+        )
+    }
+
+    static func decodeBundle(_ data: Data) throws -> PocketLedgerBackupBundle {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let backup = try decoder.decode(PocketLedgerBackupBundle.self, from: data)
+        guard backup.format == PocketLedgerBackupBundle.format,
+              backup.version <= PocketLedgerBackupBundle.currentVersion else {
+            throw FinanceImportError.invalidFile("This Pocket Ledger backup bundle version is not supported.")
+        }
+        return backup
+    }
 }
 
 struct PocketLedgerBackupDocument: FileDocument {
     static let readableContentTypes: [UTType] = [.json]
+
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+struct PocketLedgerBackupBundleDocument: FileDocument {
+    static let readableContentTypes: [UTType] = [.data]
 
     let data: Data
 

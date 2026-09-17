@@ -116,6 +116,7 @@ struct FinanceAccountQuery: EntityStringQuery, Sendable {
     private func allEntities() -> [FinanceAccountEntity] {
         let data = FinanceStorage(context: "app-intent").load()
         return data.accounts
+            .filter { !$0.isArchived }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             .map {
                 FinanceAccountEntity(
@@ -156,6 +157,7 @@ struct FinanceCategoryQuery: EntityStringQuery, Sendable {
     private func allEntities() -> [FinanceCategoryEntity] {
         let data = FinanceStorage(context: "app-intent").load()
         return data.categories
+            .filter { !$0.isArchived }
             .map { FinanceCategoryEntity(category: $0, categories: data.categories) }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }

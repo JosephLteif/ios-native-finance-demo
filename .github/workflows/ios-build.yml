@@ -66,6 +66,26 @@ jobs:
             DEVELOPMENT_TEAM="" \
             build-for-testing 2>&1 | tee "$RUNNER_TEMP/xcodebuild-tests.log"
 
+      - name: Run focused simulator tests
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ && $2 ~ /^[A-Fa-f0-9-]+$/ { print $2; exit }')"
+          test -n "$SIMULATOR_ID" || { echo "No available iPhone simulator found"; exit 1; }
+          xcodebuild \
+            -project ios-native-finance-demo.xcodeproj \
+            -scheme FinanceDemo \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath "$RUNNER_TEMP/TestDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            test-without-building \
+            -only-testing:FinanceDemoTests \
+            -only-testing:FinanceDemoUITests 2>&1 | tee "$RUNNER_TEMP/xcodebuild-focused-tests.log"
+
       - name: Verify app and embedded widget
         run: |
           set -euo pipefail

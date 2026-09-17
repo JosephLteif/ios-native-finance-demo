@@ -7,8 +7,10 @@ struct DataTransferView: View {
 
     @State private var isShowingImporter = false
     @State private var isExportingBackup = false
+    @State private var isExportingBackupBundle = false
     @State private var isExportingCSV = false
     @State private var backupDocument = PocketLedgerBackupDocument(data: Data())
+    @State private var backupBundleDocument = PocketLedgerBackupBundleDocument(data: Data())
     @State private var csvDocument = LedgerCSVDocument(data: Data())
     @State private var pendingBackup: BackupImportCandidate?
     @State private var pendingDocument: ImportedDocument?
@@ -48,6 +50,13 @@ struct DataTransferView: View {
             onCompletion: exportCompleted
         )
         .fileExporter(
+            isPresented: $isExportingBackupBundle,
+            document: backupBundleDocument,
+            contentType: .data,
+            defaultFilename: "Pocket-Ledger-backup.pocketledger",
+            onCompletion: exportCompleted
+        )
+        .fileExporter(
             isPresented: $isExportingCSV,
             document: csvDocument,
             contentType: .commaSeparatedText,
@@ -73,7 +82,7 @@ struct DataTransferView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("A full JSON backup is the only way to restore this ledger after it is erased.")
+            Text("A full Pocket Ledger backup is the safest way to restore this ledger after it is erased.")
         }
         .confirmationDialog(
             "Erase all ledger data?",
@@ -122,7 +131,7 @@ struct DataTransferView: View {
             Label("Pocket Ledger backup", systemImage: "externaldrive")
                 .font(.title3.weight(.bold))
 
-            Text("JSON backups keep account IDs, categories, currencies, balances, and transaction details so they can be merged or restored later.")
+            Text("Full backups keep accounts, categories, transactions, schedules, and local receipt attachments so they can be restored later.")
                 .font(.subheadline)
                 .foregroundStyle(PocketLedgerTheme.textSecondary)
 
@@ -135,6 +144,14 @@ struct DataTransferView: View {
             .buttonStyle(.borderedProminent)
 
             Button {
+                startJSONBackupExport()
+            } label: {
+                Label("Export JSON compatibility backup", systemImage: "doc.text")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
+            Button {
                 csvDocument = LedgerCSVDocument(data: LedgerCSVExporter.data(for: store.data))
                 isExportingCSV = true
             } label: {
@@ -143,7 +160,7 @@ struct DataTransferView: View {
             }
             .buttonStyle(.bordered)
 
-            Text("CSV is useful when moving data into a spreadsheet or another finance app. It is not a full restore because it contains transaction rows rather than the ledger's internal IDs.")
+            Text("The full backup includes local receipt files. JSON remains available for compatibility, while CSV is useful for spreadsheets and other finance apps.")
                 .font(.footnote)
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
         }
@@ -212,10 +229,17 @@ struct DataTransferView: View {
             }
 
             let data = try Data(contentsOf: url)
-            if let backup = try? LedgerBackupCodec.decode(data) {
+            if let bundle = try? LedgerBackupCodec.decodeBundle(data) {
                 pendingBackup = BackupImportCandidate(
                     fileName: url.lastPathComponent,
-                    backup: backup
+                    backup: PocketLedgerBackup(data: bundle.data, exportedAt: bundle.exportedAt),
+                    attachmentFiles: Dictionary(uniqueKeysWithValues: bundle.attachments.map { ($0.id, $0.data) })
+                )
+            } else if let backup = try? LedgerBackupCodec.decode(data) {
+                pendingBackup = BackupImportCandidate(
+                    fileName: url.lastPathComponent,
+                    backup: backup,
+                    attachmentFiles: [:]
                 )
             } else {
                 pendingDocument = try FinanceImportParser.parse(url: url, data: data)
@@ -241,8 +265,22 @@ struct DataTransferView: View {
 
     private func startBackupExport(continueToReset: Bool = false) {
         do {
-            backupDocument = PocketLedgerBackupDocument(data: try LedgerBackupCodec.encode(store.data))
+            backupBundleDocument = PocketLedgerBackupBundleDocument(
+                data: try LedgerBackupCodec.encodeBundle(
+                    store.data,
+                    attachmentData: store.attachmentFiles()
+                )
+            )
             isContinuingToResetAfterBackup = continueToReset
+            isExportingBackupBundle = true
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func startJSONBackupExport() {
+        do {
+            backupDocument = PocketLedgerBackupDocument(data: try LedgerBackupCodec.encode(store.data))
             isExportingBackup = true
         } catch {
             errorMessage = error.localizedDescription
@@ -262,6 +300,7 @@ private struct BackupImportCandidate: Identifiable {
     let id = UUID()
     let fileName: String
     let backup: PocketLedgerBackup
+    let attachmentFiles: [UUID: Data]
 }
 
 @MainActor
@@ -282,6 +321,14 @@ private struct BackupRestoreView: View {
                     LabeledContent("Accounts", value: "\(candidate.backup.data.accounts.count)")
                     LabeledContent("Categories", value: "\(candidate.backup.data.categories.count)")
                     LabeledContent("Transactions", value: "\(candidate.backup.data.transactions.count)")
+                    if !candidate.backup.data.attachments.isEmpty {
+                        LabeledContent("Attachments", value: "\(candidate.backup.data.attachments.count)")
+                        if candidate.attachmentFiles.count < candidate.backup.data.attachments.count {
+                            Text("Some attachment bytes are missing from this compatibility backup. The ledger will restore, but those files will show as unavailable.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 Section {
@@ -331,7 +378,10 @@ private struct BackupRestoreView: View {
     }
 
     private func merge() {
-        guard store.mergeData(candidate.backup.data) else {
+        guard store.mergeData(
+            candidate.backup.data,
+            attachmentFiles: candidate.attachmentFiles
+        ) else {
             errorMessage = store.lastActionStatus ?? "The backup could not be saved."
             return
         }
@@ -339,7 +389,10 @@ private struct BackupRestoreView: View {
     }
 
     private func replace() {
-        guard store.replaceData(candidate.backup.data) else {
+        guard store.replaceData(
+            candidate.backup.data,
+            attachmentFiles: candidate.attachmentFiles
+        ) else {
             errorMessage = store.lastActionStatus ?? "The backup could not be saved."
             return
         }
@@ -370,8 +423,10 @@ private struct ImportMappingView: View {
         let table = document.tables[0]
         _selectedTableID = State(initialValue: table.id)
         _mapping = State(initialValue: FinanceImportParser.suggestedMapping(columns: table.columns))
-        _defaultAccountID = State(initialValue: store.data.accounts.first?.id)
-        _defaultDestinationAccountID = State(initialValue: store.data.accounts.dropFirst().first?.id ?? store.data.accounts.first?.id)
+        _defaultAccountID = State(initialValue: store.activeAccounts.first?.id)
+        _defaultDestinationAccountID = State(
+            initialValue: store.activeAccounts.dropFirst().first?.id ?? store.activeAccounts.first?.id
+        )
     }
 
     private var selectedTable: ImportedTable {
@@ -433,14 +488,14 @@ private struct ImportMappingView: View {
 
                     Picker("Default account", selection: $defaultAccountID) {
                         Text("Use mapped account").tag(UUID?.none)
-                        ForEach(store.data.accounts) { account in
+                        ForEach(store.activeAccounts) { account in
                             Text("\(account.name) · \(account.currency.rawValue)").tag(Optional(account.id))
                         }
                     }
 
                     Picker("Default destination", selection: $defaultDestinationAccountID) {
                         Text("Use mapped destination").tag(UUID?.none)
-                        ForEach(store.data.accounts) { account in
+                        ForEach(store.activeAccounts) { account in
                             Text("\(account.name) · \(account.currency.rawValue)").tag(Optional(account.id))
                         }
                     }

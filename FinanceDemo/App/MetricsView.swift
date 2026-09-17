@@ -204,7 +204,7 @@ struct MetricsView: View {
 
             Picker("Category", selection: $selectedCategoryID) {
                 Text("All categories").tag(UUID?.none)
-                ForEach(store.data.categories) { category in
+                ForEach(store.activeCategories) { category in
                     Text(store.categoryPath(for: category.id))
                         .tag(Optional(category.id))
                 }

@@ -26,12 +26,16 @@ The main app now contains the first local finance workflow for the Lebanese mark
 - USD and LBP are stored as integer minor units, so LBP values do not use floating-point rounding.
 - A single transaction can record a bill total, multiple outflows from different accounts, multiple inflows, and a custom exchange rate.
 - Change can be returned to a different account and currency. Requested change and actual change are both retained, so denomination shortfalls such as 460,000 LBP requested and 450,000 LBP returned remain visible.
-- Starter data includes cash, bank-account, and loan account types plus parent categories and subcategories. Accounts and categories can be added from the app.
+- Starter options include cash, bank-account, and loan account types plus parent categories and subcategories; the first-launch wizard is skippable and a fresh ledger stays empty until the user creates data.
 - The Overview tab reports available balances by currency, monthly expenses by currency, transaction count, and the most-used category.
 - Transactions can be searched, edited, duplicated, and deleted from the history surface.
 - Category budgets can be created, edited, and reviewed from both Overview and More, with monthly progress and over-budget states.
 - Transactions can be saved as reusable templates and used to prefill a new entry.
 - Scheduled transactions can opt into local due-date reminders; ledger entries are still materialized when the app returns to the foreground.
+- First launch offers a skippable setup wizard; quick entry remembers recent account/category choices and can create accounts or categories inline.
+- Accounts and categories can be edited, archived, and restored. Archived records stay available to historical transactions but are excluded from new-entry pickers; `includeInTotals` remains independent.
+- Transaction drafts are centrally validated for missing or archived references, currency mismatches, invalid amounts, same-currency transfer imbalance, and missing cross-currency rates.
+- Transaction history supports direct tap-to-edit, visible swipe actions, and dashboard-to-history “See all” navigation.
 - The widget and Shortcuts read and mutate the same shared finance ledger as the main app.
 - A native Control Center/Lock Screen control records the existing quick USD expense action after device authentication.
 - The Control Center action can be configured with a USD amount; the widget keeps a separate fixed quick-expense preset.
@@ -42,7 +46,8 @@ The current slice is local-only and intentionally keeps currency totals separate
 
 Settings → Import & Backup supports several migration paths:
 
-- Pocket Ledger JSON backups are lossless and can be merged into the current ledger or used to replace it.
+- Full `.pocketledger` backups are versioned and include local receipt photos/PDFs plus extracted receipt line items and totals. They can be merged into the current ledger or used to replace it.
+- JSON backups remain available as a compatibility format; they preserve ledger metadata but cannot carry local attachment bytes.
 - CSV, TSV, and JSON row exports open a field-mapping screen. Date and amount are required; type, currency, account, destination account, category, and note can be mapped or supplied with defaults.
 - `.xlsx` workbooks are read on-device, including multiple sheets. The importer also recognizes the Money Manager-style export used by `2026-09-01 ~ 09-30.xlsx`, combines category/subcategory and note/description fields, and reconstructs paired same-time transfers, including USD-to-LBP amounts when the account names identify the currencies.
 - SQLite backups such as Money Manager `.mmbak`, `.sqlite`, `.sqlite3`, and `.db` files expose their tables for mapping and include a normalized Realbyte table when the known transaction tables are present.
@@ -67,7 +72,7 @@ Pocket Ledger uses a dark navy, teal, emerald, and warm gold wallet/ledger mark.
 
 The workflow runs on the `macos-26` GitHub-hosted runner and prints the macOS, Xcode, and Swift versions used for each build. It is intentionally not triggered for ordinary pushes to `main`.
 
-The workflow also compiles the unit-test target for the iOS Simulator with a build-for-testing pass; executing tests still requires a simulator-capable test run.
+The workflow compiles the unit-test and UI-test targets for the iOS Simulator, then runs both targets on an available iPhone simulator with `test-without-building`.
 
 To build:
 
@@ -134,18 +139,25 @@ Complete this on the physical iPhone after installation:
 
 - [ ] Launch the app.
 - [ ] Confirm the fresh database starts with no seeded accounts, categories, or transactions.
+- [ ] On first launch, skip setup and confirm the ledger remains empty; reopen **More → Setup guide**, create an account, and optionally add starter categories.
 - [ ] Add accounts and confirm the Overview tab shows separate USD and LBP balances.
+- [ ] From quick entry, create an account and category inline, save an expense, then confirm the next entry remembers the recent choices.
 - [ ] Tap an account, confirm its account-specific transaction history opens, and reconcile its balance once as a counted transaction and once without creating a transaction.
 - [ ] Open Metrics and verify month, year, custom-date, and category filters update the totals.
 - [ ] Add an expense with a `$10` bill total, `$9 paid from a USD cash account, and `90,000 LBP` paid from an LBP cash account.
 - [ ] Add `450,000 LBP` returned to an LBP account, enter `460,000 LBP` as requested change, and confirm the transaction shows the denomination shortfall.
 - [ ] Reopen the app and confirm the transaction and account balances persist.
 - [ ] Add a bank account, loan account, top-level category, and subcategory.
+- [ ] Edit an account/category, archive it, confirm it disappears from new-entry pickers, and confirm its historical transactions still render.
+- [ ] Tap a transaction row to edit it, use swipe actions, and open the full history through **See all**.
+- [ ] Scan or import a receipt photo/PDF, review extracted line items before saving, open the saved attachment, replace/delete it, and confirm a missing local file shows an unavailable state instead of crashing.
+- [ ] Export a full `.pocketledger` backup, reset or use a second install, restore it, and verify transactions and receipt attachments return.
 - [ ] Add the Pocket Ledger widget and confirm it shows separate USD and LBP balances.
 - [ ] Use the widget quick action or the Pocket Ledger expense Shortcut and confirm the new expense appears in Transactions.
 - [ ] Run the balance Shortcut and confirm it returns both USD and LBP balances.
 - [ ] Refresh/re-sign the app without deleting it; confirm the state remains.
 - [ ] Record whether shared App Group storage is `WORKING` or `UNAVAILABLE` during device validation.
+- [ ] Verify receipt files persist in the App Group (or local fallback), full-backup restore works, and lock-screen/widget surfaces do not reveal more data than intended.
 - [ ] In Settings, set a 4-to-6 digit app passcode, background the app, and confirm the lock screen appears when it is reopened.
 - [ ] Enable biometric unlock in Settings and confirm Face ID or Touch ID unlocks the app.
 

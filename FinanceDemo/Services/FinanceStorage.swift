@@ -19,6 +19,7 @@ final class FinanceStorage {
 
     private let modelContainer: ModelContainer?
     private let storageLocation: StorageLocation
+    private let attachmentDirectory: URL?
     private(set) var loadStatus: LoadStatus = .notLoaded
 
     init(context: String) {
@@ -29,6 +30,9 @@ final class FinanceStorage {
         ) {
             modelContainer = sharedContainer
             storageLocation = .appGroup
+            attachmentDirectory = Self.makeAttachmentDirectory(
+                at: groupURL.appendingPathComponent("PocketLedgerAttachments", isDirectory: true)
+            )
             return
         }
 
@@ -39,6 +43,7 @@ final class FinanceStorage {
               ).first else {
             modelContainer = nil
             storageLocation = .unavailable
+            attachmentDirectory = nil
             return
         }
 
@@ -51,6 +56,7 @@ final class FinanceStorage {
         } catch {
             modelContainer = nil
             storageLocation = .unavailable
+            attachmentDirectory = nil
             return
         }
 
@@ -59,11 +65,15 @@ final class FinanceStorage {
         ) else {
             modelContainer = nil
             storageLocation = .unavailable
+            attachmentDirectory = nil
             return
         }
 
         modelContainer = localContainer
         storageLocation = .local
+        attachmentDirectory = Self.makeAttachmentDirectory(
+            at: localDirectory.appendingPathComponent("Attachments", isDirectory: true)
+        )
     }
 
     var isPersistent: Bool {
@@ -80,6 +90,41 @@ final class FinanceStorage {
 
     var isCorrupted: Bool {
         loadStatus == .corrupted
+    }
+
+    var canStoreAttachments: Bool {
+        attachmentDirectory != nil
+    }
+
+    @discardableResult
+    func storeAttachment(_ data: Data, fileExtension: String) throws -> String {
+        guard let attachmentDirectory else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let normalizedExtension = fileExtension
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber }
+        let relativePath = UUID().uuidString + (normalizedExtension.isEmpty ? "" : ".\(normalizedExtension)")
+        let url = attachmentDirectory.appendingPathComponent(relativePath, isDirectory: false)
+        try data.write(to: url, options: .atomic)
+        return relativePath
+    }
+
+    func attachmentData(relativePath: String) -> Data? {
+        guard let url = attachmentURL(relativePath: relativePath) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    func deleteAttachment(relativePath: String) {
+        guard let url = attachmentURL(relativePath: relativePath) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    func deleteAllAttachments() {
+        guard let attachmentDirectory else { return }
+        try? FileManager.default.removeItem(at: attachmentDirectory)
+        _ = Self.makeAttachmentDirectory(at: attachmentDirectory)
     }
 
     func load() -> FinanceData {
@@ -197,5 +242,29 @@ final class FinanceStorage {
             cloudKitDatabase: .none
         )
         return try? ModelContainer(for: schema, configurations: [configuration])
+    }
+
+    private static func makeAttachmentDirectory(at url: URL) -> URL? {
+        do {
+            try FileManager.default.createDirectory(
+                at: url,
+                withIntermediateDirectories: true
+            )
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    private func attachmentURL(relativePath: String) -> URL? {
+        guard let attachmentDirectory,
+              !relativePath.isEmpty,
+              relativePath != ".",
+              relativePath != "..",
+              !relativePath.contains("/"),
+              !relativePath.contains("\\") else {
+            return nil
+        }
+        return attachmentDirectory.appendingPathComponent(relativePath, isDirectory: false)
     }
 }

@@ -2,6 +2,166 @@ import XCTest
 @testable import FinanceDemo
 
 final class FinanceModelTests: XCTestCase {
+    func testLegacyModelFieldsDecodeToSafeDefaults() throws {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let category = LedgerCategory(name: "Food")
+        let transaction = LedgerTransaction(
+            note: "Coffee",
+            kind: .expense,
+            categoryID: category.id,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 500)
+                )
+            ],
+            inflows: []
+        )
+        let encoded = try JSONEncoder().encode(
+            FinanceData(accounts: [account], categories: [category], transactions: [transaction])
+        )
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "attachments")
+        var accounts = try XCTUnwrap(object["accounts"] as? [[String: Any]])
+        accounts[0].removeValue(forKey: "isArchived")
+        object["accounts"] = accounts
+        var categories = try XCTUnwrap(object["categories"] as? [[String: Any]])
+        categories[0].removeValue(forKey: "isArchived")
+        object["categories"] = categories
+        var transactions = try XCTUnwrap(object["transactions"] as? [[String: Any]])
+        transactions[0].removeValue(forKey: "attachmentIDs")
+        object["transactions"] = transactions
+
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(FinanceData.self, from: legacyData)
+
+        XCTAssertFalse(decoded.accounts[0].isArchived)
+        XCTAssertFalse(decoded.categories[0].isArchived)
+        XCTAssertEqual(decoded.transactions[0].attachmentIDs, [])
+        XCTAssertEqual(decoded.attachments, [])
+    }
+
+    func testSameCurrencyTransferMustBalance() {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let destination = Account(
+            name: "Bank",
+            type: .bankAccount,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let transaction = LedgerTransaction(
+            note: "Unbalanced",
+            kind: .transfer,
+            categoryID: nil,
+            outflows: [MoneyMovement(accountID: account.id, money: Money(currency: .usd, minorUnits: 100))],
+            inflows: [MoneyMovement(accountID: destination.id, money: Money(currency: .usd, minorUnits: 90))]
+        )
+        let data = FinanceData(accounts: [account, destination], categories: [], transactions: [])
+
+        XCTAssertEqual(
+            FinanceTransactionValidator.validate(transaction, in: data),
+            .unbalancedTransfer
+        )
+    }
+
+    func testArchivedAccountsCannotBeUsedForNewTransactions() {
+        let account = Account(
+            name: "Old cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0),
+            isArchived: true
+        )
+        let transaction = LedgerTransaction(
+            note: "Expense",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [MoneyMovement(accountID: account.id, money: Money(currency: .usd, minorUnits: 100))],
+            inflows: []
+        )
+        let data = FinanceData(accounts: [account], categories: [], transactions: [])
+
+        XCTAssertEqual(
+            FinanceTransactionValidator.validate(transaction, in: data),
+            .archivedMovementAccount
+        )
+    }
+
+    func testMissingAttachmentReferenceIsRejected() {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let transaction = LedgerTransaction(
+            note: "Receipt",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 100)
+                )
+            ],
+            inflows: [],
+            attachmentIDs: [UUID()]
+        )
+        let data = FinanceData(accounts: [account], categories: [], transactions: [])
+
+        XCTAssertEqual(
+            FinanceTransactionValidator.validate(transaction, in: data),
+            .missingAttachment
+        )
+    }
+
+    func testBackupBundleRoundTripsAttachmentBytes() throws {
+        let attachment = LedgerAttachment(
+            fileName: "receipt.jpg",
+            contentType: "image/jpeg",
+            relativePath: "receipt-id.jpg"
+        )
+        let data = FinanceData(
+            accounts: [],
+            categories: [],
+            transactions: [],
+            attachments: [attachment]
+        )
+        let bytes = Data([0x01, 0x02, 0x03])
+
+        let encoded = try LedgerBackupCodec.encodeBundle(
+            data,
+            attachmentData: [attachment.id: bytes]
+        )
+        let decoded = try LedgerBackupCodec.decodeBundle(encoded)
+
+        XCTAssertEqual(decoded.data.attachments, [attachment])
+        XCTAssertEqual(decoded.attachments.first?.data, bytes)
+    }
+
+    func testUnsupportedBackupBundleVersionIsRejected() throws {
+        let encoded = try LedgerBackupCodec.encodeBundle(
+            FinanceData(accounts: [], categories: [], transactions: []),
+            attachmentData: [:]
+        )
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["version"] = 99
+        let unsupported = try JSONSerialization.data(withJSONObject: object)
+
+        XCTAssertThrowsError(try LedgerBackupCodec.decodeBundle(unsupported))
+        XCTAssertThrowsError(try LedgerBackupCodec.decodeBundle(Data("not a backup".utf8)))
+    }
+
     func testMoneyParsingUsesCurrencyMinorUnits() {
         XCTAssertEqual(
             Money.parse("12.50", currency: .usd),

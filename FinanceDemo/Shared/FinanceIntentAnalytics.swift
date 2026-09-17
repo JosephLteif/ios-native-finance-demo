@@ -284,6 +284,7 @@ actor FinanceIntentIndexing {
         let data = storage.load()
         let index = CSSearchableIndex(name: financeIntentSearchIndexName)
         let accounts = data.accounts
+            .filter { !$0.isArchived }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             .map {
                 FinanceAccountEntity(
@@ -292,6 +293,7 @@ actor FinanceIntentIndexing {
                 )
             }
         let categories = data.categories
+            .filter { !$0.isArchived }
             .map { FinanceCategoryEntity(category: $0, categories: data.categories) }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         let transactions = data.transactions

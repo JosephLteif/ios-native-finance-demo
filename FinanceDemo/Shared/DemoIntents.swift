@@ -227,6 +227,7 @@ struct GetCategoriesIntent: AppIntent {
 
         let data = storage.load()
         let categories = data.categories
+            .filter { !$0.isArchived }
             .map { FinanceCategoryEntity(category: $0, categories: data.categories) }
             .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         let summary = categories.isEmpty
@@ -256,6 +257,7 @@ struct GetAccountsIntent: AppIntent {
 
         let data = storage.load()
         let accounts = data.accounts
+            .filter { !$0.isArchived }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             .map {
                 FinanceAccountEntity(

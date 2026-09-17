@@ -139,6 +139,7 @@ struct Account: Identifiable, Codable, Equatable {
     var currency: LedgerCurrency
     var openingBalance: Money
     var includeInTotals: Bool
+    var isArchived: Bool
 
     init(
         id: UUID = UUID(),
@@ -146,7 +147,8 @@ struct Account: Identifiable, Codable, Equatable {
         type: AccountType,
         currency: LedgerCurrency,
         openingBalance: Money,
-        includeInTotals: Bool = true
+        includeInTotals: Bool = true,
+        isArchived: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -154,6 +156,7 @@ struct Account: Identifiable, Codable, Equatable {
         self.currency = currency
         self.openingBalance = openingBalance
         self.includeInTotals = includeInTotals
+        self.isArchived = isArchived
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -163,6 +166,7 @@ struct Account: Identifiable, Codable, Equatable {
         case currency
         case openingBalance
         case includeInTotals
+        case isArchived
     }
 
     init(from decoder: Decoder) throws {
@@ -173,6 +177,7 @@ struct Account: Identifiable, Codable, Equatable {
         currency = try container.decode(LedgerCurrency.self, forKey: .currency)
         openingBalance = try container.decode(Money.self, forKey: .openingBalance)
         includeInTotals = try container.decodeIfPresent(Bool.self, forKey: .includeInTotals) ?? true
+        isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -183,6 +188,7 @@ struct Account: Identifiable, Codable, Equatable {
         try container.encode(currency, forKey: .currency)
         try container.encode(openingBalance, forKey: .openingBalance)
         try container.encode(includeInTotals, forKey: .includeInTotals)
+        try container.encode(isArchived, forKey: .isArchived)
     }
 }
 
@@ -305,17 +311,46 @@ struct LedgerCategory: Identifiable, Codable, Equatable {
     var name: String
     var parentID: UUID?
     var systemImage: String
+    var isArchived: Bool
 
     init(
         id: UUID = UUID(),
         name: String,
         parentID: UUID? = nil,
-        systemImage: String = "tag"
+        systemImage: String = "tag",
+        isArchived: Bool = false
     ) {
         self.id = id
         self.name = name
         self.parentID = parentID
         self.systemImage = systemImage
+        self.isArchived = isArchived
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case parentID
+        case systemImage
+        case isArchived
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        parentID = try container.decodeIfPresent(UUID.self, forKey: .parentID)
+        systemImage = try container.decodeIfPresent(String.self, forKey: .systemImage) ?? "tag"
+        isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(parentID, forKey: .parentID)
+        try container.encode(systemImage, forKey: .systemImage)
+        try container.encode(isArchived, forKey: .isArchived)
     }
 }
 
@@ -330,6 +365,7 @@ struct LedgerTransaction: Identifiable, Codable, Equatable {
     var inflows: [MoneyMovement]
     var exchangeRate: ExchangeRate?
     var changeAdjustment: ChangeAdjustment?
+    var attachmentIDs: [UUID]
 
     init(
         id: UUID = UUID(),
@@ -341,7 +377,8 @@ struct LedgerTransaction: Identifiable, Codable, Equatable {
         outflows: [MoneyMovement],
         inflows: [MoneyMovement],
         exchangeRate: ExchangeRate? = nil,
-        changeAdjustment: ChangeAdjustment? = nil
+        changeAdjustment: ChangeAdjustment? = nil,
+        attachmentIDs: [UUID] = []
     ) {
         self.id = id
         self.date = date
@@ -353,6 +390,51 @@ struct LedgerTransaction: Identifiable, Codable, Equatable {
         self.inflows = inflows
         self.exchangeRate = exchangeRate
         self.changeAdjustment = changeAdjustment
+        self.attachmentIDs = attachmentIDs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case date
+        case note
+        case kind
+        case categoryID
+        case amountDue
+        case outflows
+        case inflows
+        case exchangeRate
+        case changeAdjustment
+        case attachmentIDs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        date = try container.decode(Date.self, forKey: .date)
+        note = try container.decode(String.self, forKey: .note)
+        kind = try container.decode(TransactionKind.self, forKey: .kind)
+        categoryID = try container.decodeIfPresent(UUID.self, forKey: .categoryID)
+        amountDue = try container.decodeIfPresent(Money.self, forKey: .amountDue)
+        outflows = try container.decode([MoneyMovement].self, forKey: .outflows)
+        inflows = try container.decode([MoneyMovement].self, forKey: .inflows)
+        exchangeRate = try container.decodeIfPresent(ExchangeRate.self, forKey: .exchangeRate)
+        changeAdjustment = try container.decodeIfPresent(ChangeAdjustment.self, forKey: .changeAdjustment)
+        attachmentIDs = try container.decodeIfPresent([UUID].self, forKey: .attachmentIDs) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(date, forKey: .date)
+        try container.encode(note, forKey: .note)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(categoryID, forKey: .categoryID)
+        try container.encodeIfPresent(amountDue, forKey: .amountDue)
+        try container.encode(outflows, forKey: .outflows)
+        try container.encode(inflows, forKey: .inflows)
+        try container.encodeIfPresent(exchangeRate, forKey: .exchangeRate)
+        try container.encodeIfPresent(changeAdjustment, forKey: .changeAdjustment)
+        try container.encode(attachmentIDs, forKey: .attachmentIDs)
     }
 }
 
@@ -596,6 +678,56 @@ struct LedgerTemplate: Identifiable, Codable, Equatable {
     }
 }
 
+struct LedgerReceiptLineItem: Identifiable, Codable, Equatable, Sendable {
+    let id: UUID
+    var name: String
+    var quantity: Int
+    var unitPrice: Money?
+    var lineTotal: Money?
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        quantity: Int,
+        unitPrice: Money?,
+        lineTotal: Money?
+    ) {
+        self.id = id
+        self.name = name
+        self.quantity = quantity
+        self.unitPrice = unitPrice
+        self.lineTotal = lineTotal
+    }
+}
+
+struct LedgerAttachment: Identifiable, Codable, Equatable, Sendable {
+    let id: UUID
+    var fileName: String
+    var contentType: String
+    var relativePath: String
+    var createdAt: Date
+    var receiptItems: [LedgerReceiptLineItem]
+    var extractedTotal: Money?
+
+    init(
+        id: UUID = UUID(),
+        fileName: String,
+        contentType: String,
+        relativePath: String,
+        createdAt: Date = .now,
+        receiptItems: [LedgerReceiptLineItem] = [],
+        extractedTotal: Money? = nil
+    ) {
+        self.id = id
+        self.fileName = fileName
+        self.contentType = contentType
+        self.relativePath = relativePath
+        self.createdAt = createdAt
+        self.receiptItems = receiptItems
+        self.extractedTotal = extractedTotal
+    }
+}
+
 struct FinanceData: Codable, Equatable {
     var accounts: [Account]
     var categories: [LedgerCategory]
@@ -604,6 +736,7 @@ struct FinanceData: Codable, Equatable {
     var exchangeRates: [ExchangeRate]
     var budgets: [LedgerBudget]
     var templates: [LedgerTemplate]
+    var attachments: [LedgerAttachment]
 
     init(
         accounts: [Account],
@@ -612,7 +745,8 @@ struct FinanceData: Codable, Equatable {
         scheduledTransactions: [ScheduledTransaction] = [],
         exchangeRates: [ExchangeRate] = [],
         budgets: [LedgerBudget] = [],
-        templates: [LedgerTemplate] = []
+        templates: [LedgerTemplate] = [],
+        attachments: [LedgerAttachment] = []
     ) {
         self.accounts = accounts
         self.categories = categories
@@ -621,6 +755,7 @@ struct FinanceData: Codable, Equatable {
         self.exchangeRates = exchangeRates
         self.budgets = budgets
         self.templates = templates
+        self.attachments = attachments
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -631,6 +766,7 @@ struct FinanceData: Codable, Equatable {
         case exchangeRates
         case budgets
         case templates
+        case attachments
     }
 
     init(from decoder: Decoder) throws {
@@ -648,6 +784,7 @@ struct FinanceData: Codable, Equatable {
         ) ?? []
         budgets = try container.decodeIfPresent([LedgerBudget].self, forKey: .budgets) ?? []
         templates = try container.decodeIfPresent([LedgerTemplate].self, forKey: .templates) ?? []
+        attachments = try container.decodeIfPresent([LedgerAttachment].self, forKey: .attachments) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -659,6 +796,7 @@ struct FinanceData: Codable, Equatable {
         try container.encode(exchangeRates, forKey: .exchangeRates)
         try container.encode(budgets, forKey: .budgets)
         try container.encode(templates, forKey: .templates)
+        try container.encode(attachments, forKey: .attachments)
     }
 
     static var empty: FinanceData {

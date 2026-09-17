@@ -3,6 +3,7 @@ import ImageIO
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import Vision
 
 struct BillLineItem: Identifiable, Equatable, Sendable {
@@ -419,8 +420,13 @@ struct BillScannerView: View {
     @State private var currency: LedgerCurrency = .usd
     @State private var isScanning = false
     @State private var isShowingCamera = false
+    @State private var isShowingDocumentImporter = false
+    @State private var isShowingAccountEditor = false
     @State private var isPresentingTransactionEditor = false
     @State private var pendingTotal: Money?
+    @State private var attachmentData: Data?
+    @State private var attachmentFileName = "receipt.jpg"
+    @State private var attachmentContentType = "image/jpeg"
     @State private var errorMessage: String?
 
     var body: some View {
@@ -518,20 +524,31 @@ struct BillScannerView: View {
                 guard let item else { return }
                 loadPhoto(item)
             }
+            .fileImporter(
+                isPresented: $isShowingDocumentImporter,
+                allowedContentTypes: [.pdf],
+                allowsMultipleSelection: false,
+                onCompletion: importDocument
+            )
             .sheet(isPresented: $isShowingCamera) {
                 BillCameraView { image in
                     handleImage(image)
                 }
             }
             .sheet(isPresented: $isPresentingTransactionEditor) {
-                if let pendingTotal {
-                    TransactionEditor(
-                        store: store,
-                        initialAmount: pendingTotal,
-                        initialBillTotal: pendingTotal,
-                        initialNote: transactionNote
-                    )
-                }
+                TransactionEditor(
+                    store: store,
+                    initialAmount: pendingTotal,
+                    initialBillTotal: pendingTotal,
+                    initialNote: transactionNote,
+                    initialAttachmentData: attachmentData,
+                    initialAttachmentFileName: attachmentFileName,
+                    initialAttachmentContentType: attachmentContentType,
+                    initialReceiptItems: persistedReceiptItems
+                )
+            }
+            .sheet(isPresented: $isShowingAccountEditor) {
+                AccountEditor(store: store, initialCurrency: currency)
             }
             .alert("Bill scan failed", isPresented: errorPresented) {
                 Button("OK") { errorMessage = nil }
@@ -542,7 +559,8 @@ struct BillScannerView: View {
     }
 
     private var sourceButtons: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
             PhotosPicker(
                 selection: $selectedPhoto,
                 matching: .images,
@@ -564,6 +582,16 @@ struct BillScannerView: View {
                 .buttonStyle(.bordered)
                 .tint(PocketLedgerTheme.accent)
             }
+            }
+
+            Button {
+                isShowingDocumentImporter = true
+            } label: {
+                Label("Choose PDF", systemImage: "doc.richtext")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(PocketLedgerTheme.accent)
         }
     }
 
@@ -669,6 +697,13 @@ struct BillScannerView: View {
                     Text("Add a \(currency.rawValue) account first to use this total.")
                         .font(.footnote)
                         .foregroundStyle(PocketLedgerTheme.warning)
+
+                    Button {
+                        isShowingAccountEditor = true
+                    } label: {
+                        Label("Add \(currency.rawValue) account", systemImage: "plus.circle")
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
             .padding(16)
@@ -713,7 +748,21 @@ struct BillScannerView: View {
     }
 
     private var hasMatchingAccount: Bool {
-        store.data.accounts.contains { $0.currency == currency }
+        store.activeAccounts.contains { $0.currency == currency }
+    }
+
+    private var persistedReceiptItems: [LedgerReceiptLineItem] {
+        lineItems
+            .filter(\.isSelected)
+            .map { item in
+                LedgerReceiptLineItem(
+                    name: item.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    quantity: max(item.quantity, 1),
+                    unitPrice: Money.parse(item.unitPriceText, currency: currency),
+                    lineTotal: item.total(in: currency)
+                )
+            }
+            .filter { !$0.name.isEmpty }
     }
 
     private var transactionNote: String {
@@ -759,8 +808,32 @@ struct BillScannerView: View {
 
     private func handleImage(_ image: UIImage, data: Data) {
         previewImage = image
+        attachmentData = data
+        attachmentFileName = "receipt-\(UUID().uuidString.lowercased()).jpg"
+        attachmentContentType = "image/jpeg"
         Task { @MainActor in
             await scan(data: data)
+        }
+    }
+
+    private func importDocument(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let hasSecurityScope = url.startAccessingSecurityScopedResource()
+            defer {
+                if hasSecurityScope { url.stopAccessingSecurityScopedResource() }
+            }
+            attachmentData = try Data(contentsOf: url)
+            attachmentFileName = url.lastPathComponent
+            attachmentContentType = "application/pdf"
+            previewImage = nil
+            recognizedText = ""
+            lineItems = []
+            scanStatusMessage = "PDF ready. Add the transaction details, then review the attachment before saving."
+            pendingTotal = nil
+            isPresentingTransactionEditor = true
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 struct ContentView: View {
@@ -7,9 +8,10 @@ struct ContentView: View {
     @StateObject private var security = AppSecurityService()
     @State private var addAction: AddAction?
     @State private var isShowingAddMenu = false
+    @State private var isShowingSetup = false
     @State private var isUnlocked = false
     @State private var selectedTab: AppTab = .overview
-    @State private var lastContentTab: AppTab = .overview
+    @AppStorage(SetupWizardView.completedKey) private var setupCompleted = false
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
     @Environment(\.scenePhase) private var scenePhase
@@ -41,6 +43,12 @@ struct ContentView: View {
         .task {
             store.processDueScheduledTransactions()
             await FinanceIntentIndexing.shared.refresh()
+            if !setupCompleted && store.data.accounts.isEmpty && store.data.categories.isEmpty {
+                isShowingSetup = true
+            }
+        }
+        .sheet(isPresented: $isShowingSetup) {
+            SetupWizardView(store: store)
         }
     }
 
@@ -54,10 +62,6 @@ struct ContentView: View {
                 TransactionsView(store: store)
             }
 
-            Tab("Add", systemImage: "plus", value: .add) {
-                Color.clear
-            }
-
             Tab("Metrics", systemImage: "chart.xyaxis.line", value: .metrics) {
                 MetricsView(store: store)
             }
@@ -68,12 +72,14 @@ struct ContentView: View {
         }
         .tint(PocketLedgerTheme.accent)
         .accessibilityIdentifier("pocket-ledger-\(selectedColorTheme)")
-        .onChange(of: selectedTab) { _, tab in
-            if tab == .add {
-                selectedTab = lastContentTab
-                isShowingAddMenu = true
-            } else {
-                lastContentTab = tab
+        .toolbar {
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            ToolbarItem(placement: .bottomBar) {
+                Button("Add", systemImage: "plus") {
+                    isShowingAddMenu = true
+                }
+                .accessibilityIdentifier("add-transaction-button")
+                .buttonStyle(.glassProminent)
             }
         }
         .preferredColorScheme(
@@ -99,6 +105,20 @@ struct ContentView: View {
             Button("Scheduled", systemImage: "calendar.badge.clock") {
                 addAction = .scheduled
             }
+            if !store.data.templates.isEmpty {
+                ForEach(Array(store.data.templates.prefix(3))) { template in
+                    Button("Template: \(template.name)", systemImage: "rectangle.stack") {
+                        addAction = .template(template.id)
+                    }
+                }
+            }
+            if !store.recentTransactions.isEmpty {
+                ForEach(Array(store.recentTransactions.prefix(3))) { transaction in
+                    Button("Recent: \(transaction.note)", systemImage: "clock.arrow.circlepath") {
+                        addAction = .recent(transaction.id)
+                    }
+                }
+            }
         }
         .sheet(item: $addAction) { action in
             switch action {
@@ -112,26 +132,56 @@ struct ContentView: View {
                 TransactionEditor(store: store, initialKind: .transfer)
             case .scheduled:
                 TransactionEditor(store: store, initialKind: .expense, initialTiming: .scheduled)
+            case .template(let templateID):
+                if let template = store.data.templates.first(where: { $0.id == templateID }) {
+                    TransactionEditor(store: store, template: template)
+                } else {
+                    EmptyView()
+                }
+            case .recent(let transactionID):
+                if let transaction = store.data.transactions.first(where: { $0.id == transactionID }) {
+                    TransactionEditor(store: store, prefilledTransaction: transaction)
+                } else {
+                    EmptyView()
+                }
             }
         }
     }
 
 }
 
-private enum AddAction: String, Identifiable {
+private enum AddAction: Identifiable {
     case scanBill
     case expense
     case income
     case transfer
     case scheduled
+    case template(UUID)
+    case recent(UUID)
 
-    var id: String { rawValue }
+    var id: String {
+        switch self {
+        case .scanBill:
+            return "scanBill"
+        case .expense:
+            return "expense"
+        case .income:
+            return "income"
+        case .transfer:
+            return "transfer"
+        case .scheduled:
+            return "scheduled"
+        case .template(let id):
+            return "template-\(id.uuidString)"
+        case .recent(let id):
+            return "recent-\(id.uuidString)"
+        }
+    }
 }
 
 private enum AppTab: Hashable {
     case overview
     case transactions
-    case add
     case metrics
     case more
 }
@@ -140,6 +190,7 @@ private enum AppTab: Hashable {
 private struct MoreView: View {
     @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
+    @State private var isShowingSetup = false
 
     var body: some View {
         NavigationStack {
@@ -186,6 +237,12 @@ private struct MoreView: View {
                     } label: {
                         Label("Settings", systemImage: "gearshape")
                     }
+
+                    Button {
+                        isShowingSetup = true
+                    } label: {
+                        Label("Setup guide", systemImage: "wand.and.stars")
+                    }
                 } header: {
                     Text("Manage the rest of your ledger")
                 }
@@ -195,6 +252,9 @@ private struct MoreView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(PocketLedgerTheme.background)
+            .sheet(isPresented: $isShowingSetup) {
+                SetupWizardView(store: store)
+            }
         }
     }
 }
@@ -202,6 +262,7 @@ private struct MoreView: View {
 @MainActor
 private struct DashboardView: View {
     @ObservedObject var store: LedgerStore
+    @State private var editingTransaction: LedgerTransaction?
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
@@ -233,6 +294,9 @@ private struct DashboardView: View {
                 PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
             )
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(item: $editingTransaction) { transaction in
+                TransactionEditor(store: store, transaction: transaction)
+            }
         }
     }
 
@@ -384,7 +448,15 @@ private struct DashboardView: View {
 
     private var recentActivity: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader(title: "Recent activity", detail: "Latest 5")
+            HStack(alignment: .firstTextBaseline) {
+                Text("Recent activity")
+                    .font(.title3.weight(.bold))
+                Spacer()
+                NavigationLink("See all") {
+                    TransactionsView(store: store)
+                }
+                .font(.caption.weight(.semibold))
+            }
 
             if store.recentTransactions.isEmpty {
                 VStack(spacing: 8) {
@@ -407,7 +479,7 @@ private struct DashboardView: View {
                         TransactionRow(
                             transaction: transaction,
                             store: store,
-                            onEdit: {},
+                            onEdit: { editingTransaction = transaction },
                             onDuplicate: {},
                             onDelete: {},
                             onSaveTemplate: {},
@@ -836,12 +908,20 @@ private struct TransactionRow: View {
         }
         .padding(.vertical, 11)
         .contentShape(Rectangle())
+        .onTapGesture(perform: onEdit)
+        .accessibilityAddTraits(.isButton)
         .contextMenu {
             if allowsActions {
                 Button("Edit", systemImage: "pencil", action: onEdit)
                 Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
                 Button("Save as template", systemImage: "rectangle.stack.badge.plus", action: onSaveTemplate)
                 Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if allowsActions {
+                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                Button("Edit", systemImage: "pencil", action: onEdit)
             }
         }
     }
@@ -896,6 +976,7 @@ private struct TransactionRow: View {
 private struct AccountsView: View {
     @ObservedObject var store: LedgerStore
     @State private var isPresentingAccount = false
+    @State private var editingAccount: Account?
 
     var body: some View {
         NavigationStack {
@@ -925,8 +1006,8 @@ private struct AccountsView: View {
             }
             .pocketScreen()
             .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $isPresentingAccount) {
-                AccountEditor(store: store)
+            .sheet(isPresented: $isPresentingAccount, onDismiss: { editingAccount = nil }) {
+                AccountEditor(store: store, account: editingAccount)
             }
         }
     }
@@ -944,7 +1025,7 @@ private struct AccountsView: View {
             Spacer()
 
             Button {
-                isPresentingAccount = true
+                presentAccount(nil)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 17, weight: .bold))
@@ -986,8 +1067,38 @@ private struct AccountsView: View {
                         AccountDetailView(store: store, accountID: account.id)
                     } label: {
                         AccountRow(account: account, balance: store.balance(for: account))
+                            .contentShape(Rectangle())
+                            .contextMenu {
+                                Button("Edit", systemImage: "pencil") {
+                                    presentAccount(account)
+                                }
+                                Button(
+                                    account.isArchived ? "Restore" : "Archive",
+                                    systemImage: account.isArchived ? "arrow.uturn.backward" : "archivebox"
+                                ) {
+                                    _ = store.setAccountArchived(
+                                        accountID: account.id,
+                                        isArchived: !account.isArchived
+                                    )
+                                }
+                            }
                     }
                     .buttonStyle(.plain)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button("Edit", systemImage: "pencil") {
+                            presentAccount(account)
+                        }
+                        Button(
+                            account.isArchived ? "Restore" : "Archive",
+                            systemImage: account.isArchived ? "arrow.uturn.backward" : "archivebox"
+                        ) {
+                            _ = store.setAccountArchived(
+                                accountID: account.id,
+                                isArchived: !account.isArchived
+                            )
+                        }
+                        .tint(account.isArchived ? PocketLedgerTheme.positive : PocketLedgerTheme.warning)
+                    }
                     Divider().overlay(PocketLedgerTheme.divider)
                 }
             }
@@ -998,6 +1109,11 @@ private struct AccountsView: View {
                     .stroke(PocketLedgerTheme.divider, lineWidth: 1)
             }
         }
+    }
+
+    private func presentAccount(_ account: Account?) {
+        editingAccount = account
+        isPresentingAccount = true
     }
 }
 
@@ -1027,6 +1143,11 @@ private struct AccountRow: View {
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(PocketLedgerTheme.warning)
                 }
+                if account.isArchived {
+                    Text("Archived")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                }
             }
 
             Spacer()
@@ -1045,6 +1166,7 @@ private struct AccountRow: View {
 private struct CategoriesView: View {
     @ObservedObject var store: LedgerStore
     @State private var isPresentingCategory = false
+    @State private var editingCategory: LedgerCategory?
 
     var body: some View {
         NavigationStack {
@@ -1054,6 +1176,25 @@ private struct CategoriesView: View {
 
                     ForEach(store.rootCategories) { parent in
                         categoryGroup(parent)
+                    }
+
+                    if !archivedCategories.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Archived")
+                                .font(.title3.weight(.bold))
+                            ForEach(archivedCategories) { category in
+                                HStack {
+                                    Label(category.name, systemImage: category.systemImage)
+                                    Spacer()
+                                    Button("Restore") {
+                                        _ = store.setCategoryArchived(categoryID: category.id, isArchived: false)
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
+                                .font(.subheadline)
+                            }
+                        }
+                        .pocketCard()
                     }
 
                     if store.rootCategories.isEmpty {
@@ -1070,8 +1211,8 @@ private struct CategoriesView: View {
             }
             .pocketScreen()
             .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $isPresentingCategory) {
-                CategoryEditor(store: store)
+            .sheet(isPresented: $isPresentingCategory, onDismiss: { editingCategory = nil }) {
+                CategoryEditor(store: store, category: editingCategory)
             }
         }
     }
@@ -1089,7 +1230,7 @@ private struct CategoriesView: View {
             Spacer()
 
             Button {
-                isPresentingCategory = true
+                presentCategory(nil)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 17, weight: .bold))
@@ -1102,7 +1243,7 @@ private struct CategoriesView: View {
     }
 
     private func categoryGroup(_ parent: LedgerCategory) -> some View {
-        let children = store.data.categories.filter { $0.parentID == parent.id }
+        let children = store.data.categories.filter { $0.parentID == parent.id && !$0.isArchived }
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -1117,6 +1258,18 @@ private struct CategoriesView: View {
                 }
 
                 Spacer()
+
+                Menu {
+                    Button("Edit", systemImage: "pencil") {
+                        presentCategory(parent)
+                    }
+                    Button("Archive", systemImage: "archivebox") {
+                        _ = store.setCategoryArchived(categoryID: parent.id, isArchived: true)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
             }
 
             if children.isEmpty {
@@ -1128,19 +1281,36 @@ private struct CategoriesView: View {
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
                     spacing: 8
-                ) {
+                    ) {
                     ForEach(children) { child in
-                        CategoryTile(category: child)
+                        CategoryTile(
+                            category: child,
+                            onEdit: { presentCategory(child) },
+                            onArchive: {
+                                _ = store.setCategoryArchived(categoryID: child.id, isArchived: true)
+                            }
+                        )
                     }
                 }
             }
         }
         .pocketCard()
     }
+
+    private var archivedCategories: [LedgerCategory] {
+        store.data.categories.filter(\.isArchived)
+    }
+
+    private func presentCategory(_ category: LedgerCategory?) {
+        editingCategory = category
+        isPresentingCategory = true
+    }
 }
 
 private struct CategoryTile: View {
     let category: LedgerCategory
+    let onEdit: () -> Void
+    let onArchive: () -> Void
 
     var body: some View {
         VStack(spacing: 8) {
@@ -1157,12 +1327,19 @@ private struct CategoryTile: View {
         .frame(maxWidth: .infinity, minHeight: 70)
         .padding(.horizontal, 4)
         .background(PocketLedgerTheme.surfaceElevated, in: RoundedRectangle(cornerRadius: 13))
+        .contextMenu {
+            Button("Edit", systemImage: "pencil", action: onEdit)
+            Button("Archive", systemImage: "archivebox", action: onArchive)
+        }
     }
 }
 
 @MainActor
-private struct AccountEditor: View {
+struct AccountEditor: View {
     @ObservedObject var store: LedgerStore
+    let account: Account?
+    let initialCurrency: LedgerCurrency?
+    let onSaved: (Account) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var type: AccountType = .cash
@@ -1170,6 +1347,29 @@ private struct AccountEditor: View {
     @State private var openingBalance = "0"
     @State private var includeInTotals = true
     @State private var errorMessage: String?
+
+    init(
+        store: LedgerStore,
+        account: Account? = nil,
+        initialCurrency: LedgerCurrency? = nil,
+        onSaved: @escaping (Account) -> Void = { _ in }
+    ) {
+        _store = ObservedObject(wrappedValue: store)
+        self.account = account
+        self.initialCurrency = initialCurrency
+        self.onSaved = onSaved
+        _name = State(initialValue: account?.name ?? "")
+        _type = State(initialValue: account?.type ?? .cash)
+        _currency = State(initialValue: account?.currency ?? initialCurrency ?? .usd)
+        _openingBalance = State(
+            initialValue: account.map {
+                NSDecimalNumber(
+                    decimal: Decimal($0.openingBalance.minorUnits) / Decimal($0.currency.minorUnitScale)
+                ).stringValue
+            } ?? "0"
+        )
+        _includeInTotals = State(initialValue: account?.includeInTotals ?? true)
+    }
 
     var body: some View {
         NavigationStack {
@@ -1186,6 +1386,12 @@ private struct AccountEditor: View {
                         ForEach(LedgerCurrency.allCases) { currency in
                             Text(currency.rawValue).tag(currency)
                         }
+                    }
+                    .disabled(hasActivity)
+                    if hasActivity {
+                        Text("Currency cannot change after this account has activity.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                     Toggle("Include in totals and metrics", isOn: $includeInTotals)
                     Text("Turn this off for assets or investments you want to track separately.")
@@ -1205,7 +1411,7 @@ private struct AccountEditor: View {
             .background(PocketLedgerTheme.background)
             .listRowBackground(PocketLedgerTheme.surface)
             .tint(PocketLedgerTheme.accent)
-            .navigationTitle("New account")
+            .navigationTitle(account == nil ? "New account" : "Edit account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1241,27 +1447,57 @@ private struct AccountEditor: View {
             return
         }
 
-        store.addAccount(
-            Account(
-                name: trimmedName,
-                type: type,
-                currency: currency,
-                openingBalance: balance,
-                includeInTotals: includeInTotals
-            )
+        let value = Account(
+            id: account?.id ?? UUID(),
+            name: trimmedName,
+            type: type,
+            currency: currency,
+            openingBalance: balance,
+            includeInTotals: includeInTotals,
+            isArchived: account?.isArchived ?? false
         )
+        let saved = account == nil ? store.addAccount(value) : store.updateAccount(value)
+        guard saved else {
+            errorMessage = store.lastActionStatus ?? "The account could not be saved."
+            return
+        }
+        onSaved(value)
         dismiss()
+    }
+
+    private var hasActivity: Bool {
+        guard let account else { return false }
+        return store.data.transactions.contains {
+            ($0.outflows + $0.inflows).contains { $0.accountID == account.id }
+        } || store.data.scheduledTransactions.contains {
+            ($0.outflows + $0.inflows).contains { $0.accountID == account.id }
+        }
     }
 }
 
 @MainActor
 private struct CategoryEditor: View {
     @ObservedObject var store: LedgerStore
+    let category: LedgerCategory?
+    let onSaved: (LedgerCategory) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var parentID: UUID?
     @State private var systemImage = "tag"
     @State private var errorMessage: String?
+
+    init(
+        store: LedgerStore,
+        category: LedgerCategory? = nil,
+        onSaved: @escaping (LedgerCategory) -> Void = { _ in }
+    ) {
+        _store = ObservedObject(wrappedValue: store)
+        self.category = category
+        self.onSaved = onSaved
+        _name = State(initialValue: category?.name ?? "")
+        _parentID = State(initialValue: category?.parentID)
+        _systemImage = State(initialValue: category?.systemImage ?? "tag")
+    }
 
     var body: some View {
         NavigationStack {
@@ -1270,8 +1506,8 @@ private struct CategoryEditor: View {
                     TextField("Name", text: $name)
                     Picker("Parent category", selection: $parentID) {
                         Text("Top-level category").tag(UUID?.none)
-                        ForEach(store.rootCategories) { category in
-                            Text(category.name).tag(Optional(category.id))
+                        ForEach(store.rootCategories.filter { $0.id != self.category?.id }) { parent in
+                            Text(parent.name).tag(Optional(parent.id))
                         }
                     }
                     TextField("SF Symbol", text: $systemImage)
@@ -1281,7 +1517,7 @@ private struct CategoryEditor: View {
             .background(PocketLedgerTheme.background)
             .listRowBackground(PocketLedgerTheme.surface)
             .tint(PocketLedgerTheme.accent)
-            .navigationTitle("New category")
+            .navigationTitle(category == nil ? "New category" : "Edit category")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1314,13 +1550,19 @@ private struct CategoryEditor: View {
         }
 
         let trimmedSymbol = systemImage.trimmingCharacters(in: .whitespacesAndNewlines)
-        store.addCategory(
-            LedgerCategory(
-                name: trimmedName,
-                parentID: parentID,
-                systemImage: trimmedSymbol.isEmpty ? "tag" : trimmedSymbol
-            )
+        let value = LedgerCategory(
+            id: category?.id ?? UUID(),
+            name: trimmedName,
+            parentID: parentID,
+            systemImage: trimmedSymbol.isEmpty ? "tag" : trimmedSymbol,
+            isArchived: category?.isArchived ?? false
         )
+        let saved = category == nil ? store.addCategory(value) : store.updateCategory(value)
+        guard saved else {
+            errorMessage = store.lastActionStatus ?? "The category could not be saved."
+            return
+        }
+        onSaved(value)
         dismiss()
     }
 }
@@ -1336,14 +1578,24 @@ private struct MovementLineEditor: View {
     @ObservedObject var store: LedgerStore
     @Binding var line: MovementDraft
     let amountPlaceholder: String
+    let onCreateAccount: () -> Void
+    let allowsArchivedAccount: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("Account", selection: $line.accountID) {
-                ForEach(store.data.accounts) { account in
-                    Text("\(account.name) (\(account.currency.rawValue))")
-                        .tag(account.id)
+            HStack {
+                Picker("Account", selection: $line.accountID) {
+                    ForEach(store.data.accounts.filter { account in
+                        !account.isArchived || (allowsArchivedAccount && account.id == line.accountID)
+                    }) { account in
+                        Text("\(account.name) (\(account.currency.rawValue))")
+                            .tag(account.id)
+                    }
                 }
+
+                Button("New account", systemImage: "plus.circle", action: onCreateAccount)
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel("New account")
             }
 
             HStack {
@@ -1361,6 +1613,9 @@ private struct MovementLineEditor: View {
 
 @MainActor
 struct TransactionEditor: View {
+    private static let lastAccountKey = "pocketLedger.lastTransactionAccount"
+    private static let lastCategoryKey = "pocketLedger.lastExpenseCategory"
+
     @ObservedObject var store: LedgerStore
     @Environment(\.dismiss) private var dismiss
     @State private var note = ""
@@ -1379,12 +1634,23 @@ struct TransactionEditor: View {
     @State private var rateBase: LedgerCurrency = .usd
     @State private var rateQuote: LedgerCurrency = .lbp
     @State private var rateText = "100000"
+    @State private var attachmentIDs: [UUID]
+    @State private var previewAttachment: LedgerAttachment?
+    @State private var isShowingAttachmentImporter = false
+    @State private var replacingAttachmentID: UUID?
+    @State private var isShowingNewAccount = false
+    @State private var isShowingNewCategory = false
+    @State private var accountCreationLineID: UUID?
     @State private var errorMessage: String?
     private let editingScheduleID: UUID?
     private let editingScheduleLastRunDate: Date?
     private let editingScheduleNextRunDate: Date?
     private let editingScheduleFrequency: ScheduleFrequency?
     private let editingTransactionID: UUID?
+    private let initialAttachmentData: Data?
+    private let initialAttachmentFileName: String?
+    private let initialAttachmentContentType: String?
+    private let initialReceiptItems: [LedgerReceiptLineItem]
 
     init(
         store: LedgerStore,
@@ -1396,10 +1662,18 @@ struct TransactionEditor: View {
         initialFrequency: ScheduleFrequency = .once,
         scheduledTransaction: ScheduledTransaction? = nil,
         transaction: LedgerTransaction? = nil,
-        template: LedgerTemplate? = nil
+        prefilledTransaction: LedgerTransaction? = nil,
+        template: LedgerTemplate? = nil,
+        initialAttachmentData: Data? = nil,
+        initialAttachmentFileName: String? = nil,
+        initialAttachmentContentType: String? = nil,
+        initialReceiptItems: [LedgerReceiptLineItem] = []
     ) {
         _store = ObservedObject(wrappedValue: store)
-        let sourceTransaction = transaction ?? template?.transactionTemplate
+        let sourceTransaction = transaction ?? prefilledTransaction ?? template?.transactionTemplate
+        let rememberedAccount = UserDefaults.standard.string(forKey: Self.lastAccountKey)
+            .flatMap(UUID.init(uuidString:))
+            .flatMap { id in store.activeAccounts.first(where: { $0.id == id }) }
         let preferredCurrency = sourceTransaction?.outflows.first?.money.currency
             ?? sourceTransaction?.inflows.first?.money.currency
             ?? scheduledTransaction?.outflows.first?.money.currency
@@ -1407,10 +1681,11 @@ struct TransactionEditor: View {
             ?? initialAmount?.currency
             ?? scheduledTransaction?.amountDue?.currency
             ?? initialBillTotal?.currency
-        let firstAccount = store.data.accounts.first { account in
+            ?? rememberedAccount?.currency
+        let firstAccount = store.activeAccounts.first { account in
             guard let preferredCurrency else { return true }
             return account.currency == preferredCurrency
-        } ?? store.data.accounts.first
+        } ?? rememberedAccount ?? store.activeAccounts.first
         let firstAccountID = firstAccount?.id ?? UUID()
         let amountDue = sourceTransaction?.amountDue ?? scheduledTransaction?.amountDue ?? initialBillTotal
         let initialCurrencies = LedgerCurrency.allCases.filter { currency in
@@ -1428,6 +1703,12 @@ struct TransactionEditor: View {
         let initialSavedRate = sourceTransaction?.exchangeRate
             ?? scheduledTransaction?.exchangeRate
             ?? store.exchangeRate(base: initialRateBase, quote: initialRateQuote)
+        let sourceCategoryID = sourceTransaction?.categoryID
+        let initialCategoryID = transaction != nil
+            ? sourceCategoryID
+            : sourceCategoryID.flatMap { id in
+                store.activeCategories.contains { $0.id == id } ? id : nil
+            }
         _note = State(initialValue: sourceTransaction?.note ?? scheduledTransaction?.note ?? initialNote ?? "")
         _date = State(initialValue: transaction?.date ?? scheduledTransaction?.nextRunDate ?? .now)
         _kind = State(initialValue: sourceTransaction?.kind ?? scheduledTransaction?.kind ?? initialKind)
@@ -1461,17 +1742,25 @@ struct TransactionEditor: View {
                 NSDecimalNumber(decimal: $0.quoteUnitsPerBaseUnit).stringValue
             } ?? "100000"
         )
+        _attachmentIDs = State(initialValue: transaction?.attachmentIDs ?? [])
         _categoryID = State(
-            initialValue: sourceTransaction?.categoryID
+            initialValue: initialCategoryID
                 ?? scheduledTransaction?.categoryID
-                ?? store.data.categories.first(where: { $0.parentID != nil })?.id
-                ?? store.data.categories.first?.id
+                ?? UserDefaults.standard.string(forKey: Self.lastCategoryKey)
+                    .flatMap(UUID.init(uuidString:))
+                    .flatMap { id in store.activeCategories.first(where: { $0.id == id })?.id }
+                ?? store.activeCategories.first(where: { $0.parentID != nil })?.id
+                ?? store.activeCategories.first?.id
         )
         editingScheduleID = scheduledTransaction?.id
         editingScheduleLastRunDate = scheduledTransaction?.lastRunDate
         editingScheduleNextRunDate = scheduledTransaction?.nextRunDate
         editingScheduleFrequency = scheduledTransaction?.frequency
         editingTransactionID = transaction?.id
+        self.initialAttachmentData = initialAttachmentData
+        self.initialAttachmentFileName = initialAttachmentFileName
+        self.initialAttachmentContentType = initialAttachmentContentType
+        self.initialReceiptItems = initialReceiptItems
     }
 
     var body: some View {
@@ -1523,18 +1812,26 @@ struct TransactionEditor: View {
                     TextField("What was this for?", text: $note)
 
                     if kind == .expense {
-                        if store.data.categories.isEmpty {
-                            Text("No categories yet — this expense will be Uncategorized.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Picker("Category", selection: $categoryID) {
-                                Text("Uncategorized").tag(UUID?.none)
-                                ForEach(store.data.categories) { category in
-                                    Text(store.categoryPath(for: category.id))
-                                        .tag(Optional(category.id))
+                        HStack {
+                            if selectableCategories.isEmpty {
+                                Text("No categories yet — this expense will be Uncategorized.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Picker("Category", selection: $categoryID) {
+                                    Text("Uncategorized").tag(UUID?.none)
+                                    ForEach(selectableCategories) { category in
+                                        Text(store.categoryPath(for: category.id))
+                                            .tag(Optional(category.id))
+                                    }
                                 }
                             }
+
+                            Button("New category", systemImage: "plus.circle") {
+                                isShowingNewCategory = true
+                            }
+                            .labelStyle(.iconOnly)
+                            .accessibilityLabel("New category")
                         }
                         Picker("Bill currency", selection: $dueCurrency) {
                             ForEach(LedgerCurrency.allCases) { currency in
@@ -1546,13 +1843,55 @@ struct TransactionEditor: View {
                     }
                 }
 
+                if !attachments.isEmpty {
+                    Section("Attachments") {
+                        ForEach(attachments) { attachment in
+                            HStack {
+                                Button {
+                                    previewAttachment = attachment
+                                } label: {
+                                    Label(attachment.fileName, systemImage: attachment.contentType == "application/pdf" ? "doc.richtext" : "photo")
+                                }
+                                .foregroundStyle(PocketLedgerTheme.textPrimary)
+
+                                Spacer()
+
+                                Button("Replace") {
+                                    replacingAttachmentID = attachment.id
+                                    isShowingAttachmentImporter = true
+                                }
+                                .font(.footnote.weight(.semibold))
+                            }
+                            .swipeActions {
+                                Button("Delete", systemImage: "trash", role: .destructive) {
+                                    if store.deleteAttachment(id: attachment.id) {
+                                        attachmentIDs.removeAll { $0 == attachment.id }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if let initialAttachmentFileName {
+                    Section("Receipt attachment") {
+                        Label(initialAttachmentFileName, systemImage: initialAttachmentContentType == "application/pdf" ? "doc.richtext" : "photo")
+                        Text("This local file will be saved with the transaction after you tap \(saveButtonTitle.lowercased()).")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 if kind != .income {
                     Section {
                         ForEach($outflows) { $line in
                             MovementLineEditor(
                                 store: store,
                                 line: $line,
-                                amountPlaceholder: "Amount leaving account"
+                                amountPlaceholder: "Amount leaving account",
+                                onCreateAccount: {
+                                    accountCreationLineID = $line.wrappedValue.id
+                                    isShowingNewAccount = true
+                                },
+                                allowsArchivedAccount: editingTransactionID != nil || editingScheduleID != nil
                             )
                         }
                         .onDelete { outflows.remove(atOffsets: $0) }
@@ -1584,7 +1923,12 @@ struct TransactionEditor: View {
                             MovementLineEditor(
                                 store: store,
                                 line: $line,
-                                amountPlaceholder: "Amount entering account"
+                                amountPlaceholder: "Amount entering account",
+                                onCreateAccount: {
+                                    accountCreationLineID = $line.wrappedValue.id
+                                    isShowingNewAccount = true
+                                },
+                                allowsArchivedAccount: editingTransactionID != nil || editingScheduleID != nil
                             )
                         }
                         .onDelete { inflows.remove(atOffsets: $0) }
@@ -1677,6 +2021,35 @@ struct TransactionEditor: View {
             } message: {
                 Text(errorMessage ?? "")
             }
+            .sheet(item: $previewAttachment) { attachment in
+                NavigationStack {
+                    AttachmentPreviewView(store: store, attachment: attachment)
+                }
+            }
+            .sheet(isPresented: $isShowingNewAccount) {
+                AccountEditor(store: store) { account in
+                    if let lineID = accountCreationLineID {
+                        if let index = outflows.firstIndex(where: { $0.id == lineID }) {
+                            outflows[index].accountID = account.id
+                        }
+                        if let index = inflows.firstIndex(where: { $0.id == lineID }) {
+                            inflows[index].accountID = account.id
+                        }
+                    }
+                    accountCreationLineID = nil
+                }
+            }
+            .sheet(isPresented: $isShowingNewCategory) {
+                CategoryEditor(store: store) { category in
+                    categoryID = category.id
+                }
+            }
+            .fileImporter(
+                isPresented: $isShowingAttachmentImporter,
+                allowedContentTypes: [.image, .pdf],
+                allowsMultipleSelection: false,
+                onCompletion: replaceAttachment
+            )
         }
     }
 
@@ -1708,8 +2081,50 @@ struct TransactionEditor: View {
         return editingTransactionID == nil ? "Save" : "Update"
     }
 
+    private var attachments: [LedgerAttachment] {
+        attachmentIDs.compactMap { id in
+            store.data.attachments.first(where: { $0.id == id })
+        }
+    }
+
+    private var selectableCategories: [LedgerCategory] {
+        var categories = store.activeCategories
+        if let categoryID,
+           let category = store.data.categories.first(where: { $0.id == categoryID }),
+           !categories.contains(where: { $0.id == category.id }) {
+            categories.append(category)
+        }
+        return categories
+    }
+
+    private func replaceAttachment(_ result: Result<[URL], Error>) {
+        defer { replacingAttachmentID = nil }
+        do {
+            guard let attachmentID = replacingAttachmentID,
+                  let url = try result.get().first else { return }
+            let hasSecurityScope = url.startAccessingSecurityScopedResource()
+            defer {
+                if hasSecurityScope { url.stopAccessingSecurityScopedResource() }
+            }
+            let data = try Data(contentsOf: url)
+            let contentType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                ?? "application/octet-stream"
+            guard store.replaceAttachment(
+                id: attachmentID,
+                data: data,
+                fileName: url.lastPathComponent,
+                contentType: contentType
+            ) else {
+                errorMessage = store.lastActionStatus ?? "The attachment could not be replaced."
+                return
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private var newMovementDraft: MovementDraft {
-        MovementDraft(accountID: store.data.accounts.first?.id ?? UUID(), amount: "")
+        MovementDraft(accountID: store.activeAccounts.first?.id ?? UUID(), amount: "")
     }
 
     private static func inputText(for money: Money) -> String {
@@ -1864,6 +2279,31 @@ struct TransactionEditor: View {
             parsedAmountDue = value
         }
 
+        guard !(timing == .scheduled && initialAttachmentData != nil) else {
+            errorMessage = "Receipt attachments can only be saved with an immediate transaction. Switch When back to Now to keep this receipt."
+            return
+        }
+
+        var newlySavedAttachment: LedgerAttachment?
+        if timing != .scheduled,
+           editingTransactionID == nil,
+           let initialAttachmentData,
+           let initialAttachmentFileName,
+           let initialAttachmentContentType {
+            guard let attachment = store.addAttachment(
+                data: initialAttachmentData,
+                fileName: initialAttachmentFileName,
+                contentType: initialAttachmentContentType,
+                receiptItems: initialReceiptItems,
+                extractedTotal: parsedAmountDue
+            ) else {
+                errorMessage = store.lastActionStatus ?? "The receipt could not be attached."
+                return
+            }
+            newlySavedAttachment = attachment
+            attachmentIDs.append(attachment.id)
+        }
+
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         let transaction = LedgerTransaction(
             id: editingTransactionID ?? UUID(),
@@ -1875,7 +2315,8 @@ struct TransactionEditor: View {
             outflows: parsedOutflows,
             inflows: parsedInflows,
             exchangeRate: exchangeRate,
-            changeAdjustment: changeAdjustment
+            changeAdjustment: changeAdjustment,
+            attachmentIDs: attachmentIDs
         )
 
         if timing == .scheduled {
@@ -1903,17 +2344,34 @@ struct TransactionEditor: View {
                 changeAdjustment: transaction.changeAdjustment
             )
 
-            if editingScheduleID != nil {
-                guard store.updateScheduledTransaction(scheduledTransaction) else { return }
-            } else {
-                store.addScheduledTransaction(scheduledTransaction)
+            let saved = editingScheduleID != nil
+                ? store.updateScheduledTransaction(scheduledTransaction)
+                : store.addScheduledTransaction(scheduledTransaction)
+            guard saved else {
+                errorMessage = store.lastActionStatus ?? "The schedule could not be saved."
+                return
             }
         } else {
+            let saved: Bool
             if editingTransactionID == nil {
-                store.addTransaction(transaction)
+                saved = store.addTransaction(transaction)
             } else {
-                guard store.updateTransaction(transaction) else { return }
+                saved = store.updateTransaction(transaction)
             }
+            guard saved else {
+                if let newlySavedAttachment {
+                    _ = store.deleteAttachment(id: newlySavedAttachment.id)
+                }
+                errorMessage = store.lastActionStatus ?? "The transaction could not be saved."
+                return
+            }
+        }
+
+        if let accountID = (parsedOutflows.first ?? parsedInflows.first)?.accountID {
+            UserDefaults.standard.set(accountID.uuidString, forKey: Self.lastAccountKey)
+        }
+        if let categoryID, kind == .expense {
+            UserDefaults.standard.set(categoryID.uuidString, forKey: Self.lastCategoryKey)
         }
         dismiss()
     }

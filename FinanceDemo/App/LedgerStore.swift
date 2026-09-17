@@ -39,7 +39,15 @@ final class LedgerStore: ObservableObject {
     }
 
     var rootCategories: [LedgerCategory] {
-        data.categories.filter { $0.parentID == nil }
+        data.categories.filter { $0.parentID == nil && !$0.isArchived }
+    }
+
+    var activeAccounts: [Account] {
+        data.accounts.filter { !$0.isArchived }
+    }
+
+    var activeCategories: [LedgerCategory] {
+        data.categories.filter { !$0.isArchived }
     }
 
     var monthTransactionCount: Int {
@@ -65,6 +73,7 @@ final class LedgerStore: ObservableObject {
 
     @discardableResult
     func addTransaction(_ transaction: LedgerTransaction) -> Bool {
+        guard validate(transaction) else { return false }
         var updated = data
         updated.transactions.append(transaction)
         return persist(updated, successMessage: "Transaction saved")
@@ -76,6 +85,8 @@ final class LedgerStore: ObservableObject {
             lastActionStatus = "Transaction not found"
             return false
         }
+
+        guard validate(transaction, allowArchivedReferences: true) else { return false }
 
         var updated = data
         updated.transactions[index] = transaction
@@ -109,13 +120,18 @@ final class LedgerStore: ObservableObject {
             outflows: transaction.outflows.map { MoneyMovement(accountID: $0.accountID, money: $0.money) },
             inflows: transaction.inflows.map { MoneyMovement(accountID: $0.accountID, money: $0.money) },
             exchangeRate: transaction.exchangeRate,
-            changeAdjustment: transaction.changeAdjustment
+            changeAdjustment: transaction.changeAdjustment,
+            attachmentIDs: transaction.attachmentIDs
         )
-        return addTransaction(duplicate)
+        guard validate(duplicate, allowArchivedReferences: true) else { return false }
+        var updated = data
+        updated.transactions.append(duplicate)
+        return persist(updated, successMessage: "Transaction duplicated")
     }
 
     @discardableResult
     func addScheduledTransaction(_ scheduledTransaction: ScheduledTransaction) -> Bool {
+        guard validate(scheduledTransaction.transactionTemplate) else { return false }
         var updated = data
         updated.scheduledTransactions.append(scheduledTransaction)
 
@@ -133,6 +149,7 @@ final class LedgerStore: ObservableObject {
             lastActionStatus = "Scheduled transaction not found"
             return false
         }
+        guard validate(scheduledTransaction.transactionTemplate, allowArchivedReferences: true) else { return false }
 
         var updated = data
         updated.scheduledTransactions[index] = scheduledTransaction
@@ -226,10 +243,55 @@ final class LedgerStore: ObservableObject {
         return materializedCount
     }
 
-    func addAccount(_ account: Account) {
+    @discardableResult
+    func addAccount(_ account: Account) -> Bool {
+        guard !account.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            lastActionStatus = "Enter an account name"
+            return false
+        }
         var updated = data
         updated.accounts.append(account)
-        persist(updated, successMessage: "Account added")
+        return persist(updated, successMessage: "Account added")
+    }
+
+    @discardableResult
+    func updateAccount(_ account: Account) -> Bool {
+        guard let index = data.accounts.firstIndex(where: { $0.id == account.id }) else {
+            lastActionStatus = "Account not found"
+            return false
+        }
+        guard !account.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            lastActionStatus = "Enter an account name"
+            return false
+        }
+        let original = data.accounts[index]
+        let hasMovements = data.transactions.contains {
+            ($0.outflows + $0.inflows).contains { $0.accountID == account.id }
+        } || data.scheduledTransactions.contains {
+            ($0.outflows + $0.inflows).contains { $0.accountID == account.id }
+        }
+        guard !hasMovements || original.currency == account.currency else {
+            lastActionStatus = "An account with activity cannot change currency"
+            return false
+        }
+
+        var updated = data
+        updated.accounts[index] = account
+        return persist(updated, successMessage: "Account updated")
+    }
+
+    @discardableResult
+    func setAccountArchived(accountID: UUID, isArchived: Bool) -> Bool {
+        guard let index = data.accounts.firstIndex(where: { $0.id == accountID }) else {
+            lastActionStatus = "Account not found"
+            return false
+        }
+        var updated = data
+        updated.accounts[index].isArchived = isArchived
+        return persist(
+            updated,
+            successMessage: isArchived ? "Account archived" : "Account restored"
+        )
     }
 
     @discardableResult
@@ -247,10 +309,58 @@ final class LedgerStore: ObservableObject {
         )
     }
 
-    func addCategory(_ category: LedgerCategory) {
+    @discardableResult
+    func addCategory(_ category: LedgerCategory) -> Bool {
+        guard !category.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            lastActionStatus = "Enter a category name"
+            return false
+        }
+        guard category.parentID == nil || data.categories.contains(where: { $0.id == category.parentID }) else {
+            lastActionStatus = "Choose an existing parent category"
+            return false
+        }
         var updated = data
         updated.categories.append(category)
-        persist(updated, successMessage: "Category added")
+        return persist(updated, successMessage: "Category added")
+    }
+
+    @discardableResult
+    func updateCategory(_ category: LedgerCategory) -> Bool {
+        guard let index = data.categories.firstIndex(where: { $0.id == category.id }) else {
+            lastActionStatus = "Category not found"
+            return false
+        }
+        guard !category.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            lastActionStatus = "Enter a category name"
+            return false
+        }
+        guard category.parentID != category.id,
+              category.parentID == nil || data.categories.contains(where: { $0.id == category.parentID }) else {
+            lastActionStatus = "Choose a valid parent category"
+            return false
+        }
+        guard !wouldCreateCategoryCycle(category) else {
+            lastActionStatus = "A category cannot be its own ancestor"
+            return false
+        }
+
+        var updated = data
+        updated.categories[index] = category
+        return persist(updated, successMessage: "Category updated")
+    }
+
+    @discardableResult
+    func setCategoryArchived(categoryID: UUID, isArchived: Bool) -> Bool {
+        guard let index = data.categories.firstIndex(where: { $0.id == categoryID }) else {
+            lastActionStatus = "Category not found"
+            return false
+        }
+        var updated = data
+        updated.categories[index].isArchived = isArchived
+        return persist(
+            updated,
+            successMessage: isArchived ? "Category archived" : "Category restored"
+        )
     }
 
     @discardableResult
@@ -368,16 +478,27 @@ final class LedgerStore: ObservableObject {
 
     @discardableResult
     func resetLedger() -> Bool {
-        persist(.empty, successMessage: "Ledger reset", allowingCorruptedReplacement: true)
+        let saved = persist(.empty, successMessage: "Ledger reset", allowingCorruptedReplacement: true)
+        if saved { storage.deleteAllAttachments() }
+        return saved
     }
 
     @discardableResult
-    func replaceData(_ imported: FinanceData) -> Bool {
-        persist(imported, successMessage: "Ledger restored", allowingCorruptedReplacement: true)
+    func replaceData(_ imported: FinanceData, attachmentFiles: [UUID: Data] = [:]) -> Bool {
+        let prepared = materializeAttachments(in: imported, files: attachmentFiles)
+        let oldPaths = Set(data.attachments.map(\.relativePath))
+        guard persist(prepared, successMessage: "Ledger restored", allowingCorruptedReplacement: true) else {
+            return false
+        }
+        for path in oldPaths {
+            storage.deleteAttachment(relativePath: path)
+        }
+        return true
     }
 
     @discardableResult
-    func mergeData(_ imported: FinanceData) -> Bool {
+    func mergeData(_ imported: FinanceData, attachmentFiles: [UUID: Data] = [:]) -> Bool {
+        let imported = materializeAttachments(in: imported, files: attachmentFiles)
         var updated = data
         let accountIDs = Set(updated.accounts.map(\.id))
         let categoryIDs = Set(updated.categories.map(\.id))
@@ -385,6 +506,7 @@ final class LedgerStore: ObservableObject {
         let scheduledTransactionIDs = Set(updated.scheduledTransactions.map(\.id))
         let budgetIDs = Set(updated.budgets.map(\.id))
         let templateIDs = Set(updated.templates.map(\.id))
+        let attachmentIDs = Set(updated.attachments.map(\.id))
 
         updated.accounts.append(contentsOf: imported.accounts.filter { !accountIDs.contains($0.id) })
         updated.categories.append(contentsOf: imported.categories.filter { !categoryIDs.contains($0.id) })
@@ -394,6 +516,7 @@ final class LedgerStore: ObservableObject {
         )
         updated.budgets.append(contentsOf: imported.budgets.filter { !budgetIDs.contains($0.id) })
         updated.templates.append(contentsOf: imported.templates.filter { !templateIDs.contains($0.id) })
+        updated.attachments.append(contentsOf: imported.attachments.filter { !attachmentIDs.contains($0.id) })
         for rate in imported.exchangeRates {
             updated.exchangeRates.removeAll {
                 Set([$0.baseCurrency, $0.quoteCurrency]) == Set([rate.baseCurrency, rate.quoteCurrency])
@@ -402,6 +525,122 @@ final class LedgerStore: ObservableObject {
         }
 
         return persist(updated, successMessage: "Import completed")
+    }
+
+    @discardableResult
+    func addAttachment(
+        data attachmentData: Data,
+        fileName: String,
+        contentType: String,
+        receiptItems: [LedgerReceiptLineItem] = [],
+        extractedTotal: Money? = nil
+    ) -> LedgerAttachment? {
+        do {
+            let relativePath = try storage.storeAttachment(
+                attachmentData,
+                fileExtension: URL(fileURLWithPath: fileName).pathExtension
+            )
+            let attachment = LedgerAttachment(
+                fileName: fileName,
+                contentType: contentType,
+                relativePath: relativePath,
+                receiptItems: receiptItems,
+                extractedTotal: extractedTotal
+            )
+            var updated = data
+            updated.attachments.append(attachment)
+            guard persist(updated, successMessage: "Attachment saved") else {
+                storage.deleteAttachment(relativePath: relativePath)
+                return nil
+            }
+            return attachment
+        } catch {
+            lastActionStatus = "Attachment could not be saved"
+            return nil
+        }
+    }
+
+    func attachmentData(for attachmentID: UUID) -> Data? {
+        guard let attachment = data.attachments.first(where: { $0.id == attachmentID }) else {
+            return nil
+        }
+        return storage.attachmentData(relativePath: attachment.relativePath)
+    }
+
+    func attachmentFiles() -> [UUID: Data] {
+        data.attachments.reduce(into: [UUID: Data]()) { files, attachment in
+            guard let data = attachmentData(for: attachment.id) else { return }
+            files[attachment.id] = data
+        }
+    }
+
+    @discardableResult
+    func deleteAttachment(id: UUID) -> Bool {
+        guard let attachment = data.attachments.first(where: { $0.id == id }) else {
+            lastActionStatus = "Attachment not found"
+            return false
+        }
+        var updated = data
+        updated.attachments.removeAll { $0.id == id }
+        updated.transactions = updated.transactions.map { transaction in
+            var transaction = transaction
+            transaction.attachmentIDs.removeAll { $0 == id }
+            return transaction
+        }
+        guard persist(updated, successMessage: "Attachment deleted") else { return false }
+        storage.deleteAttachment(relativePath: attachment.relativePath)
+        return true
+    }
+
+    @discardableResult
+    func replaceAttachment(
+        id: UUID,
+        data attachmentData: Data,
+        fileName: String,
+        contentType: String
+    ) -> Bool {
+        guard let index = data.attachments.firstIndex(where: { $0.id == id }) else {
+            lastActionStatus = "Attachment not found"
+            return false
+        }
+
+        do {
+            let oldPath = data.attachments[index].relativePath
+            let newPath = try storage.storeAttachment(
+                attachmentData,
+                fileExtension: URL(fileURLWithPath: fileName).pathExtension
+            )
+            var updated = data
+            updated.attachments[index].fileName = fileName
+            updated.attachments[index].contentType = contentType
+            updated.attachments[index].relativePath = newPath
+            guard persist(updated, successMessage: "Attachment replaced") else {
+                storage.deleteAttachment(relativePath: newPath)
+                return false
+            }
+            storage.deleteAttachment(relativePath: oldPath)
+            return true
+        } catch {
+            lastActionStatus = "Attachment could not be replaced"
+            return false
+        }
+    }
+
+    private func materializeAttachments(in imported: FinanceData, files: [UUID: Data]) -> FinanceData {
+        var prepared = imported
+        for index in prepared.attachments.indices {
+            let attachment = prepared.attachments[index]
+            if let file = files[attachment.id],
+               let relativePath = try? storage.storeAttachment(
+                   file,
+                   fileExtension: URL(fileURLWithPath: attachment.fileName).pathExtension
+               ) {
+                prepared.attachments[index].relativePath = relativePath
+            } else {
+                prepared.attachments[index].relativePath = "missing-\(attachment.id.uuidString)"
+            }
+        }
+        return prepared
     }
 
     func reload() {
@@ -538,6 +777,32 @@ final class LedgerStore: ObservableObject {
         }
 
         return names.isEmpty ? "Uncategorized" : names.joined(separator: " / ")
+    }
+
+    private func validate(
+        _ transaction: LedgerTransaction,
+        allowArchivedReferences: Bool = false
+    ) -> Bool {
+        guard let error = FinanceTransactionValidator.validate(
+            transaction,
+            in: data,
+            allowArchivedReferences: allowArchivedReferences
+        ) else {
+            return true
+        }
+        lastActionStatus = error.localizedDescription
+        return false
+    }
+
+    private func wouldCreateCategoryCycle(_ category: LedgerCategory) -> Bool {
+        var currentID = category.parentID
+        var visited: Set<UUID> = [category.id]
+
+        while let id = currentID {
+            guard visited.insert(id).inserted else { return true }
+            currentID = data.categories.first(where: { $0.id == id })?.parentID
+        }
+        return false
     }
 
     func transactionSummary(_ transaction: LedgerTransaction) -> String {

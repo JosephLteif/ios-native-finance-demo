@@ -132,7 +132,7 @@ private struct BudgetEditor: View {
     init(store: LedgerStore, budget: LedgerBudget?) {
         _store = ObservedObject(wrappedValue: store)
         self.budget = budget
-        _categoryID = State(initialValue: budget?.categoryID ?? store.data.categories.first?.id)
+        _categoryID = State(initialValue: budget?.categoryID ?? store.activeCategories.first?.id)
         _currency = State(initialValue: budget?.currency ?? .usd)
         _amount = State(initialValue: budget.map { NSDecimalNumber(decimal: Decimal($0.monthlyLimit.minorUnits) / Decimal($0.currency.minorUnitScale)).stringValue } ?? "")
         _rollover = State(initialValue: budget?.rollover ?? false)
@@ -143,7 +143,7 @@ private struct BudgetEditor: View {
             Form {
                 Section("Budget") {
                     Picker("Category", selection: $categoryID) {
-                        ForEach(store.data.categories) { category in
+                        ForEach(store.activeCategories) { category in
                             Text(store.categoryPath(for: category.id)).tag(Optional(category.id))
                         }
                     }
