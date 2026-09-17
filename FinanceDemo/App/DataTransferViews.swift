@@ -642,14 +642,17 @@ private struct ImportReviewView: View {
     }
 
     var body: some View {
+        let importedRowCount = importedData.transactions.count
+        let skippedRowCount = candidate.result.skippedRows
+
         NavigationStack {
             Form {
                 Section("Review before importing") {
                     LabeledContent("File", value: candidate.fileName)
                     LabeledContent("Table", value: candidate.tableName)
-                    LabeledContent("Ready to import", value: "\(importedData.transactions.count) rows")
-                    if candidate.result.skippedRows > 0 {
-                        LabeledContent("Skipped while parsing", value: "\(candidate.result.skippedRows) rows")
+                    LabeledContent("Ready to import", value: "\(importedRowCount) rows")
+                    if skippedRowCount > 0 {
+                        LabeledContent("Skipped while parsing", value: "\(skippedRowCount) rows")
                     }
                     Text("Nothing has been saved yet. Assign accounts and categories below, then confirm the import.")
                         .font(.footnote)
