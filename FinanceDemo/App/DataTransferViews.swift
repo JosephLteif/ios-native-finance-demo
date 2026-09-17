@@ -662,19 +662,7 @@ private struct ImportReviewView: View {
                 if !importedData.accounts.isEmpty {
                     Section("Accounts that may be created") {
                         ForEach($importedData.accounts) { $account in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Label("\(account.name) · \(account.currency.rawValue)", systemImage: account.type.systemImage)
-                                    .font(.subheadline.weight(.semibold))
-
-                                Picker("Account type", selection: $account.type) {
-                                    ForEach(AccountType.allCases) { type in
-                                        accountTypeOption(for: type)
-                                    }
-                                }
-
-                                Toggle("Include in totals", isOn: $account.includeInTotals)
-                            }
-                            .padding(.vertical, 4)
+                            ImportReviewAccountRow(account: $account)
                         }
                     } footer: {
                         Text("These accounts are provisional. If you assign their rows to existing accounts, unused provisional accounts will not be created.")
@@ -806,11 +794,6 @@ private struct ImportReviewView: View {
         return names.reversed().joined(separator: " / ")
     }
 
-    private func accountTypeOption(for type: AccountType) -> some View {
-        Text(verbatim: type.displayName)
-            .tag(type)
-    }
-
     private func importRows() {
         let prepared = FinanceImportReview.removingUnusedCreatedRecords(from: importedData)
         if !candidate.createMissingAccounts && !prepared.accounts.isEmpty {
@@ -827,6 +810,30 @@ private struct ImportReviewView: View {
         }
         onImported()
         dismiss()
+    }
+}
+
+private struct ImportReviewAccountRow: View {
+    @Binding var account: Account
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(
+                "\(account.name) · \(account.currency.rawValue)",
+                systemImage: account.type.systemImage
+            )
+            .font(.subheadline.weight(.semibold))
+
+            Picker("Account type", selection: $account.type) {
+                ForEach(AccountType.allCases, id: \.self) { type in
+                    Text(verbatim: type.displayName)
+                        .tag(type)
+                }
+            }
+
+            Toggle("Include in totals", isOn: $account.includeInTotals)
+        }
+        .padding(.vertical, 4)
     }
 }
 
