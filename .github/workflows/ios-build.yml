@@ -116,7 +116,7 @@ jobs:
             -sdk watchsimulator \
             -destination "generic/platform=watchOS Simulator" \
             -derivedDataPath "$RUNNER_TEMP/WatchDerivedData" \
-            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/WatchSimulatorSourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -131,7 +131,7 @@ jobs:
             -sdk watchos \
             -destination "generic/platform=watchOS" \
             -derivedDataPath "$RUNNER_TEMP/WatchDeviceDerivedData" \
-            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/WatchDeviceSourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
