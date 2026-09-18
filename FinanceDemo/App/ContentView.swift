@@ -58,7 +58,10 @@ struct ContentView: View {
 
     private var selectedTabBinding: Binding<AppTab> {
         Binding(
-            get: { AppTab(rawValue: selectedTabRawValue) ?? .overview },
+            get: {
+                let tab = AppTab(rawValue: selectedTabRawValue) ?? .overview
+                return tab == .transactions ? .more : tab
+            },
             set: { tab in
                 guard selectedTabRawValue != tab.rawValue else { return }
                 withAnimation(.snappy(duration: 0.35)) {
@@ -70,7 +73,7 @@ struct ContentView: View {
 
     private func handleDeepLink(_ url: URL) {
         if let tab = AppTab(url: url) {
-            selectedTabBinding.wrappedValue = tab
+            selectedTabBinding.wrappedValue = tab == .transactions ? .more : tab
         }
     }
 
@@ -82,6 +85,7 @@ struct ContentView: View {
             onAdd: { isShowingAddMenu = true }
         )
         .tint(PocketLedgerTheme.accent)
+        .ignoresSafeArea()
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
         )
@@ -148,6 +152,8 @@ struct ContentView: View {
 
 @MainActor
 private struct NativeTabBarController: UIViewControllerRepresentable {
+    static let addActionTabIndex = AppTab.tabBarOrder.count
+
     @Binding var selectedTab: AppTab
     @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
@@ -163,11 +169,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         controller.setViewControllers(makeViewControllers(), animated: false)
         controller.selectedIndex = selectedTab.tabBarIndex
         controller.tabBar.tintColor = UIColor(PocketLedgerTheme.accent)
-
-        if #available(iOS 26, *) {
-            controller.tabBarMinimizeBehavior = .onScrollDown
-            controller.bottomAccessory = UITabAccessory(contentView: makeAddButton(context: context))
-        }
+        controller.tabBarMinimizeBehavior = .onScrollDown
 
         return controller
     }
@@ -184,7 +186,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
     }
 
     private func makeViewControllers() -> [UIViewController] {
-        AppTab.tabBarOrder.map { tab in
+        var viewControllers = AppTab.tabBarOrder.map { tab in
             let viewController: UIViewController
             switch tab {
             case .overview:
@@ -215,25 +217,16 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
             viewController.tabBarItem.accessibilityIdentifier = "tab-\(tab.rawValue)"
             return viewController
         }
-    }
 
-    private func makeAddButton(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = "Add"
-        configuration.image = UIImage(systemName: "plus")
-        configuration.imagePadding = 6
-        button.configuration = configuration
-        button.accessibilityIdentifier = "add-transaction-button"
-        button.accessibilityLabel = "Add"
-        button.accessibilityHint = "Opens options for adding a transaction"
-        button.addAction(
-            UIAction { [weak coordinator = context.coordinator] _ in
-                coordinator?.onAdd()
-            },
-            for: .primaryActionTriggered
+        let addViewController = UIViewController()
+        addViewController.tabBarItem = UITabBarItem(
+            title: "Add",
+            image: UIImage(systemName: "plus"),
+            tag: Self.addActionTabIndex
         )
-        return button
+        addViewController.tabBarItem.accessibilityIdentifier = "add-transaction-button"
+        viewControllers.append(addViewController)
+        return viewControllers
     }
 
     @MainActor
@@ -244,6 +237,19 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         init(parent: NativeTabBarController) {
             self.parent = parent
             self.onAdd = parent.onAdd
+        }
+
+        func tabBarController(
+            _ tabBarController: UITabBarController,
+            shouldSelect viewController: UIViewController
+        ) -> Bool {
+            guard let index = tabBarController.viewControllers?.firstIndex(of: viewController),
+                  index == NativeTabBarController.addActionTabIndex else {
+                return true
+            }
+
+            onAdd()
+            return false
         }
 
         func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
@@ -296,10 +302,12 @@ enum AppTab: String, Hashable {
     case metrics
     case more
 
-    static let tabBarOrder: [AppTab] = [.overview, .accounts, .transactions, .metrics, .more]
+    static let tabBarOrder: [AppTab] = [.overview, .accounts, .metrics, .more]
 
     var tabBarIndex: Int {
-        Self.tabBarOrder.firstIndex(of: self) ?? 0
+        Self.tabBarOrder.firstIndex(of: self)
+            ?? Self.tabBarOrder.firstIndex(of: .more)
+            ?? 0
     }
 
     var title: String {
@@ -358,6 +366,12 @@ private struct MoreView: View {
                         ScheduledTransactionsView(store: store)
                     } label: {
                         Label("Scheduled", systemImage: "calendar.badge.clock")
+                    }
+
+                    NavigationLink {
+                        TransactionsView(store: store)
+                    } label: {
+                        Label("Transactions", systemImage: "list.bullet.rectangle")
                     }
 
                     NavigationLink {
