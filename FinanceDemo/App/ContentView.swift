@@ -775,7 +775,6 @@ private struct TransactionsView: View {
                 Text(transactionToDelete?.note ?? "")
             }
         }
-    }
 
     private var screenHeader: some View {
         HStack {
