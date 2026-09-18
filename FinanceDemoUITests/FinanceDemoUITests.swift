@@ -27,6 +27,8 @@ final class FinanceDemoUITests: XCTestCase {
             skipButton.tap()
         }
 
+        XCTAssertEqual(app.tabBars.count, 0)
+
         let overview = app.buttons["tab-overview"]
         let transactions = app.buttons["tab-transactions"]
         let metrics = app.buttons["tab-metrics"]

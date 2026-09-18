@@ -86,6 +86,7 @@ struct ContentView: View {
                 MoreView(store: store, security: security)
             }
         }
+        .tabViewStyle(.page(indexDisplayMode: .never))
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PocketTabBar(selectedTab: selectedTabBinding) {
