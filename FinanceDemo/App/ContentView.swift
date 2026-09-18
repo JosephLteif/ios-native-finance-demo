@@ -137,7 +137,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
 
         if #available(iOS 26, *) {
             controller.tabBarMinimizeBehavior = .onScrollDown
-            controller.bottomAccessory = UITabAccessory(contentView: makeAddButton(context: context))
+            controller.bottomAccessory = UITabAccessory(contentView: makeAddAccessoryView(context: context))
         }
 
         return controller
@@ -148,8 +148,8 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         context.coordinator.onAddAction = onAddAction
         controller.tabBar.tintColor = UIColor(PocketLedgerTheme.accent)
 
-        if #available(iOS 26, *), let addButton = controller.bottomAccessory?.contentView as? UIButton {
-            addButton.menu = makeAddMenu(coordinator: context.coordinator)
+        if #available(iOS 26, *), let addAccessoryView = controller.bottomAccessory?.contentView as? CompactAddAccessoryView {
+            addAccessoryView.button.menu = makeAddMenu(coordinator: context.coordinator)
         }
 
         let selectedIndex = selectedTab.tabBarIndex
@@ -192,7 +192,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         }
     }
 
-    private func makeAddButton(context: Context) -> UIButton {
+    private func makeAddAccessoryView(context: Context) -> CompactAddAccessoryView {
         var configuration = UIButton.Configuration.glass()
         configuration.image = UIImage(systemName: "plus")
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
@@ -200,14 +200,12 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
 
         let button = UIButton(configuration: configuration)
         button.tintColor = UIColor(PocketLedgerTheme.accent)
-        button.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         button.menu = makeAddMenu(coordinator: context.coordinator)
         button.showsMenuAsPrimaryAction = true
         button.accessibilityIdentifier = "add-transaction-button"
         button.accessibilityLabel = "Add"
         button.accessibilityHint = "Choose what to add"
-        return button
+        return CompactAddAccessoryView(button: button)
     }
 
     private func makeAddMenu(coordinator: Coordinator) -> UIMenu {
@@ -290,6 +288,37 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
                 parent.selectedTab = tab
             }
         }
+    }
+}
+
+private final class CompactAddAccessoryView: UIView {
+    let button: UIButton
+
+    init(button: UIButton) {
+        self.button = button
+        super.init(frame: .zero)
+
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .vertical)
+
+        button.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(button)
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 44),
+            button.heightAnchor.constraint(equalToConstant: 44),
+            button.trailingAnchor.constraint(equalTo: trailingAnchor),
+            button.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+    }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: 44, height: 44)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
