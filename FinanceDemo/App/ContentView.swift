@@ -74,43 +74,37 @@ struct ContentView: View {
     }
 
     private var unlockedContent: some View {
-        ZStack(alignment: .bottom) {
-            TabView(selection: selectedTabBinding) {
-                Tab("Overview", systemImage: "chart.bar.xaxis", value: .overview) {
-                    DashboardView(store: store)
-                }
+        TabView(selection: selectedTabBinding) {
+            Tab("Overview", systemImage: "chart.bar.xaxis", value: .overview) {
+                DashboardView(store: store)
+            }
 
-                Tab("Accounts", systemImage: "wallet.pass", value: .accounts) {
-                    NavigationStack {
-                        AccountsView(store: store)
-                    }
+            Tab("Accounts", systemImage: "wallet.pass", value: .accounts) {
+                NavigationStack {
+                    AccountsView(store: store)
                 }
+            }
 
-                Tab("Transactions", systemImage: "list.bullet.rectangle", value: .transactions) {
+            Tab("Transactions", systemImage: "list.bullet.rectangle", value: .transactions) {
+                NavigationStack {
                     TransactionsView(store: store)
                 }
-
-                Tab("Metrics", systemImage: "chart.xyaxis.line", value: .metrics) {
-                    MetricsView(store: store)
-                }
-
-                Tab("More", systemImage: "ellipsis.circle", value: .more) {
-                    MoreView(store: store, security: security)
-                }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .toolbar(.hidden, for: .tabBar)
-            .ignoresSafeArea(.container, edges: [.top, .bottom])
 
-            PocketTabBar(selectedTab: selectedTabBinding) {
+            Tab("Metrics", systemImage: "chart.xyaxis.line", value: .metrics) {
+                MetricsView(store: store)
+            }
+
+            Tab("More", systemImage: "ellipsis.circle", value: .more) {
+                MoreView(store: store, security: security)
+            }
+        }
+        .tabViewBottomAccessory {
+            Button("Add", systemImage: "plus") {
                 isShowingAddMenu = true
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 8)
+            .accessibilityIdentifier("add-transaction-button")
         }
-        .background(PocketLedgerTheme.background.ignoresSafeArea())
-        .ignoresSafeArea(.container, edges: [.top, .bottom])
         .tint(PocketLedgerTheme.accent)
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
@@ -135,18 +129,14 @@ struct ContentView: View {
             Button("Scheduled", systemImage: "calendar.badge.clock") {
                 addAction = .scheduled
             }
-            if !store.data.templates.isEmpty {
-                ForEach(Array(store.data.templates.prefix(3))) { template in
-                    Button("Template: \(template.name)", systemImage: "rectangle.stack") {
-                        addAction = .template(template.id)
-                    }
+            ForEach(Array(store.data.templates.prefix(3))) { template in
+                Button("Template: \(template.name)", systemImage: "rectangle.stack") {
+                    addAction = .template(template.id)
                 }
             }
-            if !store.recentTransactions.isEmpty {
-                ForEach(Array(store.recentTransactions.prefix(3))) { transaction in
-                    Button("Recent: \(transaction.note)", systemImage: "clock.arrow.circlepath") {
-                        addAction = .recent(transaction.id)
-                    }
+            ForEach(Array(store.recentTransactions.prefix(3))) { transaction in
+                Button("Recent: \(transaction.note)", systemImage: "clock.arrow.circlepath") {
+                    addAction = .recent(transaction.id)
                 }
             }
         }
@@ -255,143 +245,6 @@ enum AppTab: String, Hashable {
             return nil
         }
         self.init(rawValue: destination)
-    }
-}
-
-private struct PocketTabBar: View {
-    @Binding var selectedTab: AppTab
-    let onAdd: () -> Void
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Namespace private var glassNamespace
-
-    var body: some View {
-        Group {
-            if #available(iOS 26, *) {
-                liquidGlassBar
-            } else {
-                legacyBar
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    @available(iOS 26, *)
-    private var liquidGlassBar: some View {
-        GlassEffectContainer(spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
-                tabItems
-                    .glassEffect(.regular.interactive(), in: Capsule())
-
-                addButton
-                    .glassEffect(.regular.interactive(), in: Circle())
-            }
-        }
-    }
-
-    private var legacyBar: some View {
-        HStack(alignment: .center, spacing: 8) {
-            tabItems
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                }
-
-            addButton
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay {
-                    Circle()
-                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                }
-        }
-    }
-
-    private var tabItems: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    tabItemsContent
-                }
-            } else {
-                tabItemsContent
-            }
-        }
-        .padding(5)
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: 72)
-    }
-
-    private var tabItemsContent: some View {
-        HStack(spacing: 2) {
-            tabButton(.overview)
-            tabButton(.accounts)
-            tabButton(.metrics)
-            tabButton(.more)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var addButton: some View {
-        Button(action: onAdd) {
-            Image(systemName: "plus")
-                .font(.title3.weight(.medium))
-                .frame(minWidth: 54, minHeight: 54)
-        }
-        .buttonStyle(PocketTabButtonStyle())
-        .foregroundStyle(PocketLedgerTheme.textPrimary)
-        .tint(PocketLedgerTheme.accent)
-        .accessibilityIdentifier("add-transaction-button")
-        .accessibilityLabel("Add")
-        .accessibilityHint("Opens options for adding a transaction")
-    }
-
-    private func tabButton(_ tab: AppTab) -> some View {
-        let isSelected = selectedTab == tab
-
-        return Button {
-            selectedTab = tab
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: tab.systemImage)
-                    .font(.body.weight(.semibold))
-
-                Text(tab.title)
-                    .font(.caption.weight(.medium))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(
-                minWidth: dynamicTypeSize.isAccessibilitySize ? 92 : 60,
-                maxWidth: .infinity,
-                minHeight: 60
-            )
-            .foregroundStyle(isSelected ? PocketLedgerTheme.accent : PocketLedgerTheme.textSecondary)
-            .background {
-                if isSelected {
-                    Capsule()
-                        .glassEffect(
-                            .regular.tint(PocketLedgerTheme.accent).interactive(),
-                            in: Capsule()
-                        )
-                        .glassEffectID("selected-tab", in: glassNamespace)
-                }
-            }
-        }
-        .buttonStyle(PocketTabButtonStyle())
-        .contentShape(Capsule())
-        .accessibilityLabel(tab.title)
-        .accessibilityIdentifier("tab-\(tab.rawValue)")
-        .accessibilityValue(isSelected ? "Selected" : "")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-private struct PocketTabButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.64 : 1)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -829,8 +682,7 @@ private struct TransactionsView: View {
     @State private var isPresentingBillScanner = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
+        ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
                     screenHeader
 
@@ -895,7 +747,6 @@ private struct TransactionsView: View {
                 .padding(.bottom, 24)
             }
             .pocketScreen()
-            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $isPresentingBillScanner) {
                 BillScannerView(store: store)
             }
@@ -922,8 +773,6 @@ private struct TransactionsView: View {
                 Button("Cancel", role: .cancel) { transactionToDelete = nil }
             } message: {
                 Text(transactionToDelete?.note ?? "")
-            }
-        }
     }
 
     private var screenHeader: some View {

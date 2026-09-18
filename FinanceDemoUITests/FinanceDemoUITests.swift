@@ -10,15 +10,14 @@ final class FinanceDemoUITests: XCTestCase {
             skipButton.tap()
         }
 
-        let addAction = app.buttons["add-transaction-button"]
-        let nativeAddButton = app.buttons["Add"]
-        XCTAssertTrue(
-            addAction.waitForExistence(timeout: 1) ||
-                nativeAddButton.waitForExistence(timeout: 5)
-        )
+        let addButton = app.buttons["Add"]
+        XCTAssertTrue(addButton.waitForExistence(timeout: 5))
+
+        addButton.tap()
+        XCTAssertTrue(app.buttons["Expense"].waitForExistence(timeout: 2))
     }
 
-    func testCustomTabBarUsesAccessibleSelectionAndKeepsAddReachable() {
+    func testNativeTabBarIsPresented() {
         let app = XCUIApplication()
         app.launch()
 
@@ -27,24 +26,9 @@ final class FinanceDemoUITests: XCTestCase {
             skipButton.tap()
         }
 
-        XCTAssertEqual(app.tabBars.count, 0)
-
-        let overview = app.buttons["tab-overview"]
-        let accounts = app.buttons["tab-accounts"]
-        let metrics = app.buttons["tab-metrics"]
-        let more = app.buttons["tab-more"]
-
-        XCTAssertTrue(overview.waitForExistence(timeout: 5))
-        XCTAssertTrue(accounts.waitForExistence(timeout: 5))
-        XCTAssertTrue(metrics.waitForExistence(timeout: 5))
-        XCTAssertTrue(more.waitForExistence(timeout: 5))
-
-        accounts.tap()
-        XCTAssertEqual(accounts.value as? String, "Selected")
-        XCTAssertFalse(app.buttons["tab-transactions"].exists)
-
-        let addAction = app.buttons["add-transaction-button"]
-        XCTAssertTrue(addAction.exists)
-        XCTAssertTrue(addAction.isHittable)
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 5))
+        XCTAssertTrue(tabBar.buttons["Overview"].waitForExistence(timeout: 5))
+        XCTAssertTrue(tabBar.buttons["More"].waitForExistence(timeout: 5))
     }
 }
