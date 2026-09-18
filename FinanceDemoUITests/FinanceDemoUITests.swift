@@ -30,10 +30,14 @@ final class FinanceDemoUITests: XCTestCase {
         XCTAssertTrue(tabBar.waitForExistence(timeout: 5))
         XCTAssertTrue(tabBar.buttons["Overview"].waitForExistence(timeout: 5))
         XCTAssertTrue(tabBar.buttons["More"].waitForExistence(timeout: 5))
-        XCTAssertTrue(tabBar.buttons["Add"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Add"].waitForExistence(timeout: 5))
+        XCTAssertFalse(tabBar.buttons["Add"].exists)
         XCTAssertFalse(tabBar.buttons["Transactions"].exists)
 
         tabBar.buttons["More"].tap()
         XCTAssertTrue(app.buttons["Transactions"].waitForExistence(timeout: 5))
+
+        app.buttons["Add"].tap()
+        XCTAssertTrue(app.buttons["Expense"].waitForExistence(timeout: 5))
     }
 }

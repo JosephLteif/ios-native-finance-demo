@@ -8,7 +8,6 @@ struct ContentView: View {
     @StateObject private var store = LedgerStore()
     @StateObject private var security = AppSecurityService()
     @State private var addAction: AddAction?
-    @State private var isShowingAddMenu = false
     @State private var isShowingSetup = false
     @State private var isUnlocked = false
     @SceneStorage("pocketLedger.selectedTab") private var selectedTabRawValue = AppTab.overview.rawValue
@@ -31,7 +30,6 @@ struct ContentView: View {
                 store.processDueScheduledTransactions()
             } else if phase == .inactive || phase == .background {
                 addAction = nil
-                isShowingAddMenu = false
                 if security.isPasscodeEnabled {
                     isUnlocked = false
                 }
@@ -82,44 +80,13 @@ struct ContentView: View {
             selectedTab: selectedTabBinding,
             store: store,
             security: security,
-            onAdd: { isShowingAddMenu = true }
+            onAddAction: { action in addAction = action }
         )
         .tint(PocketLedgerTheme.accent)
         .ignoresSafeArea()
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
         )
-        .confirmationDialog(
-            "Add to your ledger",
-            isPresented: $isShowingAddMenu,
-            titleVisibility: .visible
-        ) {
-            Button("Scan bill", systemImage: "doc.text.viewfinder") {
-                addAction = .scanBill
-            }
-            Button("Expense", systemImage: "arrow.up.right") {
-                addAction = .expense
-            }
-            Button("Income", systemImage: "arrow.down.left") {
-                addAction = .income
-            }
-            Button("Transfer", systemImage: "arrow.left.arrow.right") {
-                addAction = .transfer
-            }
-            Button("Scheduled", systemImage: "calendar.badge.clock") {
-                addAction = .scheduled
-            }
-            ForEach(Array(store.data.templates.prefix(3))) { template in
-                Button("Template: \(template.name)", systemImage: "rectangle.stack") {
-                    addAction = .template(template.id)
-                }
-            }
-            ForEach(Array(store.recentTransactions.prefix(3))) { transaction in
-                Button("Recent: \(transaction.note)", systemImage: "clock.arrow.circlepath") {
-                    addAction = .recent(transaction.id)
-                }
-            }
-        }
         .sheet(item: $addAction) { action in
             switch action {
             case .scanBill:
@@ -152,12 +119,10 @@ struct ContentView: View {
 
 @MainActor
 private struct NativeTabBarController: UIViewControllerRepresentable {
-    static let addActionTabIndex = AppTab.tabBarOrder.count
-
     @Binding var selectedTab: AppTab
     @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
-    let onAdd: () -> Void
+    let onAddAction: (AddAction) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -169,15 +134,23 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         controller.setViewControllers(makeViewControllers(), animated: false)
         controller.selectedIndex = selectedTab.tabBarIndex
         controller.tabBar.tintColor = UIColor(PocketLedgerTheme.accent)
-        controller.tabBarMinimizeBehavior = .onScrollDown
+
+        if #available(iOS 26, *) {
+            controller.tabBarMinimizeBehavior = .onScrollDown
+            controller.bottomAccessory = UITabAccessory(contentView: makeAddButton(context: context))
+        }
 
         return controller
     }
 
     func updateUIViewController(_ controller: UITabBarController, context: Context) {
         context.coordinator.parent = self
-        context.coordinator.onAdd = onAdd
+        context.coordinator.onAddAction = onAddAction
         controller.tabBar.tintColor = UIColor(PocketLedgerTheme.accent)
+
+        if #available(iOS 26, *), let addButton = controller.bottomAccessory?.contentView as? UIButton {
+            addButton.menu = makeAddMenu(coordinator: context.coordinator)
+        }
 
         let selectedIndex = selectedTab.tabBarIndex
         if controller.selectedIndex != selectedIndex {
@@ -186,7 +159,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
     }
 
     private func makeViewControllers() -> [UIViewController] {
-        var viewControllers = AppTab.tabBarOrder.map { tab in
+        AppTab.tabBarOrder.map { tab in
             let viewController: UIViewController
             switch tab {
             case .overview:
@@ -217,39 +190,91 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
             viewController.tabBarItem.accessibilityIdentifier = "tab-\(tab.rawValue)"
             return viewController
         }
+    }
 
-        let addViewController = UIViewController()
-        addViewController.tabBarItem = UITabBarItem(
-            title: "Add",
-            image: UIImage(systemName: "plus"),
-            tag: Self.addActionTabIndex
+    private func makeAddButton(context: Context) -> UIButton {
+        var configuration = UIButton.Configuration.glass()
+        configuration.title = "Add"
+        configuration.image = UIImage(systemName: "plus")
+        configuration.imagePadding = 6
+
+        let button = UIButton(configuration: configuration)
+        button.tintColor = UIColor(PocketLedgerTheme.accent)
+        button.menu = makeAddMenu(coordinator: context.coordinator)
+        button.showsMenuAsPrimaryAction = true
+        button.accessibilityIdentifier = "add-transaction-button"
+        button.accessibilityLabel = "Add"
+        button.accessibilityHint = "Choose what to add"
+        return button
+    }
+
+    private func makeAddMenu(coordinator: Coordinator) -> UIMenu {
+        let quickActions = UIMenu(
+            title: "Quick add",
+            options: .displayInline,
+            children: [
+                makeAction("Expense", image: "arrow.up.right", action: .expense, coordinator: coordinator),
+                makeAction("Income", image: "arrow.down.left", action: .income, coordinator: coordinator),
+                makeAction("Transfer", image: "arrow.left.arrow.right", action: .transfer, coordinator: coordinator)
+            ]
         )
-        addViewController.tabBarItem.accessibilityIdentifier = "add-transaction-button"
-        viewControllers.append(addViewController)
-        return viewControllers
+
+        let otherActions = UIMenu(
+            title: "Other",
+            options: .displayInline,
+            children: [
+                makeAction("Scan bill", image: "doc.text.viewfinder", action: .scanBill, coordinator: coordinator),
+                makeAction("Scheduled", image: "calendar.badge.clock", action: .scheduled, coordinator: coordinator)
+            ]
+        )
+
+        var menus: [UIMenuElement] = [quickActions, otherActions]
+        let templates: [UIMenuElement] = store.data.templates.prefix(3).map { template in
+            makeAction(
+                template.name,
+                image: "rectangle.stack",
+                action: .template(template.id),
+                coordinator: coordinator
+            )
+        }
+        if !templates.isEmpty {
+            menus.append(UIMenu(title: "Templates", options: .displayInline, children: templates))
+        }
+
+        let recent: [UIMenuElement] = store.recentTransactions.prefix(3).map { transaction in
+            makeAction(
+                transaction.note,
+                image: "clock.arrow.circlepath",
+                action: .recent(transaction.id),
+                coordinator: coordinator
+            )
+        }
+        if !recent.isEmpty {
+            menus.append(UIMenu(title: "Recent", options: .displayInline, children: recent))
+        }
+
+        return UIMenu(title: "Add", children: menus)
+    }
+
+    private func makeAction(
+        _ title: String,
+        image: String,
+        action: AddAction,
+        coordinator: Coordinator
+    ) -> UIAction {
+        UIAction(title: title, image: UIImage(systemName: image)) { [weak coordinator] _ in
+            coordinator?.onAddAction(action)
+        }
     }
 
     @MainActor
     final class Coordinator: NSObject, UITabBarControllerDelegate {
         var parent: NativeTabBarController
-        var onAdd: () -> Void
+        var onAddAction: (AddAction) -> Void
 
         init(parent: NativeTabBarController) {
             self.parent = parent
-            self.onAdd = parent.onAdd
-        }
-
-        func tabBarController(
-            _ tabBarController: UITabBarController,
-            shouldSelect viewController: UIViewController
-        ) -> Bool {
-            guard let index = tabBarController.viewControllers?.firstIndex(of: viewController),
-                  index == NativeTabBarController.addActionTabIndex else {
-                return true
-            }
-
-            onAdd()
-            return false
+            self.onAddAction = parent.onAddAction
         }
 
         func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
