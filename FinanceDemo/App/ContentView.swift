@@ -194,12 +194,14 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
 
     private func makeAddButton(context: Context) -> UIButton {
         var configuration = UIButton.Configuration.glass()
-        configuration.title = "Add"
         configuration.image = UIImage(systemName: "plus")
-        configuration.imagePadding = 6
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
+        configuration.cornerStyle = .capsule
 
         let button = UIButton(configuration: configuration)
         button.tintColor = UIColor(PocketLedgerTheme.accent)
+        button.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         button.menu = makeAddMenu(coordinator: context.coordinator)
         button.showsMenuAsPrimaryAction = true
         button.accessibilityIdentifier = "add-transaction-button"
