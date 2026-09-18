@@ -773,6 +773,8 @@ private struct TransactionsView: View {
                 Button("Cancel", role: .cancel) { transactionToDelete = nil }
             } message: {
                 Text(transactionToDelete?.note ?? "")
+            }
+        }
     }
 
     private var screenHeader: some View {
