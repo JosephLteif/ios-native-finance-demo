@@ -1297,7 +1297,11 @@ private struct AccountsView: View {
             Spacer()
 
             Text(value.formatted)
-                .font((isEmphasized ? .subheadline : .caption).weight(.semibold).monospacedDigit())
+                .font(
+                    isEmphasized
+                        ? Font.subheadline.weight(.semibold).monospacedDigit()
+                        : Font.caption.weight(.semibold).monospacedDigit()
+                )
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
