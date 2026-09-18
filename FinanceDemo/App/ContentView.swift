@@ -58,13 +58,18 @@ struct ContentView: View {
     private var selectedTabBinding: Binding<AppTab> {
         Binding(
             get: { AppTab(rawValue: selectedTabRawValue) ?? .overview },
-            set: { selectedTabRawValue = $0.rawValue }
+            set: { tab in
+                guard selectedTabRawValue != tab.rawValue else { return }
+                withAnimation(.snappy(duration: 0.35)) {
+                    selectedTabRawValue = tab.rawValue
+                }
+            }
         )
     }
 
     private func handleDeepLink(_ url: URL) {
         if let tab = AppTab(url: url) {
-            selectedTabRawValue = tab.rawValue
+            selectedTabBinding.wrappedValue = tab
         }
     }
 
@@ -96,6 +101,7 @@ struct ContentView: View {
             .padding(.top, 8)
             .padding(.bottom, 4)
         }
+        .background(PocketLedgerTheme.background.ignoresSafeArea())
         .tint(PocketLedgerTheme.accent)
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
@@ -240,6 +246,7 @@ private struct PocketTabBar: View {
     @Binding var selectedTab: AppTab
     let onAdd: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Namespace private var glassNamespace
 
     var body: some View {
         Group {
@@ -346,7 +353,11 @@ private struct PocketTabBar: View {
             .background {
                 if isSelected {
                     Capsule()
-                        .fill(PocketLedgerTheme.accent.opacity(0.22))
+                        .glassEffect(
+                            .regular.tint(PocketLedgerTheme.accent).interactive(),
+                            in: Capsule()
+                        )
+                        .glassEffectID("selected-tab", in: glassNamespace)
                 }
             }
         }
