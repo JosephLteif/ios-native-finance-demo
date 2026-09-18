@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 @MainActor
@@ -74,37 +75,12 @@ struct ContentView: View {
     }
 
     private var unlockedContent: some View {
-        TabView(selection: selectedTabBinding) {
-            Tab("Overview", systemImage: "chart.bar.xaxis", value: .overview) {
-                DashboardView(store: store)
-            }
-
-            Tab("Accounts", systemImage: "wallet.pass", value: .accounts) {
-                NavigationStack {
-                    AccountsView(store: store)
-                }
-            }
-
-            Tab("Transactions", systemImage: "list.bullet.rectangle", value: .transactions) {
-                NavigationStack {
-                    TransactionsView(store: store)
-                }
-            }
-
-            Tab("Metrics", systemImage: "chart.xyaxis.line", value: .metrics) {
-                MetricsView(store: store)
-            }
-
-            Tab("More", systemImage: "ellipsis.circle", value: .more) {
-                MoreView(store: store, security: security)
-            }
-        }
-        .tabViewBottomAccessory {
-            Button("Add", systemImage: "plus") {
-                isShowingAddMenu = true
-            }
-            .accessibilityIdentifier("add-transaction-button")
-        }
+        NativeTabBarController(
+            selectedTab: selectedTabBinding,
+            store: store,
+            security: security,
+            onAdd: { isShowingAddMenu = true }
+        )
         .tint(PocketLedgerTheme.accent)
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
@@ -170,6 +146,120 @@ struct ContentView: View {
 
 }
 
+@MainActor
+private struct NativeTabBarController: UIViewControllerRepresentable {
+    @Binding var selectedTab: AppTab
+    @ObservedObject var store: LedgerStore
+    @ObservedObject var security: AppSecurityService
+    let onAdd: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIViewController(context: Context) -> UITabBarController {
+        let controller = UITabBarController()
+        controller.delegate = context.coordinator
+        controller.setViewControllers(makeViewControllers(), animated: false)
+        controller.selectedIndex = selectedTab.tabBarIndex
+        controller.tabBar.tintColor = UIColor(PocketLedgerTheme.accent)
+
+        if #available(iOS 26, *) {
+            controller.tabBarMinimizeBehavior = .onScrollDown
+            controller.bottomAccessory = UITabAccessory(contentView: makeAddButton(context: context))
+        }
+
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UITabBarController, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.onAdd = onAdd
+        controller.tabBar.tintColor = UIColor(PocketLedgerTheme.accent)
+
+        let selectedIndex = selectedTab.tabBarIndex
+        if controller.selectedIndex != selectedIndex {
+            controller.selectedIndex = selectedIndex
+        }
+    }
+
+    private func makeViewControllers() -> [UIViewController] {
+        AppTab.tabBarOrder.map { tab in
+            let viewController: UIViewController
+            switch tab {
+            case .overview:
+                viewController = UIHostingController(rootView: DashboardView(store: store))
+            case .accounts:
+                viewController = UIHostingController(
+                    rootView: NavigationStack {
+                        AccountsView(store: store)
+                    }
+                )
+            case .transactions:
+                viewController = UIHostingController(
+                    rootView: NavigationStack {
+                        TransactionsView(store: store)
+                    }
+                )
+            case .metrics:
+                viewController = UIHostingController(rootView: MetricsView(store: store))
+            case .more:
+                viewController = UIHostingController(rootView: MoreView(store: store, security: security))
+            }
+
+            viewController.tabBarItem = UITabBarItem(
+                title: tab.title,
+                image: UIImage(systemName: tab.systemImage),
+                tag: tab.tabBarIndex
+            )
+            viewController.tabBarItem.accessibilityIdentifier = "tab-\(tab.rawValue)"
+            return viewController
+        }
+    }
+
+    private func makeAddButton(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = "Add"
+        configuration.image = UIImage(systemName: "plus")
+        configuration.imagePadding = 6
+        button.configuration = configuration
+        button.accessibilityIdentifier = "add-transaction-button"
+        button.accessibilityLabel = "Add"
+        button.accessibilityHint = "Opens options for adding a transaction"
+        button.addAction(
+            UIAction { [weak coordinator = context.coordinator] _ in
+                coordinator?.onAdd()
+            },
+            for: .primaryActionTriggered
+        )
+        return button
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UITabBarControllerDelegate {
+        var parent: NativeTabBarController
+        var onAdd: () -> Void
+
+        init(parent: NativeTabBarController) {
+            self.parent = parent
+            self.onAdd = parent.onAdd
+        }
+
+        func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+            guard let index = tabBarController.viewControllers?.firstIndex(of: viewController),
+                  index < AppTab.tabBarOrder.count else {
+                return
+            }
+
+            let tab = AppTab.tabBarOrder[index]
+            if parent.selectedTab != tab {
+                parent.selectedTab = tab
+            }
+        }
+    }
+}
+
 private enum AddAction: Identifiable {
     case scanBill
     case expense
@@ -205,6 +295,12 @@ enum AppTab: String, Hashable {
     case transactions
     case metrics
     case more
+
+    static let tabBarOrder: [AppTab] = [.overview, .accounts, .transactions, .metrics, .more]
+
+    var tabBarIndex: Int {
+        Self.tabBarOrder.firstIndex(of: self) ?? 0
+    }
 
     var title: String {
         switch self {

@@ -10,12 +10,23 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-ios:
+    name: Build iOS app
     runs-on: macos-26
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
+      - name: Cache Swift package data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/SourcePackages
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
 
       - name: Print build environment
         run: |
@@ -26,13 +37,13 @@ jobs:
           xcode-select -p
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
 
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
-
-      - name: Inspect generated schemes
-        run: xcodebuild -list -project ios-native-finance-demo.xcodeproj
 
       - name: Compile app and widget for a generic iOS device
         run: |
@@ -44,15 +55,60 @@ jobs:
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            clean build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
 
-      - name: Compile watch app and complication for a generic watch simulator
+      - name: Archive iOS app
         run: |
-          set -o pipefail
+          set -euo pipefail
+          tar -czf "$GITHUB_WORKSPACE/FinanceDemo-app.tar.gz" \
+            -C "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" \
+            FinanceDemo.app
+
+      - name: Upload iOS app
+        uses: actions/upload-artifact@v7
+        with:
+          name: FinanceDemo-ios-build
+          path: FinanceDemo-app.tar.gz
+          retention-days: 1
+
+  build-watch:
+    name: Build watch app
+    runs-on: macos-26
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Cache Swift package data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/SourcePackages
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Compile watch simulator and device builds
+        run: |
+          set -u
+          simulator_log="$RUNNER_TEMP/xcodebuild-watch.log"
+          device_log="$RUNNER_TEMP/xcodebuild-watch-device.log"
+
           xcodebuild \
             -project ios-native-finance-demo.xcodeproj \
             -scheme FinanceDemoWatch \
@@ -60,15 +116,14 @@ jobs:
             -sdk watchsimulator \
             -destination "generic/platform=watchOS Simulator" \
             -derivedDataPath "$RUNNER_TEMP/WatchDerivedData" \
+            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild-watch.log"
+            build > "$simulator_log" 2>&1 &
+          simulator_pid=$!
 
-      - name: Compile watch app for device packaging
-        run: |
-          set -o pipefail
           xcodebuild \
             -project ios-native-finance-demo.xcodeproj \
             -scheme FinanceDemoWatch \
@@ -76,21 +131,67 @@ jobs:
             -sdk watchos \
             -destination "generic/platform=watchOS" \
             -derivedDataPath "$RUNNER_TEMP/WatchDeviceDerivedData" \
+            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild-watch-device.log"
+            build > "$device_log" 2>&1 &
+          device_pid=$!
 
-      - name: Embed watch app for IPA packaging
+          simulator_status=0
+          device_status=0
+          wait "$simulator_pid" || simulator_status=$?
+          wait "$device_pid" || device_status=$?
+
+          cat "$simulator_log"
+          cat "$device_log"
+
+          if [ "$simulator_status" -ne 0 ]; then
+            exit "$simulator_status"
+          fi
+          exit "$device_status"
+
+      - name: Archive watch app
         run: |
           set -euo pipefail
-          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
-          WATCH_SOURCE_PATH="$RUNNER_TEMP/WatchDeviceDerivedData/Build/Products/Release-watchos/FinanceDemoWatch.app"
-          test -d "$APP_PATH" || { echo "Missing iOS app: $APP_PATH"; exit 1; }
-          test -d "$WATCH_SOURCE_PATH" || { echo "Missing watch app: $WATCH_SOURCE_PATH"; exit 1; }
-          mkdir -p "$APP_PATH/Watch"
-          ditto "$WATCH_SOURCE_PATH" "$APP_PATH/Watch/FinanceDemoWatch.app"
+          tar -czf "$GITHUB_WORKSPACE/FinanceDemo-watch.tar.gz" \
+            -C "$RUNNER_TEMP/WatchDeviceDerivedData/Build/Products/Release-watchos" \
+            FinanceDemoWatch.app
+
+      - name: Upload watch app
+        uses: actions/upload-artifact@v7
+        with:
+          name: FinanceDemo-watch-build
+          path: FinanceDemo-watch.tar.gz
+          retention-days: 1
+
+  test-ios:
+    name: Run iOS tests
+    runs-on: macos-26
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Cache Swift package data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/SourcePackages
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
 
       - name: Compile unit tests for the iOS simulator
         run: |
@@ -102,6 +203,7 @@ jobs:
             -sdk iphonesimulator \
             -destination "generic/platform=iOS Simulator" \
             -derivedDataPath "$RUNNER_TEMP/TestDerivedData" \
+            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -120,6 +222,7 @@ jobs:
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -derivedDataPath "$RUNNER_TEMP/TestDerivedData" \
+            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -128,11 +231,39 @@ jobs:
             -only-testing:FinanceDemoTests \
             -only-testing:FinanceDemoUITests 2>&1 | tee "$RUNNER_TEMP/xcodebuild-focused-tests.log"
 
-      - name: Verify app and embedded widget
+  package:
+    name: Package unsigned IPA
+    needs: [build-ios, build-watch, test-ios]
+    runs-on: macos-26
+
+    steps:
+      - name: Download iOS app
+        uses: actions/download-artifact@v7
+        with:
+          name: FinanceDemo-ios-build
+          path: ios-build
+
+      - name: Download watch app
+        uses: actions/download-artifact@v7
+        with:
+          name: FinanceDemo-watch-build
+          path: watch-build
+
+      - name: Embed watch app and verify bundle
         run: |
           set -euo pipefail
-          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
-          test -d "$APP_PATH" || { echo "Missing app: $APP_PATH"; exit 1; }
+          PACKAGE_ROOT="$RUNNER_TEMP/package"
+          mkdir -p "$PACKAGE_ROOT"
+          tar -xzf ios-build/FinanceDemo-app.tar.gz -C "$PACKAGE_ROOT"
+          tar -xzf watch-build/FinanceDemo-watch.tar.gz -C "$PACKAGE_ROOT"
+
+          APP_PATH="$PACKAGE_ROOT/FinanceDemo.app"
+          WATCH_SOURCE_PATH="$PACKAGE_ROOT/FinanceDemoWatch.app"
+          test -d "$APP_PATH" || { echo "Missing iOS app: $APP_PATH"; exit 1; }
+          test -d "$WATCH_SOURCE_PATH" || { echo "Missing watch app: $WATCH_SOURCE_PATH"; exit 1; }
+          mkdir -p "$APP_PATH/Watch"
+          ditto "$WATCH_SOURCE_PATH" "$APP_PATH/Watch/FinanceDemoWatch.app"
+
           test -d "$APP_PATH/PlugIns" || { echo "Missing PlugIns directory: $APP_PATH/PlugIns"; exit 1; }
           WATCH_APP_PATH="$APP_PATH/Watch/FinanceDemoWatch.app"
           test -d "$WATCH_APP_PATH" || { echo "Missing embedded watch app: $WATCH_APP_PATH"; exit 1; }
@@ -161,14 +292,14 @@ jobs:
           echo "App: $APP_PATH"
           echo "Watch app: $WATCH_APP_PATH"
           echo "Widget extension: $WIDGET_PATH"
-          echo "Compiled app icon catalog: $APP_PATH/Assets.car"
+          echo "Compiled asset catalog: $APP_PATH/Assets.car"
           echo "Display name: $DISPLAY_NAME"
           file "$APP_PATH/FinanceDemo"
 
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
-          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
+          APP_PATH="$RUNNER_TEMP/package/FinanceDemo.app"
           PACKAGE_ROOT="$RUNNER_TEMP/unsigned-ipa"
           IPA_PATH="$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
           rm -rf "$PACKAGE_ROOT"

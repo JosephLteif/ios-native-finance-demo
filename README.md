@@ -70,9 +70,9 @@ Pocket Ledger uses a dark navy, teal, emerald, and warm gold wallet/ledger mark.
 
 ## GitHub Actions build
 
-The workflow runs on the `macos-26` GitHub-hosted runner and prints the macOS, Xcode, and Swift versions used for each build. It is intentionally not triggered for ordinary pushes to `main`.
+The workflow uses `macos-26` GitHub-hosted runners and prints the macOS, Xcode, and Swift versions used for the release build. The iOS app build, watch builds, and simulator tests run in parallel; a final job verifies the bundles and packages the IPA. It is intentionally not triggered for ordinary pushes to `main`.
 
-The workflow compiles the unit-test and UI-test targets for the iOS Simulator, then runs both targets on an available iPhone simulator with `test-without-building`.
+Swift Package data is cached between runs, and the generated Xcode project is recreated in each job from `project.yml`.
 
 To build:
 
