@@ -8,6 +8,10 @@ final class AppNavigationTests: XCTestCase {
             .overview
         )
         XCTAssertEqual(
+            AppTab(url: URL(string: "pocketledger://accounts")!),
+            .accounts
+        )
+        XCTAssertEqual(
             AppTab(url: URL(string: "pocketledger://transactions")!),
             .transactions
         )

@@ -74,34 +74,43 @@ struct ContentView: View {
     }
 
     private var unlockedContent: some View {
-        TabView(selection: selectedTabBinding) {
-            Tab("Overview", systemImage: "chart.bar.xaxis", value: .overview) {
-                DashboardView(store: store)
-            }
+        ZStack(alignment: .bottom) {
+            TabView(selection: selectedTabBinding) {
+                Tab("Overview", systemImage: "chart.bar.xaxis", value: .overview) {
+                    DashboardView(store: store)
+                }
 
-            Tab("Transactions", systemImage: "list.bullet.rectangle", value: .transactions) {
-                TransactionsView(store: store)
-            }
+                Tab("Accounts", systemImage: "wallet.pass", value: .accounts) {
+                    NavigationStack {
+                        AccountsView(store: store)
+                    }
+                }
 
-            Tab("Metrics", systemImage: "chart.xyaxis.line", value: .metrics) {
-                MetricsView(store: store)
-            }
+                Tab("Transactions", systemImage: "list.bullet.rectangle", value: .transactions) {
+                    TransactionsView(store: store)
+                }
 
-            Tab("More", systemImage: "ellipsis.circle", value: .more) {
-                MoreView(store: store, security: security)
+                Tab("Metrics", systemImage: "chart.xyaxis.line", value: .metrics) {
+                    MetricsView(store: store)
+                }
+
+                Tab("More", systemImage: "ellipsis.circle", value: .more) {
+                    MoreView(store: store, security: security)
+                }
             }
-        }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .toolbar(.hidden, for: .tabBar)
+            .ignoresSafeArea(.container, edges: [.top, .bottom])
+
             PocketTabBar(selectedTab: selectedTabBinding) {
                 isShowingAddMenu = true
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 4)
+            .padding(.bottom, 8)
         }
         .background(PocketLedgerTheme.background.ignoresSafeArea())
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
         .tint(PocketLedgerTheme.accent)
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
@@ -202,6 +211,7 @@ private enum AddAction: Identifiable {
 
 enum AppTab: String, Hashable {
     case overview
+    case accounts
     case transactions
     case metrics
     case more
@@ -210,6 +220,8 @@ enum AppTab: String, Hashable {
         switch self {
         case .overview:
             return "Overview"
+        case .accounts:
+            return "Accounts"
         case .transactions:
             return "Transactions"
         case .metrics:
@@ -223,6 +235,8 @@ enum AppTab: String, Hashable {
         switch self {
         case .overview:
             return "chart.bar.xaxis"
+        case .accounts:
+            return "wallet.pass"
         case .transactions:
             return "list.bullet.rectangle"
         case .metrics:
@@ -235,7 +249,9 @@ enum AppTab: String, Hashable {
     init?(url: URL) {
         guard url.scheme == "pocketledger" else { return nil }
         let destination = url.host ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard destination == Self.overview.rawValue || destination == Self.transactions.rawValue else {
+        guard destination == Self.overview.rawValue
+            || destination == Self.accounts.rawValue
+            || destination == Self.transactions.rawValue else {
             return nil
         }
         self.init(rawValue: destination)
@@ -308,7 +324,7 @@ private struct PocketTabBar: View {
     private var tabItemsContent: some View {
         HStack(spacing: 2) {
             tabButton(.overview)
-            tabButton(.transactions)
+            tabButton(.accounts)
             tabButton(.metrics)
             tabButton(.more)
         }
@@ -393,12 +409,6 @@ private struct MoreView: View {
                         ScheduledTransactionsView(store: store)
                     } label: {
                         Label("Scheduled", systemImage: "calendar.badge.clock")
-                    }
-
-                    NavigationLink {
-                        AccountsView(store: store)
-                    } label: {
-                        Label("Accounts", systemImage: "wallet.pass")
                     }
 
                     NavigationLink {
@@ -522,12 +532,13 @@ private struct DashboardView: View {
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
 
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: LedgerCurrency.allCases.count),
-                spacing: 12
-            ) {
+            VStack(spacing: 0) {
                 ForEach(LedgerCurrency.allCases) { currency in
-                    balanceColumn(for: currency)
+                    if currency != LedgerCurrency.allCases[0] {
+                        Divider()
+                            .overlay(PocketLedgerTheme.divider)
+                    }
+                    balanceRow(for: currency)
                 }
             }
 
@@ -550,17 +561,26 @@ private struct DashboardView: View {
         }
     }
 
-    private func balanceColumn(for currency: LedgerCurrency) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(currency.rawValue)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(currency == .usd ? PocketLedgerTheme.income : PocketLedgerTheme.textSecondary)
+    private func balanceRow(for currency: LedgerCurrency) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(currency.rawValue)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(currency == .usd ? PocketLedgerTheme.income : PocketLedgerTheme.textSecondary)
+                Text(currency.displayName)
+                    .font(.caption2)
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+            }
+
+            Spacer(minLength: 12)
 
             Text(store.availableBalance(for: currency).formatted)
-                .font(.title.weight(.bold).monospacedDigit())
-                .lineLimit(2)
+                .font(.title3.weight(.bold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .multilineTextAlignment(.trailing)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 9)
     }
 
     private var monthSnapshot: some View {
@@ -1180,23 +1200,24 @@ private struct AccountsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
-                    screenHeader
+                screenHeader
+                globalPositionSummary
 
-                    ForEach(LedgerCurrency.allCases) { currency in
-                        let accounts = store.data.accounts.filter { $0.currency == currency }
-                        if !accounts.isEmpty {
-                            accountSection(currency: currency, accounts: accounts)
-                        }
+                ForEach(LedgerCurrency.allCases) { currency in
+                    let accounts = store.data.accounts.filter { $0.currency == currency }
+                    if !accounts.isEmpty {
+                        accountSection(currency: currency, accounts: accounts)
                     }
+                }
 
-                    Text(store.storageAvailable && store.sharedStorageAvailable
-                         ? "Stored locally in the shared app container."
-                         : store.storageAvailable
-                         ? "Stored persistently on this device; widget sharing is unavailable."
-                         : "Persistent storage is unavailable; changes cannot be saved.")
-                        .font(.caption)
-                        .foregroundStyle(PocketLedgerTheme.textTertiary)
-                        .padding(.horizontal, 4)
+                Text(store.storageAvailable && store.sharedStorageAvailable
+                     ? "Stored locally in the shared app container."
+                     : store.storageAvailable
+                     ? "Stored persistently on this device; widget sharing is unavailable."
+                     : "Persistent storage is unavailable; changes cannot be saved.")
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    .padding(.horizontal, 4)
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -1207,6 +1228,79 @@ private struct AccountsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isPresentingAccount, onDismiss: { editingAccount = nil }) {
             AccountEditor(store: store, account: editingAccount)
+        }
+    }
+
+    private var globalPositionSummary: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Global position")
+                        .font(.title3.weight(.bold))
+                    Text("Assets, liabilities, and net total by currency")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chart.pie.fill")
+                    .foregroundStyle(PocketLedgerTheme.accent)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(LedgerCurrency.allCases) { currency in
+                    if currency != LedgerCurrency.allCases[0] {
+                        Divider().overlay(PocketLedgerTheme.divider)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(currency.rawValue)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                        accountPositionRow(
+                            title: "Assets",
+                            value: store.assetBalance(for: currency),
+                            tint: PocketLedgerTheme.income
+                        )
+                        accountPositionRow(
+                            title: "Liabilities",
+                            value: store.liabilityBalance(for: currency),
+                            tint: PocketLedgerTheme.warning
+                        )
+                        accountPositionRow(
+                            title: "Total",
+                            value: store.netWorth(for: currency),
+                            tint: PocketLedgerTheme.textPrimary,
+                            isEmphasized: true
+                        )
+                    }
+                    .padding(.vertical, 10)
+                }
+            }
+        }
+        .pocketCard()
+    }
+
+    private func accountPositionRow(
+        title: String,
+        value: Money,
+        tint: Color,
+        isEmphasized: Bool = false
+    ) -> some View {
+        HStack {
+            Text(title)
+                .font(isEmphasized ? .subheadline.weight(.semibold) : .caption)
+                .foregroundStyle(isEmphasized ? PocketLedgerTheme.textPrimary : PocketLedgerTheme.textSecondary)
+
+            Spacer()
+
+            Text(value.formatted)
+                .font((isEmphasized ? .subheadline : .caption).weight(.semibold).monospacedDigit())
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
         }
     }
 

@@ -749,6 +749,21 @@ final class LedgerStore: ObservableObject {
         return Money(currency: currency, minorUnits: totalMinorUnits)
     }
 
+    func assetBalance(for currency: LedgerCurrency) -> Money {
+        availableBalance(for: currency)
+    }
+
+    func liabilityBalance(for currency: LedgerCurrency) -> Money {
+        loanBalance(for: currency)
+    }
+
+    func netWorth(for currency: LedgerCurrency) -> Money {
+        Money(
+            currency: currency,
+            minorUnits: assetBalance(for: currency).minorUnits - liabilityBalance(for: currency).minorUnits
+        )
+    }
+
     func monthlyExpenseTotals() -> [LedgerCurrency: Int64] {
         var totals: [LedgerCurrency: Int64] = [:]
 

@@ -30,17 +30,18 @@ final class FinanceDemoUITests: XCTestCase {
         XCTAssertEqual(app.tabBars.count, 0)
 
         let overview = app.buttons["tab-overview"]
-        let transactions = app.buttons["tab-transactions"]
+        let accounts = app.buttons["tab-accounts"]
         let metrics = app.buttons["tab-metrics"]
         let more = app.buttons["tab-more"]
 
         XCTAssertTrue(overview.waitForExistence(timeout: 5))
-        XCTAssertTrue(transactions.waitForExistence(timeout: 5))
+        XCTAssertTrue(accounts.waitForExistence(timeout: 5))
         XCTAssertTrue(metrics.waitForExistence(timeout: 5))
         XCTAssertTrue(more.waitForExistence(timeout: 5))
 
-        transactions.tap()
-        XCTAssertEqual(transactions.value as? String, "Selected")
+        accounts.tap()
+        XCTAssertEqual(accounts.value as? String, "Selected")
+        XCTAssertFalse(app.buttons["tab-transactions"].exists)
 
         let addAction = app.buttons["add-transaction-button"]
         XCTAssertTrue(addAction.exists)
