@@ -118,27 +118,55 @@ struct ContentView: View {
 
 @MainActor
 private final class PocketLedgerTabBarController: UITabBarController {
+    private let visibleTabBar = UITabBar()
     weak var addButton: UIButton?
+
+    func installVisibleTabBar(items: [UITabBarItem], delegate: any UITabBarDelegate) {
+        tabBar.isHidden = true
+        visibleTabBar.items = items
+        visibleTabBar.delegate = delegate
+        visibleTabBar.tintColor = UIColor(PocketLedgerTheme.accent)
+        if visibleTabBar.superview == nil {
+            view.addSubview(visibleTabBar)
+        }
+    }
+
+    func selectVisibleTab(at index: Int) {
+        guard visibleTabBar.items?.indices.contains(index) == true else { return }
+        visibleTabBar.selectedItem = visibleTabBar.items?[index]
+    }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        guard let addButton else { return }
+        guard visibleTabBar.superview != nil else { return }
 
+        let baseBottomInset = max(0, view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom)
+        let tabBarHeight = max(49, visibleTabBar.sizeThatFits(view.bounds.size).height)
         let buttonSize: CGFloat = 44
-        let buttonTrailing = view.bounds.width - view.safeAreaInsets.right - 16
+        let buttonTrailing = view.bounds.width - view.safeAreaInsets.right + additionalSafeAreaInsets.right - 16
         let buttonFrame = CGRect(
             x: buttonTrailing - buttonSize,
-            y: tabBar.frame.midY - buttonSize / 2,
+            y: view.bounds.height - baseBottomInset - tabBarHeight / 2 - buttonSize / 2,
             width: buttonSize,
             height: buttonSize
         )
-        addButton.frame = buttonFrame
 
         let gap: CGFloat = 12
-        var tabBarFrame = tabBar.frame
-        tabBarFrame.size.width = max(0, buttonFrame.minX - gap - tabBarFrame.minX)
-        tabBar.frame = tabBarFrame
+        let tabBarFrame = CGRect(
+            x: max(view.safeAreaInsets.left, 16),
+            y: view.bounds.height - baseBottomInset - tabBarHeight,
+            width: max(0, buttonFrame.minX - gap - max(view.safeAreaInsets.left, 16)),
+            height: tabBarHeight
+        )
+        visibleTabBar.frame = tabBarFrame
+        addButton?.frame = buttonFrame
+
+        var additionalInsets = additionalSafeAreaInsets
+        additionalInsets.bottom = tabBarHeight + 12
+        if additionalInsets != additionalSafeAreaInsets {
+            additionalSafeAreaInsets = additionalInsets
+        }
     }
 }
 
@@ -153,7 +181,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         Coordinator(parent: self)
     }
 
-    func makeUIViewController(context: Context) -> UITabBarController {
+    func makeUIViewController(context: Context) -> PocketLedgerTabBarController {
         let controller = PocketLedgerTabBarController()
         controller.delegate = context.coordinator
         controller.setViewControllers(makeViewControllers(), animated: false)
@@ -162,6 +190,11 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
 
         if #available(iOS 26, *) {
             controller.tabBarMinimizeBehavior = .onScrollDown
+            controller.installVisibleTabBar(
+                items: makeVisibleTabBarItems(),
+                delegate: context.coordinator
+            )
+            controller.selectVisibleTab(at: selectedTab.tabBarIndex)
 
             let addButton = makeAddButton(context: context)
             controller.addButton = addButton
@@ -171,7 +204,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         return controller
     }
 
-    func updateUIViewController(_ controller: UITabBarController, context: Context) {
+    func updateUIViewController(_ controller: PocketLedgerTabBarController, context: Context) {
         context.coordinator.parent = self
         context.coordinator.onAddAction = onAddAction
         controller.tabBar.tintColor = UIColor(PocketLedgerTheme.accent)
@@ -186,6 +219,9 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         let selectedIndex = selectedTab.tabBarIndex
         if controller.selectedIndex != selectedIndex {
             controller.selectedIndex = selectedIndex
+        }
+        if #available(iOS 26, *) {
+            controller.selectVisibleTab(at: selectedIndex)
         }
     }
 
@@ -220,6 +256,18 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
             )
             viewController.tabBarItem.accessibilityIdentifier = "tab-\(tab.rawValue)"
             return viewController
+        }
+    }
+
+    private func makeVisibleTabBarItems() -> [UITabBarItem] {
+        AppTab.tabBarOrder.map { tab in
+            let item = UITabBarItem(
+                title: tab.title,
+                image: UIImage(systemName: tab.systemImage),
+                tag: tab.tabBarIndex
+            )
+            item.accessibilityIdentifier = "tab-\(tab.rawValue)"
+            return item
         }
     }
 
@@ -299,7 +347,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, UITabBarControllerDelegate {
+    final class Coordinator: NSObject, UITabBarControllerDelegate, UITabBarDelegate {
         var parent: NativeTabBarController
         var onAddAction: (AddAction) -> Void
 
@@ -310,6 +358,18 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
 
         func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
             guard let index = tabBarController.viewControllers?.firstIndex(of: viewController),
+                  index < AppTab.tabBarOrder.count else {
+                return
+            }
+
+            let tab = AppTab.tabBarOrder[index]
+            if parent.selectedTab != tab {
+                parent.selectedTab = tab
+            }
+        }
+
+        func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
+            guard let index = tabBar.items?.firstIndex(of: item),
                   index < AppTab.tabBarOrder.count else {
                 return
             }
