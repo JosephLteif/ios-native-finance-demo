@@ -29,7 +29,6 @@ struct ContentView: View {
                 store.reload()
                 store.processDueScheduledTransactions()
             } else if phase == .inactive || phase == .background {
-                addAction = nil
                 if security.isPasscodeEnabled {
                     isUnlocked = false
                 }
