@@ -2165,7 +2165,7 @@ private struct CategoryEditor: View {
     }
 }
 
-private struct MovementDraft: Identifiable {
+private struct MovementDraft: Identifiable, Equatable {
     let id = UUID()
     var accountID: UUID
     var amount: String
@@ -2230,6 +2230,7 @@ struct TransactionEditor: View {
     @State private var inflows: [MovementDraft] = []
     @State private var requestedChange = ""
     @State private var useCustomRate = true
+    @State private var automaticTransferDestinationAmount: String?
     @State private var rateBase: LedgerCurrency = .usd
     @State private var rateQuote: LedgerCurrency = .lbp
     @State private var rateText = "100000"
@@ -2287,10 +2288,19 @@ struct TransactionEditor: View {
             return account.currency == preferredCurrency
         } ?? rememberedAccount ?? store.activeAccounts.first
         let firstAccountID = firstAccount?.id ?? UUID()
+        let resolvedInitialKind = sourceTransaction?.kind ?? scheduledTransaction?.kind ?? initialKind
+        let initialDestinationAccount = store.activeAccounts.first { account in
+            account.id != firstAccountID
+        } ?? firstAccount
+        let initialDestinationAccountID = initialDestinationAccount?.id ?? firstAccountID
         let amountDue = sourceTransaction?.amountDue ?? scheduledTransaction?.amountDue ?? initialBillTotal
         let initialCurrencies = LedgerCurrency.allCases.filter { currency in
             (sourceTransaction?.outflows ?? scheduledTransaction?.outflows ?? []).contains { $0.money.currency == currency }
                 || (sourceTransaction?.inflows ?? scheduledTransaction?.inflows ?? []).contains { $0.money.currency == currency }
+                || (resolvedInitialKind == .transfer && [
+                    firstAccount?.currency,
+                    initialDestinationAccount?.currency
+                ].compactMap { $0 }.contains(currency))
         }
         let initialRateBase = sourceTransaction?.exchangeRate?.baseCurrency
             ?? scheduledTransaction?.exchangeRate?.baseCurrency
@@ -2311,7 +2321,7 @@ struct TransactionEditor: View {
             }
         _note = State(initialValue: sourceTransaction?.note ?? scheduledTransaction?.note ?? initialNote ?? "")
         _date = State(initialValue: transaction?.date ?? scheduledTransaction?.nextRunDate ?? .now)
-        _kind = State(initialValue: sourceTransaction?.kind ?? scheduledTransaction?.kind ?? initialKind)
+        _kind = State(initialValue: resolvedInitialKind)
         _timing = State(initialValue: transaction == nil && scheduledTransaction == nil ? initialTiming : transaction == nil ? .scheduled : .now)
         _scheduleFrequency = State(initialValue: scheduledTransaction?.frequency ?? initialFrequency)
         _monthlyRule = State(initialValue: scheduledTransaction?.monthlyRule ?? .dayOfMonth)
@@ -2331,13 +2341,21 @@ struct TransactionEditor: View {
         _inflows = State(
             initialValue: (sourceTransaction?.inflows ?? scheduledTransaction?.inflows)?.map {
                 MovementDraft(accountID: $0.accountID, amount: Self.inputText(for: $0.money))
-            } ?? []
+            } ?? (resolvedInitialKind == .transfer
+                ? [MovementDraft(accountID: initialDestinationAccountID, amount: "")]
+                : [])
         )
         _requestedChange = State(
             initialValue: (sourceTransaction?.changeAdjustment ?? scheduledTransaction?.changeAdjustment).map { Self.inputText(for: $0.requested) } ?? ""
         )
         _rateBase = State(initialValue: initialRateBase)
         _rateQuote = State(initialValue: initialRateQuote)
+        _useCustomRate = State(
+            initialValue: resolvedInitialKind == .transfer
+                ? sourceTransaction?.exchangeRate != nil
+                    || scheduledTransaction?.exchangeRate != nil
+                : true
+        )
         _rateText = State(
             initialValue: initialSavedRate.map {
                 NSDecimalNumber(decimal: $0.quoteUnitsPerBaseUnit).stringValue
@@ -2504,7 +2522,7 @@ struct TransactionEditor: View {
                             MovementLineEditor(
                                 store: store,
                                 line: $line,
-                                amountPlaceholder: "Amount leaving account",
+                                amountPlaceholder: kind == .transfer ? "Amount sent" : "Amount leaving account",
                                 onCreateAccount: {
                                     accountCreationLineID = $line.wrappedValue.id
                                     isShowingNewAccount = true
@@ -2520,9 +2538,11 @@ struct TransactionEditor: View {
                             Label("Add another account", systemImage: "plus.circle")
                         }
                     } header: {
-                        Text("Money leaving accounts")
+                        Text(kind == .transfer ? "From" : "Money leaving accounts")
                     } footer: {
-                        Text("Use one line for each currency or account used to pay.")
+                        Text(kind == .transfer
+                             ? "Choose the account and amount sending the transfer."
+                             : "Use one line for each currency or account used to pay.")
                     }
                 }
 
@@ -2541,7 +2561,7 @@ struct TransactionEditor: View {
                             MovementLineEditor(
                                 store: store,
                                 line: $line,
-                                amountPlaceholder: "Amount entering account",
+                                amountPlaceholder: kind == .transfer ? "Amount received" : "Amount entering account",
                                 onCreateAccount: {
                                     accountCreationLineID = $line.wrappedValue.id
                                     isShowingNewAccount = true
@@ -2568,25 +2588,47 @@ struct TransactionEditor: View {
                         }
                     }
                 } header: {
-                    Text(kind == .expense ? "Change / money returned" : "Money entering accounts")
+                    Text(kind == .transfer
+                         ? "To"
+                         : kind == .expense ? "Change / money returned" : "Money entering accounts")
                 } footer: {
-                    Text(kind == .expense
-                         ? "Returned money may go to a different account and currency than the payment."
-                         : "Choose the account and currency receiving the money.")
+                    Text(kind == .transfer
+                         ? "The amount is filled from the sending amount when possible. You can edit it for a specific transfer."
+                         : kind == .expense
+                            ? "Returned money may go to a different account and currency than the payment."
+                            : "Choose the account and currency receiving the money.")
                 }
 
                 if selectedCurrencies.count > 1 {
                     Section("Exchange rate") {
-                        Toggle("Use a custom rate", isOn: $useCustomRate)
+                        LabeledContent("Applied rate") {
+                            Text(appliedExchangeRate?.summary ?? "Rate required")
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(appliedExchangeRate == nil
+                                    ? PocketLedgerTheme.warning
+                                    : PocketLedgerTheme.textPrimary)
+                                .multilineTextAlignment(.trailing)
+                        }
+
+                        Toggle(
+                            kind == .transfer ? "Override for this transaction" : "Use a custom rate",
+                            isOn: $useCustomRate
+                        )
+
+                        if !useCustomRate {
+                            Text("The rate is calculated from the entered amounts, or uses the saved pair rate until both amounts are entered.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
 
                         if useCustomRate {
                             Picker("Base", selection: $rateBase) {
-                                ForEach(LedgerCurrency.allCases) { currency in
+                                ForEach(selectedCurrencies) { currency in
                                     Text(currency.rawValue).tag(currency)
                                 }
                             }
                             Picker("Quote", selection: $rateQuote) {
-                                ForEach(LedgerCurrency.allCases) { currency in
+                                ForEach(selectedCurrencies) { currency in
                                     Text(currency.rawValue).tag(currency)
                                 }
                             }
@@ -2608,16 +2650,50 @@ struct TransactionEditor: View {
                     }
                 }
             }
-            .onChange(of: selectedCurrencies) { _, currencies in
-                guard currencies.count > 1,
-                      !currencies.contains(rateBase) || !currencies.contains(rateQuote) else {
+            .onAppear {
+                if kind == .transfer && inflows.isEmpty {
+                    inflows.append(newReceivingMovementDraft)
+                }
+                synchronizeRatePair()
+                synchronizeAutomaticTransferAmount()
+            }
+            .onChange(of: kind) { _, newKind in
+                if newKind == .transfer && inflows.isEmpty {
+                    inflows.append(newReceivingMovementDraft)
+                }
+                if newKind != .transfer {
+                    automaticTransferDestinationAmount = nil
+                }
+                synchronizeRatePair()
+                synchronizeAutomaticTransferAmount()
+            }
+            .onChange(of: selectedCurrencies) { _, _ in
+                synchronizeRatePair()
+                synchronizeAutomaticTransferAmount()
+            }
+            .onChange(of: outflows) { _, _ in
+                synchronizeAutomaticTransferAmount()
+            }
+            .onChange(of: inflows) { oldInflows, newInflows in
+                let amountWasEdited = oldInflows.first?.amount != newInflows.first?.amount
+                if amountWasEdited,
+                   newInflows.first?.amount != automaticTransferDestinationAmount {
+                    self.automaticTransferDestinationAmount = nil
+                    synchronizeRatePair()
                     return
                 }
-                rateBase = currencies[0]
-                rateQuote = currencies[1]
-                if let savedRate {
-                    rateText = NSDecimalNumber(decimal: savedRate.quoteUnitsPerBaseUnit).stringValue
+                synchronizeRatePair()
+                synchronizeAutomaticTransferAmount()
+            }
+            .onChange(of: useCustomRate) { _, _ in
+                if useCustomRate {
+                    prepareCustomRate()
                 }
+                synchronizeAutomaticTransferAmount()
+            }
+            .onChange(of: rateText) { _, _ in
+                guard useCustomRate else { return }
+                synchronizeAutomaticTransferAmount()
             }
             .scrollContentBackground(.hidden)
             .background(PocketLedgerTheme.background)
@@ -2745,6 +2821,13 @@ struct TransactionEditor: View {
         MovementDraft(accountID: store.activeAccounts.first?.id ?? UUID(), amount: "")
     }
 
+    private var newReceivingMovementDraft: MovementDraft {
+        let sourceAccountIDs = Set(outflows.map(\.accountID))
+        let account = store.activeAccounts.first(where: { !sourceAccountIDs.contains($0.id) })
+            ?? store.activeAccounts.first
+        return MovementDraft(accountID: account?.id ?? UUID(), amount: "")
+    }
+
     private static func inputText(for money: Money) -> String {
         let amount = Decimal(money.minorUnits) / Decimal(money.currency.minorUnitScale)
         return NSDecimalNumber(decimal: amount).stringValue
@@ -2758,6 +2841,218 @@ struct TransactionEditor: View {
 
     private var savedRate: ExchangeRate? {
         store.exchangeRate(base: rateBase, quote: rateQuote)
+    }
+
+    private var rateCurrencyPair: (base: LedgerCurrency, quote: LedgerCurrency)? {
+        guard let sourceCurrency = outflows.first.flatMap({ store.account(with: $0.accountID)?.currency }),
+              let destinationCurrency = inflows.first.flatMap({ store.account(with: $0.accountID)?.currency }),
+              sourceCurrency != destinationCurrency else {
+            return nil
+        }
+        return (base: sourceCurrency, quote: destinationCurrency)
+    }
+
+    private var parsedRateValue: Decimal? {
+        Decimal(
+            string: rateText.replacingOccurrences(of: ",", with: ""),
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+    }
+
+    private var customExchangeRate: ExchangeRate? {
+        guard rateBase != rateQuote,
+              selectedCurrencies.contains(rateBase),
+              selectedCurrencies.contains(rateQuote),
+              let rate = parsedRateValue,
+              rate > 0 else {
+            return nil
+        }
+        return ExchangeRate(
+            baseCurrency: rateBase,
+            quoteCurrency: rateQuote,
+            quoteUnitsPerBaseUnit: rate
+        )
+    }
+
+    private var calculatedExchangeRate: ExchangeRate? {
+        guard let pair = rateCurrencyPair,
+              let parsedOutflows,
+              let parsedInflows else {
+            return nil
+        }
+
+        let sourceUnits = parsedOutflows
+            .filter { $0.money.currency == pair.base }
+            .reduce(Decimal.zero) { total, movement in
+                total + Decimal(movement.money.minorUnits) / Decimal(pair.base.minorUnitScale)
+            }
+        let destinationUnits = parsedInflows
+            .filter { $0.money.currency == pair.quote }
+            .reduce(Decimal.zero) { total, movement in
+                total + Decimal(movement.money.minorUnits) / Decimal(pair.quote.minorUnitScale)
+            }
+        guard sourceUnits > 0, destinationUnits > 0 else { return nil }
+
+        return ExchangeRate(
+            baseCurrency: pair.base,
+            quoteCurrency: pair.quote,
+            quoteUnitsPerBaseUnit: destinationUnits / sourceUnits
+        )
+    }
+
+    private var appliedExchangeRate: ExchangeRate? {
+        guard let pair = rateCurrencyPair else { return nil }
+
+        if useCustomRate {
+            guard let customExchangeRate,
+                  let rate = directedRate(
+                      customExchangeRate.quoteUnitsPerBaseUnit,
+                      from: customExchangeRate.baseCurrency,
+                      to: customExchangeRate.quoteCurrency,
+                      base: pair.base,
+                      quote: pair.quote
+                  ) else {
+                return nil
+            }
+            return ExchangeRate(
+                baseCurrency: pair.base,
+                quoteCurrency: pair.quote,
+                quoteUnitsPerBaseUnit: rate
+            )
+        }
+
+        return calculatedExchangeRate
+            ?? store.exchangeRate(base: pair.base, quote: pair.quote)
+    }
+
+    private func directedRate(
+        _ value: Decimal,
+        from sourceBase: LedgerCurrency,
+        to sourceQuote: LedgerCurrency,
+        base targetBase: LedgerCurrency,
+        quote targetQuote: LedgerCurrency
+    ) -> Decimal? {
+        guard value > 0, sourceBase != sourceQuote, targetBase != targetQuote else {
+            return nil
+        }
+        if sourceBase == targetBase && sourceQuote == targetQuote {
+            return value
+        }
+        if sourceBase == targetQuote && sourceQuote == targetBase {
+            return Decimal(1) / value
+        }
+        return nil
+    }
+
+    private static func money(
+        units: Decimal,
+        currency: LedgerCurrency
+    ) -> Money? {
+        guard units > 0 else { return nil }
+        var scaled = units * Decimal(currency.minorUnitScale)
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &scaled, 0, .plain)
+        let minorUnits = NSDecimalNumber(decimal: rounded).int64Value
+        guard minorUnits > 0 else { return nil }
+        return Money(currency: currency, minorUnits: minorUnits)
+    }
+
+    private func synchronizeRatePair() {
+        let currencies = selectedCurrencies
+        guard currencies.count > 1,
+              !currencies.contains(rateBase) || !currencies.contains(rateQuote) || rateBase == rateQuote else {
+            return
+        }
+
+        rateBase = currencies[0]
+        rateQuote = currencies[1]
+        if let savedRate {
+            rateText = NSDecimalNumber(decimal: savedRate.quoteUnitsPerBaseUnit).stringValue
+        }
+    }
+
+    private func prepareCustomRate() {
+        guard let pair = rateCurrencyPair else { return }
+        rateBase = pair.base
+        rateQuote = pair.quote
+        if let rate = calculatedExchangeRate
+            ?? store.exchangeRate(base: pair.base, quote: pair.quote) {
+            rateText = NSDecimalNumber(decimal: rate.quoteUnitsPerBaseUnit).stringValue
+        }
+    }
+
+    private func synchronizeAutomaticTransferAmount() {
+        guard kind == .transfer else { return }
+
+        guard outflows.count == 1,
+              inflows.count == 1 else {
+            clearAutomaticTransferAmount()
+            return
+        }
+
+        guard let sourceAccount = store.account(with: outflows[0].accountID),
+              let destinationAccount = store.account(with: inflows[0].accountID) else {
+            clearAutomaticTransferAmount()
+            return
+        }
+
+        let currentDestinationAmount = inflows[0].amount
+        let canUpdate = currentDestinationAmount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || currentDestinationAmount == automaticTransferDestinationAmount
+        guard canUpdate,
+              let sourceMoney = Money.parse(outflows[0].amount, currency: sourceAccount.currency),
+              sourceMoney.minorUnits > 0 else {
+            clearAutomaticTransferAmount()
+            return
+        }
+
+        let destinationMoney: Money?
+        if sourceAccount.currency == destinationAccount.currency {
+            destinationMoney = sourceMoney
+        } else {
+            guard let rate = automaticTransferRate else {
+                clearAutomaticTransferAmount()
+                return
+            }
+            let sourceUnits = Decimal(sourceMoney.minorUnits) / Decimal(sourceMoney.currency.minorUnitScale)
+            destinationMoney = Self.money(
+                units: sourceUnits * rate,
+                currency: destinationAccount.currency
+            )
+        }
+
+        guard let destinationMoney else {
+            clearAutomaticTransferAmount()
+            return
+        }
+
+        let amount = Self.inputText(for: destinationMoney)
+        automaticTransferDestinationAmount = amount
+        inflows[0].amount = amount
+    }
+
+    private func clearAutomaticTransferAmount() {
+        if let automaticTransferDestinationAmount,
+           inflows.count == 1,
+           inflows[0].amount == automaticTransferDestinationAmount {
+            inflows[0].amount = ""
+        }
+        automaticTransferDestinationAmount = nil
+    }
+
+    private var automaticTransferRate: Decimal? {
+        guard let pair = rateCurrencyPair else { return nil }
+        if useCustomRate {
+            guard let customExchangeRate else { return nil }
+            return directedRate(
+                customExchangeRate.quoteUnitsPerBaseUnit,
+                from: customExchangeRate.baseCurrency,
+                to: customExchangeRate.quoteCurrency,
+                base: pair.base,
+                quote: pair.quote
+            )
+        }
+        return store.exchangeRate(base: pair.base, quote: pair.quote)?.quoteUnitsPerBaseUnit
     }
 
     private var parsedOutflows: [MoneyMovement]? {
@@ -2804,12 +3099,12 @@ struct TransactionEditor: View {
             }
         }
 
-        if selectedCurrencies.count > 1 && useCustomRate {
-            guard rateBase != rateQuote,
-                  selectedCurrencies.contains(rateBase),
-                  selectedCurrencies.contains(rateQuote),
-                  let rate = Decimal(string: rateText.replacingOccurrences(of: ",", with: ""), locale: Locale(identifier: "en_US_POSIX")),
-                  rate > 0 else {
+        if kind == .transfer && selectedCurrencies.count > 1 {
+            guard appliedExchangeRate != nil else {
+                return false
+            }
+        } else if selectedCurrencies.count > 1 && useCustomRate {
+            guard customExchangeRate != nil else {
                 return false
             }
         }
@@ -2861,20 +3156,18 @@ struct TransactionEditor: View {
         }
 
         var exchangeRate: ExchangeRate?
-        if selectedCurrencies.count > 1 && useCustomRate {
-            guard rateBase != rateQuote,
-                  selectedCurrencies.contains(rateBase),
-                  selectedCurrencies.contains(rateQuote),
-                  let rate = Decimal(string: rateText.replacingOccurrences(of: ",", with: ""), locale: Locale(identifier: "en_US_POSIX")),
-                  rate > 0 else {
+        if kind == .transfer && selectedCurrencies.count > 1 {
+            guard let appliedExchangeRate else {
+                errorMessage = "Enter both transfer amounts or set a positive rate override."
+                return
+            }
+            exchangeRate = appliedExchangeRate
+        } else if selectedCurrencies.count > 1 && useCustomRate {
+            guard let customExchangeRate else {
                 errorMessage = "Enter a positive custom exchange rate with different currencies."
                 return
             }
-            exchangeRate = ExchangeRate(
-                baseCurrency: rateBase,
-                quoteCurrency: rateQuote,
-                quoteUnitsPerBaseUnit: rate
-            )
+            exchangeRate = customExchangeRate
         }
 
         var changeAdjustment: ChangeAdjustment?
