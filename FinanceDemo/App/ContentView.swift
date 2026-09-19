@@ -916,6 +916,31 @@ private enum TransactionFilter: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+private enum TransactionPeriod: String, CaseIterable, Identifiable, Hashable {
+    case all = "All time"
+    case thisMonth = "This month"
+    case lastMonth = "Last month"
+    case thisYear = "This year"
+
+    var id: String { rawValue }
+
+    func includes(_ date: Date, calendar: Calendar = .current) -> Bool {
+        switch self {
+        case .all:
+            return true
+        case .thisMonth:
+            return calendar.dateInterval(of: .month, for: .now)?.contains(date) ?? true
+        case .lastMonth:
+            guard let lastMonth = calendar.date(byAdding: .month, value: -1, to: .now) else {
+                return true
+            }
+            return calendar.dateInterval(of: .month, for: lastMonth)?.contains(date) ?? true
+        case .thisYear:
+            return calendar.dateInterval(of: .year, for: .now)?.contains(date) ?? true
+        }
+    }
+}
+
 private struct TransactionDay: Identifiable {
     let date: Date
     let transactions: [LedgerTransaction]
@@ -927,6 +952,7 @@ private struct TransactionDay: Identifiable {
 private struct TransactionsView: View {
     @ObservedObject var store: LedgerStore
     @State private var selectedFilter: TransactionFilter = .all
+    @State private var selectedPeriod: TransactionPeriod = .all
     @State private var searchText = ""
     @State private var editingTransaction: LedgerTransaction?
     @State private var transactionToDelete: LedgerTransaction?
@@ -944,6 +970,14 @@ private struct TransactionsView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+
+                    Picker("Date range", selection: $selectedPeriod) {
+                        ForEach(TransactionPeriod.allCases) { period in
+                            Text(period.rawValue).tag(period)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     TextField("Search transactions, categories, or accounts", text: $searchText)
                         .textFieldStyle(.roundedBorder)
@@ -1058,6 +1092,7 @@ private struct TransactionsView: View {
         store.recentTransactions.filter { transaction in
             let matchesKind = selectedFilter.kind.map { transaction.kind == $0 } ?? true
             guard matchesKind else { return false }
+            guard selectedPeriod.includes(transaction.date) else { return false }
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !query.isEmpty else { return true }
             let accountNames = (transaction.outflows + transaction.inflows)
@@ -1084,14 +1119,14 @@ private struct TransactionsView: View {
     }
 
     private var transactionsSummary: some View {
-        let expenses = store.monthlyExpenseTotals()
+        let expenses = filteredExpenseTotals
 
         return VStack(alignment: .leading, spacing: 13) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(Date.now.formatted(.dateTime.month(.wide).year()))
+                    Text(selectedPeriod.rawValue)
                         .font(.headline)
-                    Text("Monthly overview")
+                    Text("Filtered overview")
                         .font(.caption)
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
                 }
@@ -1116,6 +1151,20 @@ private struct TransactionsView: View {
             }
         }
         .pocketCard()
+    }
+
+    private var filteredExpenseTotals: [LedgerCurrency: Int64] {
+        var totals: [LedgerCurrency: Int64] = [:]
+        for transaction in filteredTransactions where transaction.kind == .expense {
+            for currency in LedgerCurrency.allCases {
+                totals[currency, default: 0] += financeNetExpenseAmount(
+                    transaction,
+                    currency: currency,
+                    in: store.data
+                )
+            }
+        }
+        return totals
     }
 
     private func transactionSummaryMetric(title: String, value: String) -> some View {
