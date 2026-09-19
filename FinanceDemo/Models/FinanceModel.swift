@@ -689,7 +689,7 @@ func financeBudgetAllowance(
             break
         }
         let spent = financeBudgetSpent(budget, in: data, interval: monthInterval).minorUnits
-        carry += max(budget.monthlyLimit.minorUnits - spent, 0)
+        carry = max(carry + budget.monthlyLimit.minorUnits - spent, 0)
         guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: month),
               nextMonth > month else {
             break

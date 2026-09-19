@@ -369,6 +369,62 @@ final class FinanceModelTests: XCTestCase {
         )
     }
 
+    func testRolloverCarryIsConsumedByLaterOverspending() {
+        let calendar = Calendar(identifier: .gregorian)
+        let currentMonth = calendar.dateInterval(of: .month, for: .now)!
+        let january = calendar.date(byAdding: .month, value: -2, to: currentMonth.start)!
+        let february = calendar.date(byAdding: .month, value: -1, to: currentMonth.start)!
+        let category = LedgerCategory(name: "Food")
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 10_000)
+        )
+        let transactions = [
+            LedgerTransaction(
+                date: calendar.date(byAdding: .day, value: 5, to: january)!,
+                note: "January lunch",
+                kind: .expense,
+                categoryID: category.id,
+                outflows: [
+                    MoneyMovement(
+                        accountID: account.id,
+                        money: Money(currency: .usd, minorUnits: 500)
+                    )
+                ],
+                inflows: []
+            ),
+            LedgerTransaction(
+                date: calendar.date(byAdding: .day, value: 5, to: february)!,
+                note: "February lunch",
+                kind: .expense,
+                categoryID: category.id,
+                outflows: [
+                    MoneyMovement(
+                        accountID: account.id,
+                        money: Money(currency: .usd, minorUnits: 1_300)
+                    )
+                ],
+                inflows: []
+            )
+        ]
+        let data = FinanceData(
+            accounts: [account],
+            categories: [category],
+            transactions: transactions
+        )
+        let budget = LedgerBudget(
+            categoryID: category.id,
+            currency: .usd,
+            monthlyLimit: Money(currency: .usd, minorUnits: 1_000),
+            rollover: true,
+            startedAt: january
+        )
+
+        XCTAssertEqual(financeBudgetAllowance(budget, in: data, interval: currentMonth).minorUnits, 1_200)
+    }
+
     func testMonthlyScheduleAdvancesByOneMonth() {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         let next = ScheduleFrequency.monthly.nextDate(
