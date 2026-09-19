@@ -102,8 +102,7 @@ final class WatchConnectivityService: NSObject, WCSessionDelegate, @unchecked Se
             return
         }
 
-        data.transactions.append(transaction)
-        guard storage.save(data) else {
+        guard storage.appendTransaction(transaction) else {
             sendAcknowledgement(
                 for: command,
                 accepted: false,

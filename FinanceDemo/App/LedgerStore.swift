@@ -852,9 +852,15 @@ final class LedgerStore: ObservableObject {
     ) -> Bool {
         let persisted = storage.save(
             updated,
+            expected: data,
             allowingCorruptedReplacement: allowingCorruptedReplacement
         )
         guard persisted else {
+            if storage.saveConflict {
+                data = storage.load()
+                lastActionStatus = "\(successMessage) was not saved because the ledger changed in another surface. Reloaded the latest data."
+                return false
+            }
             let reason = storage.isCorrupted
                 ? "the persistent database could not be decoded; restore or reset it"
                 : "the persistent database is unavailable"

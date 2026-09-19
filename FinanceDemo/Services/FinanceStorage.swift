@@ -21,6 +21,7 @@ final class FinanceStorage {
     private let storageLocation: StorageLocation
     private let attachmentDirectory: URL?
     private(set) var loadStatus: LoadStatus = .notLoaded
+    private(set) var saveConflict = false
 
     init(context: String) {
         if let groupURL = FileManager.default.containerURL(
@@ -153,7 +154,12 @@ final class FinanceStorage {
     }
 
     @discardableResult
-    func save(_ value: FinanceData, allowingCorruptedReplacement: Bool = false) -> Bool {
+    func save(
+        _ value: FinanceData,
+        expected: FinanceData? = nil,
+        allowingCorruptedReplacement: Bool = false
+    ) -> Bool {
+        saveConflict = false
         guard allowingCorruptedReplacement || !isCorrupted,
               let modelContainer,
               let encoded = try? JSONEncoder().encode(value) else {
@@ -165,8 +171,23 @@ final class FinanceStorage {
         do {
             let records = try context.fetch(FetchDescriptor<FinanceDatabaseRecord>())
             if let record = records.first {
+                if let expected {
+                    if let current = try? JSONDecoder().decode(FinanceData.self, from: record.payload) {
+                        if current != expected {
+                            saveConflict = true
+                            return false
+                        }
+                    } else if !allowingCorruptedReplacement {
+                        loadStatus = .corrupted
+                        return false
+                    }
+                }
                 record.payload = encoded
             } else {
+                if let expected, expected != .empty {
+                    saveConflict = true
+                    return false
+                }
                 context.insert(FinanceDatabaseRecord(payload: encoded))
             }
 
@@ -181,9 +202,48 @@ final class FinanceStorage {
 
     @discardableResult
     func appendTransaction(_ transaction: LedgerTransaction) -> Bool {
-        var value = load()
-        value.transactions.append(transaction)
-        return save(value)
+        saveConflict = false
+        guard let modelContainer, !isCorrupted else {
+            return false
+        }
+
+        let context = ModelContext(modelContainer)
+        do {
+            let records = try context.fetch(FetchDescriptor<FinanceDatabaseRecord>())
+            let value: FinanceData
+            if let record = records.first {
+                guard let decoded = try? JSONDecoder().decode(FinanceData.self, from: record.payload) else {
+                    loadStatus = .corrupted
+                    return false
+                }
+                value = decoded
+            } else {
+                value = .empty
+            }
+
+            guard FinanceTransactionValidator.validate(
+                transaction,
+                in: value,
+                allowArchivedReferences: true
+            ) == nil else {
+                return false
+            }
+
+            var updated = value
+            updated.transactions.append(transaction)
+            let encoded = try JSONEncoder().encode(updated)
+            if let record = records.first {
+                record.payload = encoded
+            } else {
+                context.insert(FinanceDatabaseRecord(payload: encoded))
+            }
+            try context.save()
+            loadStatus = .loaded
+            WatchSyncPublisher.publish(data: updated)
+            return true
+        } catch {
+            return false
+        }
     }
 
     @discardableResult
