@@ -150,6 +150,56 @@ final class FinanceModelTests: XCTestCase {
         )
     }
 
+    func testDataValidatorRejectsMissingTransactionAccount() {
+        let transaction = LedgerTransaction(
+            note: "Broken import",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [
+                MoneyMovement(
+                    accountID: UUID(),
+                    money: Money(currency: .usd, minorUnits: 100)
+                )
+            ],
+            inflows: []
+        )
+        let data = FinanceData(accounts: [], categories: [], transactions: [transaction])
+
+        XCTAssertEqual(
+            FinanceDataValidator.validate(data),
+            .invalidTransaction(index: 0, error: .missingMovementAccount)
+        )
+    }
+
+    func testDataValidatorRejectsCategoryCyclesAndDuplicateIDs() {
+        let categoryID = UUID()
+        let first = LedgerCategory(id: categoryID, name: "First", parentID: nil)
+        let second = LedgerCategory(name: "Second", parentID: categoryID)
+        var cyclicFirst = first
+        cyclicFirst.parentID = second.id
+        let cyclicData = FinanceData(
+            accounts: [],
+            categories: [cyclicFirst, second],
+            transactions: []
+        )
+
+        XCTAssertEqual(
+            FinanceDataValidator.validate(cyclicData),
+            .categoryCycle("First")
+        )
+
+        let duplicate = LedgerCategory(id: categoryID, name: "Duplicate")
+        let duplicateData = FinanceData(
+            accounts: [],
+            categories: [first, duplicate],
+            transactions: []
+        )
+        XCTAssertEqual(
+            FinanceDataValidator.validate(duplicateData),
+            .duplicateIDs("categories")
+        )
+    }
+
     func testExpenseSpendingSubtractsReturnedMoney() {
         let category = LedgerCategory(name: "Food")
         let account = Account(

@@ -491,6 +491,7 @@ final class LedgerStore: ObservableObject {
     @discardableResult
     func replaceData(_ imported: FinanceData, attachmentFiles: [UUID: Data] = [:]) -> Bool {
         let prepared = materializeAttachments(in: imported, files: attachmentFiles)
+        guard validateImportedData(prepared) else { return false }
         let oldPaths = Set(data.attachments.map(\.relativePath))
         guard persist(prepared, successMessage: "Ledger restored", allowingCorruptedReplacement: true) else {
             return false
@@ -529,6 +530,7 @@ final class LedgerStore: ObservableObject {
             updated.exchangeRates.append(rate)
         }
 
+        guard validateImportedData(updated) else { return false }
         return persist(updated, successMessage: "Import completed")
     }
 
@@ -874,5 +876,13 @@ final class LedgerStore: ObservableObject {
         }
         lastActionStatus = successMessage
         return true
+    }
+
+    private func validateImportedData(_ imported: FinanceData) -> Bool {
+        guard let error = FinanceDataValidator.validate(imported) else {
+            return true
+        }
+        lastActionStatus = "Import rejected: \(error.localizedDescription)"
+        return false
     }
 }

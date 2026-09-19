@@ -119,3 +119,142 @@ enum FinanceTransactionValidator {
         return nil
     }
 }
+
+enum FinanceDataValidationError: LocalizedError, Equatable {
+    case duplicateIDs(String)
+    case accountCurrencyMismatch(String)
+    case categoryParentMissing(String)
+    case categoryCycle(String)
+    case invalidTransaction(index: Int, error: FinanceTransactionValidationError)
+    case invalidScheduledTransaction(index: Int, error: FinanceTransactionValidationError)
+    case invalidScheduleRule(index: Int)
+    case invalidTemplate(index: Int, error: FinanceTransactionValidationError)
+    case invalidBudget(index: Int)
+    case invalidExchangeRate(index: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .duplicateIDs(let collection):
+            return "The backup contains duplicate IDs in \(collection)."
+        case .accountCurrencyMismatch(let accountName):
+            return "Account \"\(accountName)\" has an opening balance in the wrong currency."
+        case .categoryParentMissing(let categoryName):
+            return "Category \"\(categoryName)\" refers to a missing parent category."
+        case .categoryCycle(let categoryName):
+            return "Category \"\(categoryName)\" is part of a parent cycle."
+        case .invalidTransaction(let index, let error):
+            return "Transaction \(index + 1) is invalid: \(error.localizedDescription)"
+        case .invalidScheduledTransaction(let index, let error):
+            return "Scheduled transaction \(index + 1) is invalid: \(error.localizedDescription)"
+        case .invalidScheduleRule(let index):
+            return "Scheduled transaction \(index + 1) has an invalid monthly recurrence rule."
+        case .invalidTemplate(let index, let error):
+            return "Template \(index + 1) is invalid: \(error.localizedDescription)"
+        case .invalidBudget(let index):
+            return "Budget \(index + 1) has a missing category, invalid amount, or currency mismatch."
+        case .invalidExchangeRate(let index):
+            return "Exchange rate \(index + 1) is invalid."
+        }
+    }
+}
+
+enum FinanceDataValidator {
+    static func validate(_ data: FinanceData, allowArchivedReferences: Bool = true) -> FinanceDataValidationError? {
+        if hasDuplicateIDs(data.accounts.map(\.id)) {
+            return .duplicateIDs("accounts")
+        }
+        if hasDuplicateIDs(data.categories.map(\.id)) {
+            return .duplicateIDs("categories")
+        }
+        if hasDuplicateIDs(data.transactions.map(\.id)) {
+            return .duplicateIDs("transactions")
+        }
+        if hasDuplicateIDs(data.scheduledTransactions.map(\.id)) {
+            return .duplicateIDs("scheduled transactions")
+        }
+        if hasDuplicateIDs(data.budgets.map(\.id)) {
+            return .duplicateIDs("budgets")
+        }
+        if hasDuplicateIDs(data.templates.map(\.id)) {
+            return .duplicateIDs("templates")
+        }
+        if hasDuplicateIDs(data.attachments.map(\.id)) {
+            return .duplicateIDs("attachments")
+        }
+
+        for account in data.accounts where account.openingBalance.currency != account.currency {
+            return .accountCurrencyMismatch(account.name)
+        }
+
+        let categoriesByID = Dictionary(uniqueKeysWithValues: data.categories.map { ($0.id, $0) })
+        for category in data.categories {
+            if let parentID = category.parentID,
+               categoriesByID[parentID] == nil {
+                return .categoryParentMissing(category.name)
+            }
+
+            var visited: Set<UUID> = []
+            var currentID: UUID? = category.id
+            while let id = currentID {
+                guard visited.insert(id).inserted else {
+                    return .categoryCycle(category.name)
+                }
+                currentID = categoriesByID[id]?.parentID
+            }
+        }
+
+        for (index, transaction) in data.transactions.enumerated() {
+            if let error = FinanceTransactionValidator.validate(
+                transaction,
+                in: data,
+                allowArchivedReferences: allowArchivedReferences
+            ) {
+                return .invalidTransaction(index: index, error: error)
+            }
+        }
+
+        for (index, scheduledTransaction) in data.scheduledTransactions.enumerated() {
+            if scheduledTransaction.recurrenceDay < 1 || scheduledTransaction.recurrenceDay > 31 {
+                return .invalidScheduleRule(index: index)
+            }
+            if let error = FinanceTransactionValidator.validate(
+                scheduledTransaction.transactionTemplate,
+                in: data,
+                allowArchivedReferences: allowArchivedReferences
+            ) {
+                return .invalidScheduledTransaction(index: index, error: error)
+            }
+        }
+
+        for (index, template) in data.templates.enumerated() {
+            if let error = FinanceTransactionValidator.validate(
+                template.transactionTemplate,
+                in: data,
+                allowArchivedReferences: allowArchivedReferences
+            ) {
+                return .invalidTemplate(index: index, error: error)
+            }
+        }
+
+        for (index, budget) in data.budgets.enumerated() {
+            guard data.categories.contains(where: { $0.id == budget.categoryID }),
+                  budget.monthlyLimit.currency == budget.currency,
+                  budget.monthlyLimit.minorUnits > 0 else {
+                return .invalidBudget(index: index)
+            }
+        }
+
+        for (index, rate) in data.exchangeRates.enumerated() {
+            guard rate.baseCurrency != rate.quoteCurrency,
+                  rate.quoteUnitsPerBaseUnit > 0 else {
+                return .invalidExchangeRate(index: index)
+            }
+        }
+
+        return nil
+    }
+
+    private static func hasDuplicateIDs(_ ids: [UUID]) -> Bool {
+        Set(ids).count != ids.count
+    }
+}
