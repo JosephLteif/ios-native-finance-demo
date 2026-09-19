@@ -487,6 +487,11 @@ final class LedgerStore: ObservableObject {
 
     @discardableResult
     func resetLedger() -> Bool {
+        if !storage.isCorrupted,
+           !storage.writeRecoverySnapshot(data) {
+            lastActionStatus = "Reset was not started because the last-good recovery snapshot could not be saved."
+            return false
+        }
         let saved = persist(.empty, successMessage: "Ledger reset", allowingCorruptedReplacement: true)
         if saved { storage.deleteAllAttachments() }
         return saved
