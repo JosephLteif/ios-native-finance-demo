@@ -623,9 +623,11 @@ private struct ImportReviewView: View {
     @ObservedObject var store: LedgerStore
     let candidate: ImportReviewCandidate
     let onImported: () -> Void
+    private let duplicateTransactionIDs: Set<UUID>
 
     @Environment(\.dismiss) private var dismiss
     @State private var importedData: FinanceData
+    @State private var excludedDuplicateIDs: Set<UUID>
     @State private var searchText = ""
     @State private var isShowingConfirmation = false
     @State private var errorMessage: String?
@@ -638,7 +640,14 @@ private struct ImportReviewView: View {
         _store = ObservedObject(wrappedValue: store)
         self.candidate = candidate
         self.onImported = onImported
+        self.duplicateTransactionIDs = FinanceImportReview.duplicateTransactionIDs(
+            in: candidate.result.data,
+            existing: store.data
+        )
         _importedData = State(initialValue: candidate.result.data)
+        _excludedDuplicateIDs = State(
+            initialValue: self.duplicateTransactionIDs
+        )
     }
 
     var body: some View {
@@ -654,6 +663,28 @@ private struct ImportReviewView: View {
                     Text("Nothing has been saved yet. Assign accounts and categories below, then confirm the import.")
                         .font(.footnote)
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
+
+                if !duplicateTransactionIDs.isEmpty {
+                    Section("Possible duplicates") {
+                        Text("These imported rows match transactions already in your ledger. They start excluded; turn one on if it should be imported again.")
+                            .font(.footnote)
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                        ForEach(duplicateTransactionIDs.sorted { $0.uuidString < $1.uuidString }, id: \.self) { transactionID in
+                            if let transaction = importedData.transactions.first(where: { $0.id == transactionID }) {
+                                Toggle(isOn: keepDuplicateBinding(for: transactionID)) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(transaction.note)
+                                            .font(.subheadline.weight(.semibold))
+                                        Text(duplicateSummary(for: transaction))
+                                            .font(.caption)
+                                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if !importedData.accounts.isEmpty {
@@ -695,7 +726,7 @@ private struct ImportReviewView: View {
                     Button("Back") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Import \(importedData.transactions.count)") {
+                    Button("Import \(includedTransactions.count)") {
                         isShowingConfirmation = true
                     }
                 }
@@ -734,6 +765,10 @@ private struct ImportReviewView: View {
         return categories
     }
 
+    private var includedTransactions: [LedgerTransaction] {
+        importedData.transactions.filter { !excludedDuplicateIDs.contains($0.id) }
+    }
+
     private var filteredTransactionIndices: [Int] {
         importedData.transactions.indices.filter { index in
             guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
@@ -750,7 +785,7 @@ private struct ImportReviewView: View {
     }
 
     private var importedRowCountLabel: String {
-        String(importedData.transactions.count) + " rows"
+        String(includedTransactions.count) + " rows"
     }
 
     private var skippedRowCountLabel: String {
@@ -762,6 +797,24 @@ private struct ImportReviewView: View {
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )
+    }
+
+    private func keepDuplicateBinding(for id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { !excludedDuplicateIDs.contains(id) },
+            set: { keep in
+                if keep {
+                    excludedDuplicateIDs.remove(id)
+                } else {
+                    excludedDuplicateIDs.insert(id)
+                }
+            }
+        )
+    }
+
+    private func duplicateSummary(for transaction: LedgerTransaction) -> String {
+        let amount = (transaction.outflows.first?.money ?? transaction.inflows.first?.money)?.formatted ?? "—"
+        return "\(transaction.date.formatted(.dateTime.month(.abbreviated).day().year())) · \(amount)"
     }
 
     private func categoryPath(for categoryID: UUID?) -> String {
@@ -780,7 +833,13 @@ private struct ImportReviewView: View {
     }
 
     private func importRows() {
-        let prepared = FinanceImportReview.removingUnusedCreatedRecords(from: importedData)
+        guard !includedTransactions.isEmpty else {
+            errorMessage = "Keep at least one row before importing."
+            return
+        }
+        var selectedData = importedData
+        selectedData.transactions = includedTransactions
+        let prepared = FinanceImportReview.removingUnusedCreatedRecords(from: selectedData)
         if !candidate.createMissingAccounts && !prepared.accounts.isEmpty {
             errorMessage = "Map the remaining new accounts to existing accounts, or enable account creation before importing."
             return

@@ -263,6 +263,22 @@ struct FinanceImportResult {
 }
 
 enum FinanceImportReview {
+    static func duplicateTransactionIDs(
+        in imported: FinanceData,
+        existing: FinanceData
+    ) -> Set<UUID> {
+        let existingFingerprints = Set(
+            existing.transactions.map { transactionFingerprint($0, in: existing) }
+        )
+        return Set(
+            imported.transactions.compactMap { transaction in
+                existingFingerprints.contains(transactionFingerprint(transaction, in: imported))
+                    ? transaction.id
+                    : nil
+            }
+        )
+    }
+
     static func removingUnusedCreatedRecords(from data: FinanceData) -> FinanceData {
         var prepared = data
         let referencedAccountIDs = Set(
@@ -284,6 +300,56 @@ enum FinanceImportReview {
         prepared.categories.removeAll { !referencedCategoryIDs.contains($0.id) }
 
         return prepared
+    }
+
+    private static func transactionFingerprint(
+        _ transaction: LedgerTransaction,
+        in data: FinanceData
+    ) -> String {
+        let day = Calendar.current.startOfDay(for: transaction.date).timeIntervalSince1970
+        let category = categoryPath(for: transaction.categoryID, in: data)
+        let outflows = movementFingerprints(transaction.outflows, in: data).joined(separator: ";")
+        let inflows = movementFingerprints(transaction.inflows, in: data).joined(separator: ";")
+        let amountDue = transaction.amountDue.map { "\($0.currency.rawValue):\($0.minorUnits)" } ?? "-"
+        return [
+            String(Int64(day)),
+            transaction.kind.rawValue,
+            transaction.note.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+            category,
+            outflows,
+            inflows,
+            amountDue
+        ].joined(separator: "|")
+    }
+
+    private static func movementFingerprints(
+        _ movements: [MoneyMovement],
+        in data: FinanceData
+    ) -> [String] {
+        movements.map { movement in
+            let account = data.accounts.first(where: { $0.id == movement.accountID })
+            return [
+                account?.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "?",
+                movement.money.currency.rawValue,
+                String(movement.money.minorUnits)
+            ].joined(separator: ":")
+        }.sorted()
+    }
+
+    private static func categoryPath(
+        for categoryID: UUID?,
+        in data: FinanceData
+    ) -> String {
+        var names: [String] = []
+        var currentID = categoryID
+        var visited: Set<UUID> = []
+        while let id = currentID,
+              visited.insert(id).inserted,
+              let category = data.categories.first(where: { $0.id == id }) {
+            names.append(category.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            currentID = category.parentID
+        }
+        return names.reversed().joined(separator: "/")
     }
 }
 

@@ -352,6 +352,57 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(Set(prepared.categories.map(\.id)), Set([root.id, child.id]))
     }
 
+    func testImportReviewDetectsLikelyDuplicateTransactions() {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let category = LedgerCategory(name: "Food")
+        let transaction = LedgerTransaction(
+            date: Date(timeIntervalSince1970: 1_700_000_000),
+            note: "Lunch",
+            kind: .expense,
+            categoryID: category.id,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 1_250)
+                )
+            ],
+            inflows: []
+        )
+        let existing = FinanceData(
+            accounts: [account],
+            categories: [category],
+            transactions: [transaction]
+        )
+        let importedTransaction = LedgerTransaction(
+            date: transaction.date,
+            note: transaction.note,
+            kind: transaction.kind,
+            categoryID: category.id,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 1_250)
+                )
+            ],
+            inflows: []
+        )
+        let imported = FinanceData(
+            accounts: [account],
+            categories: [category],
+            transactions: [importedTransaction]
+        )
+
+        XCTAssertEqual(
+            FinanceImportReview.duplicateTransactionIDs(in: imported, existing: existing),
+            [importedTransaction.id]
+        )
+    }
+
     func testRolloverCarriesUnusedPriorMonthAllowance() {
         let calendar = Calendar(identifier: .gregorian)
         let currentMonth = calendar.dateInterval(of: .month, for: .now)!
