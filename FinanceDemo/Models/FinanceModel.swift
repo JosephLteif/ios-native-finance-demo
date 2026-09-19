@@ -625,6 +625,25 @@ struct LedgerBudget: Identifiable, Codable, Equatable {
     }
 }
 
+func financeNetExpenseAmount(
+    _ transaction: LedgerTransaction,
+    currency: LedgerCurrency,
+    in data: FinanceData
+) -> Int64 {
+    guard transaction.kind == .expense else { return 0 }
+
+    func includedAmount(_ movements: [MoneyMovement]) -> Int64 {
+        movements
+            .filter { movement in
+                movement.money.currency == currency
+                    && data.accounts.first(where: { $0.id == movement.accountID })?.includeInTotals == true
+            }
+            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+    }
+
+    return max(includedAmount(transaction.outflows) - includedAmount(transaction.inflows), 0)
+}
+
 func financeBudgetSpent(
     _ budget: LedgerBudget,
     in data: FinanceData,
@@ -640,12 +659,9 @@ func financeBudgetSpent(
                 && period.contains($0.date)
                 && $0.categoryID == budget.categoryID
         }
-        .flatMap(\.outflows)
-        .filter { movement in
-            data.accounts.first(where: { $0.id == movement.accountID })?.includeInTotals == true
-                && movement.money.currency == budget.currency
+        .reduce(Int64.zero) { total, transaction in
+            total + financeNetExpenseAmount(transaction, currency: budget.currency, in: data)
         }
-        .reduce(Int64.zero) { $0 + $1.money.minorUnits }
     return Money(currency: budget.currency, minorUnits: spent)
 }
 

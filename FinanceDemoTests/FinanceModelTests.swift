@@ -150,6 +150,49 @@ final class FinanceModelTests: XCTestCase {
         )
     }
 
+    func testExpenseSpendingSubtractsReturnedMoney() {
+        let category = LedgerCategory(name: "Food")
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 5_000)
+        )
+        let transaction = LedgerTransaction(
+            note: "Lunch",
+            kind: .expense,
+            categoryID: category.id,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 2_000)
+                )
+            ],
+            inflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 500)
+                )
+            ]
+        )
+        let data = FinanceData(
+            accounts: [account],
+            categories: [category],
+            transactions: [transaction]
+        )
+
+        XCTAssertEqual(
+            financeNetExpenseAmount(transaction, currency: .usd, in: data),
+            1_500
+        )
+        let budget = LedgerBudget(
+            categoryID: category.id,
+            currency: .usd,
+            monthlyLimit: Money(currency: .usd, minorUnits: 5_000)
+        )
+        XCTAssertEqual(financeBudgetSpent(budget, in: data).minorUnits, 1_500)
+    }
+
     func testBackupBundleRoundTripsAttachmentBytes() throws {
         let attachment = LedgerAttachment(
             fileName: "receipt.jpg",

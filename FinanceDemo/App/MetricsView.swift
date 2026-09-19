@@ -75,7 +75,17 @@ struct MetricsView: View {
     }
 
     private var expenseTotals: [LedgerCurrency: Int64] {
-        totals(for: .expense, movements: \LedgerTransaction.outflows)
+        var totals: [LedgerCurrency: Int64] = [:]
+        for transaction in filteredTransactions where transaction.kind == .expense {
+            for currency in LedgerCurrency.allCases {
+                totals[currency, default: 0] += financeNetExpenseAmount(
+                    transaction,
+                    currency: currency,
+                    in: store.data
+                )
+            }
+        }
+        return totals
     }
 
     private var incomeTotals: [LedgerCurrency: Int64] {
@@ -92,13 +102,14 @@ struct MetricsView: View {
         for transaction in filteredTransactions where transaction.kind == .expense {
             let categoryID = transaction.categoryID
             let categoryName = store.categoryPath(for: categoryID)
-            let movements = transaction.outflows.filter {
-                $0.money.currency == selectedCurrency && store.includesInTotals(accountID: $0.accountID)
-            }
-            guard !movements.isEmpty else { continue }
+            let amount = financeNetExpenseAmount(
+                transaction,
+                currency: selectedCurrency,
+                in: store.data
+            )
+            guard amount > 0 else { continue }
 
             let key = "\(categoryID?.uuidString ?? "uncategorized")-\(selectedCurrency.rawValue)"
-            let amount = movements.reduce(Int64.zero) { $0 + $1.money.minorUnits }
             let current = metrics[key] ?? (categoryID, categoryName, 0, 0)
             metrics[key] = (
                 current.categoryID,
@@ -840,12 +851,7 @@ private struct CategoryMetricsDetailView: View {
     }
 
     private func transactionAmount(_ transaction: LedgerTransaction) -> Int64 {
-        transaction.outflows
-            .filter {
-                $0.money.currency == currency
-                    && store.includesInTotals(accountID: $0.accountID)
-            }
-            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+        financeNetExpenseAmount(transaction, currency: currency, in: store.data)
     }
 
     private func accountNames(for transaction: LedgerTransaction) -> String {

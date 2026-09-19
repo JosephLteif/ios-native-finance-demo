@@ -768,8 +768,12 @@ final class LedgerStore: ObservableObject {
         var totals: [LedgerCurrency: Int64] = [:]
 
         for transaction in data.transactions where transaction.kind == .expense && transaction.date >= monthStart {
-            for movement in transaction.outflows where includesInTotals(accountID: movement.accountID) {
-                totals[movement.money.currency, default: 0] += movement.money.minorUnits
+            for currency in LedgerCurrency.allCases {
+                totals[currency, default: 0] += financeNetExpenseAmount(
+                    transaction,
+                    currency: currency,
+                    in: data
+                )
             }
         }
 
