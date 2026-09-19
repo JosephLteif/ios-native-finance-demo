@@ -122,7 +122,10 @@ private final class PocketLedgerTabBarController: UITabBarController {
     weak var addButton: UIButton?
 
     func installVisibleTabBar(items: [UITabBarItem], delegate: any UITabBarDelegate) {
-        tabBar.isHidden = true
+        tabBar.isHidden = false
+        tabBar.alpha = 0.001
+        tabBar.isUserInteractionEnabled = false
+        tabBar.accessibilityElementsHidden = true
         visibleTabBar.items = items
         visibleTabBar.delegate = delegate
         visibleTabBar.tintColor = UIColor(PocketLedgerTheme.accent)
@@ -141,13 +144,13 @@ private final class PocketLedgerTabBarController: UITabBarController {
 
         guard visibleTabBar.superview != nil else { return }
 
-        let baseBottomInset = max(0, view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom)
-        let tabBarHeight = max(49, visibleTabBar.sizeThatFits(view.bounds.size).height)
+        let systemTabBarFrame = tabBar.frame
+        let tabBarHeight = max(49, systemTabBarFrame.height)
         let buttonSize: CGFloat = 44
-        let buttonTrailing = view.bounds.width - view.safeAreaInsets.right + additionalSafeAreaInsets.right - 16
+        let buttonTrailing = view.bounds.width - view.safeAreaInsets.right - 16
         let buttonFrame = CGRect(
             x: buttonTrailing - buttonSize,
-            y: view.bounds.height - baseBottomInset - tabBarHeight / 2 - buttonSize / 2,
+            y: systemTabBarFrame.midY - buttonSize / 2,
             width: buttonSize,
             height: buttonSize
         )
@@ -155,18 +158,12 @@ private final class PocketLedgerTabBarController: UITabBarController {
         let gap: CGFloat = 12
         let tabBarFrame = CGRect(
             x: max(view.safeAreaInsets.left, 16),
-            y: view.bounds.height - baseBottomInset - tabBarHeight,
+            y: systemTabBarFrame.minY,
             width: max(0, buttonFrame.minX - gap - max(view.safeAreaInsets.left, 16)),
             height: tabBarHeight
         )
         visibleTabBar.frame = tabBarFrame
         addButton?.frame = buttonFrame
-
-        var additionalInsets = additionalSafeAreaInsets
-        additionalInsets.bottom = tabBarHeight + 12
-        if additionalInsets != additionalSafeAreaInsets {
-            additionalSafeAreaInsets = additionalInsets
-        }
     }
 }
 
