@@ -179,7 +179,7 @@ private extension NumberFormatter {
     }
 }
 
-enum AccountType: String, Codable, CaseIterable, Identifiable, Hashable {
+enum AccountType: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
     case cash
     case bankAccount
     case loan

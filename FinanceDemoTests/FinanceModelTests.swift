@@ -369,6 +369,110 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(account.type, .bankAccount)
     }
 
+    func testImportUsesAccountSuggestionWhenMappedValuesAreMissing() throws {
+        let table = ImportedTable(
+            id: "accounts",
+            name: "Accounts",
+            columns: ["Date", "Amount", "Account"],
+            rows: [["2026-09-06", "10", "Emergency Reserve"]]
+        )
+        let accountName = "Emergency Reserve"
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: nil,
+                defaultDestinationAccountID: nil,
+                createMissingAccounts: true,
+                createMissingCategories: true,
+                accountSuggestions: [
+                    ImportAccountCandidate.key(for: accountName): ImportAccountSuggestion(
+                        type: .bankAccount,
+                        currency: .eur
+                    )
+                ]
+            ),
+            existing: FinanceData(accounts: [], categories: [], transactions: [])
+        )
+
+        let account = try XCTUnwrap(result.data.accounts.first)
+        XCTAssertEqual(account.name, accountName)
+        XCTAssertEqual(account.type, .bankAccount)
+        XCTAssertEqual(account.currency, .eur)
+        XCTAssertEqual(
+            result.data.transactions.first?.outflows.first?.money,
+            Money(currency: .eur, minorUnits: 1_000)
+        )
+    }
+
+    func testImportExplicitAccountValuesOverrideAccountSuggestion() throws {
+        let table = ImportedTable(
+            id: "accounts",
+            name: "Accounts",
+            columns: ["Date", "Amount", "Account", "Currency", "Account Type"],
+            rows: [["2026-09-06", "10", "Emergency Reserve", "LBP", "Cash"]]
+        )
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: nil,
+                defaultDestinationAccountID: nil,
+                createMissingAccounts: true,
+                createMissingCategories: true,
+                accountSuggestions: [
+                    ImportAccountCandidate.key(for: "Emergency Reserve"): ImportAccountSuggestion(
+                        type: .loan,
+                        currency: .eur
+                    )
+                ]
+            ),
+            existing: FinanceData(accounts: [], categories: [], transactions: [])
+        )
+
+        let account = try XCTUnwrap(result.data.accounts.first)
+        XCTAssertEqual(account.type, .cash)
+        XCTAssertEqual(account.currency, .lbp)
+    }
+
+    func testImportAccountCandidatesCombineSourceAndDestinationAccountsForOneBatch() {
+        let table = ImportedTable(
+            id: "transfers",
+            name: "Transfers",
+            columns: [
+                "Date", "Amount", "Account", "Destination Account",
+                "Currency", "Destination Currency", "Account Type", "Destination Account Type"
+            ],
+            rows: [
+                ["2026-09-06", "10", "Wallet", "Savings", "USD", "EUR", "Cash", "Bank account"],
+                ["2026-09-07", "15", "wallet", "Savings", "USD", "EUR", "Cash", "Bank account"]
+            ]
+        )
+        let mapping: [ImportField: String?] = [
+            .account: "Account",
+            .destinationAccount: "Destination Account",
+            .currency: "Currency",
+            .destinationCurrency: "Destination Currency",
+            .accountType: "Account Type",
+            .destinationAccountType: "Destination Account Type"
+        ]
+
+        let candidates = FinanceImportBuilder.accountImportCandidates(
+            table: table,
+            mapping: mapping
+        )
+
+        XCTAssertEqual(candidates.map(\.name), ["Savings", "Wallet"])
+        XCTAssertEqual(candidates.first { ImportAccountCandidate.key(for: $0.name) == "wallet" }?.observedCurrencies, ["USD"])
+        XCTAssertEqual(candidates.first { ImportAccountCandidate.key(for: $0.name) == "savings" }?.observedCurrencies, ["EUR"])
+    }
+
     func testImportReusesMatchingAccountNameBeforeCreatingDuplicate() throws {
         let account = Account(
             name: "Wallet",

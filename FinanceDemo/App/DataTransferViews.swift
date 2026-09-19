@@ -458,6 +458,7 @@ private struct ImportMappingView: View {
     @State private var createMissingCategories = true
     @State private var errorMessage: String?
     @State private var reviewCandidate: ImportReviewCandidate?
+    @State private var isPreparingReview = false
 
     init(store: LedgerStore, document: ImportedDocument) {
         _store = ObservedObject(wrappedValue: store)
@@ -545,7 +546,7 @@ private struct ImportMappingView: View {
                     Toggle("Create missing accounts", isOn: $createMissingAccounts)
                     Toggle("Create missing categories", isOn: $createMissingCategories)
 
-                    Text("The next screen reviews every parsed row before anything is saved. These options decide whether you may keep provisional accounts or categories.")
+                    Text("The next screen reviews every parsed row before anything is saved. When available, on-device Apple Intelligence classifies all imported account names in one pass. If it is unavailable, mapped values, existing accounts, and account-name hints provide the fallback.")
                         .font(.footnote)
                         .foregroundStyle(PocketLedgerTheme.textTertiary)
                 }
@@ -575,8 +576,8 @@ private struct ImportMappingView: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Review import", action: reviewImport)
-                        .disabled(!isReadyToImport)
+                    Button(isPreparingReview ? "Preparing…" : "Review import", action: reviewImport)
+                        .disabled(!isReadyToImport || isPreparingReview)
                 }
             }
             .onChange(of: selectedTableID) { _, newValue in
@@ -620,33 +621,61 @@ private struct ImportMappingView: View {
     }
 
     private func reviewImport() {
-        let options = ImportOptions(
-            defaultKind: defaultKind,
-            defaultCurrency: defaultCurrency,
-            defaultAccountID: defaultAccountID,
-            defaultDestinationAccountID: defaultDestinationAccountID,
-            // Missing records are provisional until the review is confirmed. This keeps
-            // rows available so the user can map them to an existing record first.
-            createMissingAccounts: true,
-            createMissingCategories: true
+        guard !isPreparingReview else { return }
+        isPreparingReview = true
+
+        let table = selectedTable
+        let currentMapping = mapping
+        let accountCandidates = FinanceImportBuilder.accountImportCandidates(
+            table: table,
+            mapping: currentMapping
         )
 
-        do {
-            let result = try FinanceImportBuilder.build(
-                table: selectedTable,
-                mapping: mapping,
-                options: options,
-                existing: store.data
+        Task { @MainActor in
+            defer { isPreparingReview = false }
+
+            let accountMapping = await FoundationModelService.classifyImportAccounts(accountCandidates)
+            guard !Task.isCancelled else { return }
+
+            let options = ImportOptions(
+                defaultKind: defaultKind,
+                defaultCurrency: defaultCurrency,
+                defaultAccountID: defaultAccountID,
+                defaultDestinationAccountID: defaultDestinationAccountID,
+                // Missing records are provisional until the review is confirmed. This keeps
+                // rows available so the user can map them to an existing record first.
+                createMissingAccounts: true,
+                createMissingCategories: true,
+                accountSuggestions: accountMapping.suggestions
             )
-            reviewCandidate = ImportReviewCandidate(
-                fileName: document.fileName,
-                tableName: selectedTable.name,
-                result: result,
-                createMissingAccounts: createMissingAccounts,
-                createMissingCategories: createMissingCategories
-            )
-        } catch {
-            errorMessage = error.localizedDescription
+
+            do {
+                let builtResult = try FinanceImportBuilder.build(
+                    table: table,
+                    mapping: currentMapping,
+                    options: options,
+                    existing: store.data
+                )
+                var warnings = builtResult.warnings
+                if let warning = accountMapping.warning {
+                    warnings.insert(warning, at: 0)
+                }
+                let result = FinanceImportResult(
+                    data: builtResult.data,
+                    importedRows: builtResult.importedRows,
+                    skippedRows: builtResult.skippedRows,
+                    warnings: warnings
+                )
+                reviewCandidate = ImportReviewCandidate(
+                    fileName: document.fileName,
+                    tableName: table.name,
+                    result: result,
+                    createMissingAccounts: createMissingAccounts,
+                    createMissingCategories: createMissingCategories
+                )
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }
@@ -924,7 +953,7 @@ private struct ImportReviewAccountsSection: View {
                 Text("Accounts that may be created")
             },
             footer: {
-                Text("Currency and type are inferred from mapped values, matching account names, and account-name hints, with your import defaults as the fallback. You can change either value before importing. If you assign rows to existing accounts, unused provisional accounts will not be created.")
+                Text("The import attempts one on-device AI pass for all account names when available. Explicit mapped values and existing accounts take precedence; otherwise deterministic account-name hints and import defaults are used. You can change either value before importing. If you assign rows to existing accounts, unused provisional accounts will not be created.")
             }
         )
     }

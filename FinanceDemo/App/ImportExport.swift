@@ -263,6 +263,22 @@ struct ImportOptions {
     let defaultDestinationAccountID: UUID?
     let createMissingAccounts: Bool
     let createMissingCategories: Bool
+    let accountSuggestions: [String: ImportAccountSuggestion] = [:]
+}
+
+struct ImportAccountCandidate: Equatable, Sendable {
+    let name: String
+    let observedCurrencies: [String]
+    let observedTypes: [String]
+
+    static func key(for name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
+struct ImportAccountSuggestion: Equatable, Sendable {
+    let type: AccountType?
+    let currency: LedgerCurrency?
 }
 
 struct FinanceImportResult {
@@ -1359,6 +1375,61 @@ private final class XLSXWorksheetDelegate: NSObject, XMLParserDelegate {
 }
 
 enum FinanceImportBuilder {
+    static func accountImportCandidates(
+        table: ImportedTable,
+        mapping: [ImportField: String?]
+    ) -> [ImportAccountCandidate] {
+        struct AccumulatedCandidate {
+            var name: String
+            var currencies: [String] = []
+            var types: [String] = []
+        }
+
+        var accumulated: [String: AccumulatedCandidate] = [:]
+
+        func addCandidate(
+            name rawName: String,
+            currency rawCurrency: String,
+            type rawType: String
+        ) {
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return }
+
+            let key = ImportAccountCandidate.key(for: name)
+            var candidate = accumulated[key] ?? AccumulatedCandidate(name: name)
+            if !rawCurrency.isEmpty, !candidate.currencies.contains(rawCurrency) {
+                candidate.currencies.append(rawCurrency)
+            }
+            if !rawType.isEmpty, !candidate.types.contains(rawType) {
+                candidate.types.append(rawType)
+            }
+            accumulated[key] = candidate
+        }
+
+        for row in table.rows {
+            addCandidate(
+                name: value(for: .account, in: row, table: table, mapping: mapping),
+                currency: value(for: .currency, in: row, table: table, mapping: mapping),
+                type: value(for: .accountType, in: row, table: table, mapping: mapping)
+            )
+            addCandidate(
+                name: value(for: .destinationAccount, in: row, table: table, mapping: mapping),
+                currency: value(for: .destinationCurrency, in: row, table: table, mapping: mapping),
+                type: value(for: .destinationAccountType, in: row, table: table, mapping: mapping)
+            )
+        }
+
+        return accumulated.values
+            .map {
+                ImportAccountCandidate(
+                    name: $0.name,
+                    observedCurrencies: $0.currencies,
+                    observedTypes: $0.types
+                )
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     static func build(
         table: ImportedTable,
         mapping: [ImportField: String?],
@@ -1388,6 +1459,7 @@ enum FinanceImportBuilder {
                     ?? (existing.accounts + importedAccounts).first(where: {
                         !$0.name.isEmpty && $0.name.caseInsensitiveCompare(accountName) == .orderedSame
                     })?.currency
+                    ?? accountSuggestion(for: accountName, in: options.accountSuggestions)?.currency
                     ?? inferredCurrency(for: accountName, fallback: options.defaultCurrency)
                 let signedAmount = try parseAmount(rawAmount, currency: preferredCurrency)
                 guard signedAmount.minorUnits != 0 else {
@@ -1402,7 +1474,8 @@ enum FinanceImportBuilder {
                     name: accountName,
                     currency: preferredCurrency,
                     explicitCurrency: explicitCurrency,
-                    type: parseAccountType(value(for: .accountType, in: row, table: table, mapping: mapping)),
+                    type: parseAccountType(value(for: .accountType, in: row, table: table, mapping: mapping))
+                        ?? accountSuggestion(for: accountName, in: options.accountSuggestions)?.type,
                     options: options,
                     existing: existing,
                     imported: &importedAccounts
@@ -1451,7 +1524,10 @@ enum FinanceImportBuilder {
                     }) {
                         destinationCurrency = namedDestination.currency
                     } else {
-                        destinationCurrency = inferredCurrency(for: destinationName, fallback: currency)
+                        destinationCurrency = accountSuggestion(
+                            for: destinationName,
+                            in: options.accountSuggestions
+                        )?.currency ?? inferredCurrency(for: destinationName, fallback: currency)
                     }
                     let destinationAmountValue = value(for: .destinationAmount, in: row, table: table, mapping: mapping)
                     let destinationAmount = destinationAmountValue.isEmpty
@@ -1471,7 +1547,10 @@ enum FinanceImportBuilder {
                         explicitCurrency: explicitDestinationCurrency,
                         type: parseAccountType(
                             value(for: .destinationAccountType, in: row, table: table, mapping: mapping)
-                        ),
+                        ) ?? accountSuggestion(
+                            for: destinationName,
+                            in: options.accountSuggestions
+                        )?.type,
                         options: options,
                         existing: existing,
                         imported: &importedAccounts
@@ -1548,6 +1627,15 @@ enum FinanceImportBuilder {
             return ""
         }
         return row[index].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func accountSuggestion(
+        for name: String,
+        in suggestions: [String: ImportAccountSuggestion]
+    ) -> ImportAccountSuggestion? {
+        let key = ImportAccountCandidate.key(for: name)
+        return suggestions[key]
+            ?? suggestions.first(where: { ImportAccountCandidate.key(for: $0.key) == key })?.value
     }
 
     private static func resolveAccount(
