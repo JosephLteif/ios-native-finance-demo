@@ -478,6 +478,7 @@ private struct DashboardView: View {
                     dashboardHeader
                     balanceHero
                     monthSnapshot
+                    upcomingSchedules
                     budgetSnapshot
                     recentActivity
                     storageNotice
@@ -618,6 +619,108 @@ private struct DashboardView: View {
             }
             .padding(14)
             .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 17))
+        }
+    }
+
+    @ViewBuilder
+    private var upcomingSchedules: some View {
+        let schedules = store.data.scheduledTransactions
+            .filter(\.isEnabled)
+            .sorted { lhs, rhs in
+                if lhs.nextRunDate != rhs.nextRunDate {
+                    return lhs.nextRunDate < rhs.nextRunDate
+                }
+                return lhs.note.localizedCaseInsensitiveCompare(rhs.note) == .orderedAscending
+            }
+
+        if !schedules.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    sectionHeader(title: "Upcoming", detail: "Bills & recurring entries")
+                    NavigationLink {
+                        ScheduledTransactionsView(store: store)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    }
+                    .accessibilityLabel("Open scheduled transactions")
+                }
+
+                VStack(spacing: 0) {
+                    ForEach(Array(schedules.prefix(3))) { schedule in
+                        upcomingScheduleRow(schedule)
+                        if schedule.id != schedules.prefix(3).last?.id {
+                            Divider().overlay(PocketLedgerTheme.divider)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 17))
+
+                if schedules.count > 3 {
+                    Text("+\(schedules.count - 3) more scheduled \(schedules.count - 3 == 1 ? "entry" : "entries")")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                        .padding(.horizontal, 4)
+                }
+            }
+        }
+    }
+
+    private func upcomingScheduleRow(_ schedule: ScheduledTransaction) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: schedule.kind == .income ? "arrow.down.left" : "calendar.badge.clock")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(schedule.kind == .income ? PocketLedgerTheme.income : PocketLedgerTheme.accent)
+                .frame(width: 28, height: 28)
+                .background(PocketLedgerTheme.surfaceElevated, in: Circle())
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(schedule.note.isEmpty ? schedule.kind.displayName : schedule.note)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text(store.transactionSummary(schedule.transactionTemplate))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(upcomingDateLabel(schedule.nextRunDate))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(PocketLedgerTheme.accent)
+                Text(schedule.nextRunDate.formatted(.dateTime.month(.abbreviated).day()))
+                    .font(.caption2)
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+            }
+        }
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(schedule.note.isEmpty ? schedule.kind.displayName : schedule.note), \(store.transactionSummary(schedule.transactionTemplate)), \(upcomingDateLabel(schedule.nextRunDate))"
+        )
+    }
+
+    private func upcomingDateLabel(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: .now)
+        let target = calendar.startOfDay(for: date)
+        let days = calendar.dateComponents([.day], from: start, to: target).day ?? 0
+
+        switch days {
+        case ..<0:
+            return "Due"
+        case 0:
+            return "Today"
+        case 1:
+            return "Tomorrow"
+        case 2...6:
+            return "In \(days) days"
+        default:
+            return date.formatted(.dateTime.weekday(.abbreviated))
         }
     }
 
