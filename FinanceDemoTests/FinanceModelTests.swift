@@ -311,6 +311,113 @@ final class FinanceModelTests: XCTestCase {
         )
     }
 
+    func testMoneyRecastPreservesDisplayedNumericAmount() {
+        XCTAssertEqual(
+            Money(currency: .usd, minorUnits: 1_000).recast(to: .lbp),
+            Money(currency: .lbp, minorUnits: 10)
+        )
+        XCTAssertEqual(
+            Money(currency: .lbp, minorUnits: 10).recast(to: .usd),
+            Money(currency: .usd, minorUnits: 1_000)
+        )
+    }
+
+    func testImportInfersCurrencyAndAccountTypeFromAccountName() throws {
+        let table = ImportedTable(
+            id: "accounts",
+            name: "Accounts",
+            columns: ["Date", "Amount", "Account"],
+            rows: [["2026-09-06", "10", "EUR Savings"]]
+        )
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: nil,
+                defaultDestinationAccountID: nil,
+                createMissingAccounts: true,
+                createMissingCategories: true
+            ),
+            existing: FinanceData(accounts: [], categories: [], transactions: [])
+        )
+
+        let account = try XCTUnwrap(result.data.accounts.first)
+        XCTAssertEqual(account.currency, .eur)
+        XCTAssertEqual(account.type, .bankAccount)
+    }
+
+    func testImportReusesMatchingAccountNameBeforeCreatingDuplicate() throws {
+        let account = Account(
+            name: "Wallet",
+            type: .cash,
+            currency: .lbp,
+            openingBalance: Money(currency: .lbp, minorUnits: 0)
+        )
+        let table = ImportedTable(
+            id: "accounts",
+            name: "Accounts",
+            columns: ["Date", "Amount", "Account"],
+            rows: [["2026-09-06", "10", "Wallet"]]
+        )
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: nil,
+                defaultDestinationAccountID: nil,
+                createMissingAccounts: true,
+                createMissingCategories: true
+            ),
+            existing: FinanceData(accounts: [account])
+        )
+
+        XCTAssertTrue(result.data.accounts.isEmpty)
+        XCTAssertEqual(result.data.transactions.first?.outflows.first?.accountID, account.id)
+        XCTAssertEqual(result.data.transactions.first?.outflows.first?.money, Money(currency: .lbp, minorUnits: 10))
+    }
+
+    func testAccountCurrencyMigrationUpdatesOpeningBalanceAndTransactions() throws {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 1_000)
+        )
+        let transaction = LedgerTransaction(
+            note: "Lunch",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 1_000)
+                )
+            ],
+            inflows: []
+        )
+
+        let migrated = FinanceAccountCurrencyMigration.migrating(
+            FinanceData(accounts: [account], transactions: [transaction]),
+            accountID: account.id,
+            from: .usd,
+            to: .lbp
+        )
+
+        XCTAssertEqual(migrated.accounts.first?.currency, .lbp)
+        XCTAssertEqual(migrated.accounts.first?.openingBalance, Money(currency: .lbp, minorUnits: 10))
+        XCTAssertEqual(
+            migrated.transactions.first?.outflows.first?.money,
+            Money(currency: .lbp, minorUnits: 10)
+        )
+        XCTAssertNil(FinanceDataValidator.validate(migrated))
+    }
+
     func testImportReviewDropsUnusedCreatedRecordsAndKeepsCategoryAncestors() {
         let usedAccount = Account(
             name: "Imported cash",

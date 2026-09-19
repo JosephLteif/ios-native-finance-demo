@@ -730,7 +730,14 @@ private struct ImportReviewView: View {
                 }
 
                 if !importedData.accounts.isEmpty {
-                    ImportReviewAccountsSection(accounts: $importedData.accounts)
+                    ImportReviewAccountsSection(accounts: $importedData.accounts) { accountID, oldCurrency, newCurrency in
+                        importedData = FinanceAccountCurrencyMigration.migrating(
+                            importedData,
+                            accountID: accountID,
+                            from: oldCurrency,
+                            to: newCurrency
+                        )
+                    }
                 }
 
                 if !importedData.categories.isEmpty {
@@ -901,19 +908,23 @@ private struct ImportReviewView: View {
 
 private struct ImportReviewAccountsSection: View {
     @Binding var accounts: [Account]
+    let onCurrencyChange: (UUID, LedgerCurrency, LedgerCurrency) -> Void
 
     var body: some View {
         Section(
             content: {
                 ForEach(accounts.indices, id: \.self) { index in
-                    ImportReviewAccountRow(account: $accounts[index])
+                    ImportReviewAccountRow(
+                        account: $accounts[index],
+                        onCurrencyChange: onCurrencyChange
+                    )
                 }
             },
             header: {
                 Text("Accounts that may be created")
             },
             footer: {
-                Text("These accounts are provisional. If you assign their rows to existing accounts, unused provisional accounts will not be created.")
+                Text("Currency and type are inferred from mapped values, matching account names, and account-name hints, with your import defaults as the fallback. You can change either value before importing. If you assign rows to existing accounts, unused provisional accounts will not be created.")
             }
         )
     }
@@ -997,6 +1008,7 @@ private struct ImportReviewTransactionsSection: View {
 
 private struct ImportReviewAccountRow: View {
     @Binding var account: Account
+    let onCurrencyChange: (UUID, LedgerCurrency, LedgerCurrency) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1013,9 +1025,20 @@ private struct ImportReviewAccountRow: View {
                 }
             }
 
+            Picker("Currency", selection: $account.currency) {
+                ForEach(LedgerCurrency.allCases) { currency in
+                    Text(currency.rawValue).tag(currency)
+                }
+            }
+
             Toggle("Include in totals", isOn: $account.includeInTotals)
         }
         .padding(.vertical, 4)
+        .onChange(of: account.currency) { oldCurrency, newCurrency in
+            guard oldCurrency != newCurrency else { return }
+            account.openingBalance = account.openingBalance.recast(to: newCurrency)
+            onCurrencyChange(account.id, oldCurrency, newCurrency)
+        }
     }
 }
 

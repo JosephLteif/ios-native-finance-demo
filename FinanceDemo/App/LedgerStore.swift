@@ -274,17 +274,15 @@ final class LedgerStore: ObservableObject {
             return false
         }
         let original = data.accounts[index]
-        let hasMovements = data.transactions.contains {
-            ($0.outflows + $0.inflows).contains { $0.accountID == account.id }
-        } || data.scheduledTransactions.contains {
-            ($0.outflows + $0.inflows).contains { $0.accountID == account.id }
-        }
-        guard !hasMovements || original.currency == account.currency else {
-            lastActionStatus = "An account with activity cannot change currency"
-            return false
-        }
 
-        var updated = data
+        var updated = original.currency == account.currency
+            ? data
+            : FinanceAccountCurrencyMigration.migrating(
+                data,
+                accountID: account.id,
+                from: original.currency,
+                to: account.currency
+            )
         updated.accounts[index] = account
         return persist(updated, successMessage: "Account updated")
     }

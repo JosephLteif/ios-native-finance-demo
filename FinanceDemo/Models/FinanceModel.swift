@@ -91,6 +91,20 @@ struct Money: Codable, Equatable, Sendable {
         currency.stableFormatted(minorUnits: minorUnits)
     }
 
+    func recast(to currency: LedgerCurrency) -> Money {
+        guard self.currency != currency else { return self }
+
+        let amount = Decimal(minorUnits) / Decimal(self.currency.minorUnitScale)
+        let scaled = amount * Decimal(currency.minorUnitScale)
+        var rounded = Decimal()
+        var value = scaled
+        NSDecimalRound(&rounded, &value, 0, .plain)
+        return Money(
+            currency: currency,
+            minorUnits: NSDecimalNumber(decimal: rounded).int64Value
+        )
+    }
+
     func compactFormatted(locale: Locale = .current) -> String {
         let rawAmount = abs(NSDecimalNumber(decimal: Decimal(minorUnits) / Decimal(currency.minorUnitScale)).doubleValue)
         let (scaledAmount, suffix): (Double, String) = {
@@ -262,6 +276,140 @@ struct Account: Identifiable, Codable, Equatable {
         try container.encode(openingBalance, forKey: .openingBalance)
         try container.encode(includeInTotals, forKey: .includeInTotals)
         try container.encode(isArchived, forKey: .isArchived)
+    }
+}
+
+enum FinanceAccountCurrencyMigration {
+    static func migrating(
+        _ data: FinanceData,
+        accountID: UUID,
+        from oldCurrency: LedgerCurrency,
+        to newCurrency: LedgerCurrency
+    ) -> FinanceData {
+        guard oldCurrency != newCurrency else { return data }
+
+        var updated = data
+        guard let accountIndex = updated.accounts.firstIndex(where: { $0.id == accountID }) else {
+            return data
+        }
+
+        updated.accounts[accountIndex].currency = newCurrency
+        updated.accounts[accountIndex].openingBalance = updated.accounts[accountIndex].openingBalance.recast(
+            to: newCurrency
+        )
+
+        for index in updated.transactions.indices {
+            migrate(
+                outflows: &updated.transactions[index].outflows,
+                inflows: &updated.transactions[index].inflows,
+                amountDue: &updated.transactions[index].amountDue,
+                exchangeRate: &updated.transactions[index].exchangeRate,
+                changeAdjustment: &updated.transactions[index].changeAdjustment,
+                accountID: accountID,
+                from: oldCurrency,
+                to: newCurrency,
+                kind: updated.transactions[index].kind
+            )
+        }
+
+        for index in updated.scheduledTransactions.indices {
+            migrate(
+                outflows: &updated.scheduledTransactions[index].outflows,
+                inflows: &updated.scheduledTransactions[index].inflows,
+                amountDue: &updated.scheduledTransactions[index].amountDue,
+                exchangeRate: &updated.scheduledTransactions[index].exchangeRate,
+                changeAdjustment: &updated.scheduledTransactions[index].changeAdjustment,
+                accountID: accountID,
+                from: oldCurrency,
+                to: newCurrency,
+                kind: updated.scheduledTransactions[index].kind
+            )
+        }
+
+        for index in updated.templates.indices {
+            migrate(
+                outflows: &updated.templates[index].outflows,
+                inflows: &updated.templates[index].inflows,
+                amountDue: &updated.templates[index].amountDue,
+                exchangeRate: &updated.templates[index].exchangeRate,
+                changeAdjustment: &updated.templates[index].changeAdjustment,
+                accountID: accountID,
+                from: oldCurrency,
+                to: newCurrency,
+                kind: updated.templates[index].kind
+            )
+        }
+
+        return updated
+    }
+
+    private static func migrate(
+        outflows: inout [MoneyMovement],
+        inflows: inout [MoneyMovement],
+        amountDue: inout Money?,
+        exchangeRate: inout ExchangeRate?,
+        changeAdjustment: inout ChangeAdjustment?,
+        accountID: UUID,
+        from oldCurrency: LedgerCurrency,
+        to newCurrency: LedgerCurrency,
+        kind: TransactionKind
+    ) {
+        var didMigrateMovement = false
+
+        func migrateMovements(_ movements: inout [MoneyMovement]) {
+            for index in movements.indices where movements[index].accountID == accountID {
+                movements[index].money = movements[index].money.recast(to: newCurrency)
+                didMigrateMovement = true
+            }
+        }
+
+        migrateMovements(&outflows)
+        migrateMovements(&inflows)
+        guard didMigrateMovement else { return }
+
+        if let value = amountDue, value.currency == oldCurrency {
+            amountDue = value.recast(to: newCurrency)
+        }
+
+        if let change = changeAdjustment {
+            changeAdjustment = ChangeAdjustment(
+                requested: change.requested.currency == oldCurrency
+                    ? change.requested.recast(to: newCurrency)
+                    : change.requested,
+                actual: change.actual.currency == oldCurrency
+                    ? change.actual.recast(to: newCurrency)
+                    : change.actual
+            )
+        }
+
+        if var rate = exchangeRate {
+            if rate.baseCurrency == oldCurrency {
+                rate.baseCurrency = newCurrency
+            }
+            if rate.quoteCurrency == oldCurrency {
+                rate.quoteCurrency = newCurrency
+            }
+            exchangeRate = rate.baseCurrency == rate.quoteCurrency ? nil : rate
+        }
+
+        guard kind == .transfer,
+              Set((outflows + inflows).map { $0.money.currency }).count > 1,
+              exchangeRate == nil,
+              let source = outflows.first?.money,
+              let destination = inflows.first?.money,
+              source.minorUnits > 0,
+              destination.minorUnits > 0 else {
+            return
+        }
+
+        let sourceUnits = Decimal(source.minorUnits) / Decimal(source.currency.minorUnitScale)
+        let destinationUnits = Decimal(destination.minorUnits) / Decimal(destination.currency.minorUnitScale)
+        guard sourceUnits > 0, destinationUnits > 0 else { return }
+        exchangeRate = ExchangeRate(
+            baseCurrency: source.currency,
+            quoteCurrency: destination.currency,
+            quoteUnitsPerBaseUnit: destinationUnits / sourceUnits
+        )
     }
 }
 

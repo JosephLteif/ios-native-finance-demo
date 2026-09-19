@@ -186,7 +186,9 @@ enum ImportField: String, CaseIterable, Identifiable, Hashable {
     case kind
     case amount
     case currency
+    case accountType
     case account
+    case destinationAccountType
     case destinationAccount
     case destinationAmount
     case destinationCurrency
@@ -207,8 +209,12 @@ enum ImportField: String, CaseIterable, Identifiable, Hashable {
             return "Currency"
         case .account:
             return "Account"
+        case .accountType:
+            return "Account type"
         case .destinationAccount:
             return "Destination account"
+        case .destinationAccountType:
+            return "Destination account type"
         case .destinationAmount:
             return "Destination amount"
         case .destinationCurrency:
@@ -232,8 +238,12 @@ enum ImportField: String, CaseIterable, Identifiable, Hashable {
             return "USD, LBP, EUR, or another currency label"
         case .account:
             return "The account money leaves or enters"
+        case .accountType:
+            return "Cash, bank account, loan, asset, or investment"
         case .destinationAccount:
             return "The receiving account for transfers"
+        case .destinationAccountType:
+            return "The receiving account type for transfers"
         case .destinationAmount:
             return "Amount received by the destination account"
         case .destinationCurrency:
@@ -415,7 +425,9 @@ enum FinanceImportParser {
             .amount: ["amount", "money", "value", "total", "price", "sum", "zamoun"],
             .currency: ["currency", "currencycode", "currencyname", "iso", "symbol"],
             .account: ["account", "asset", "assets", "fromaccount", "sourceaccount", "assetname", "zasset"],
+            .accountType: ["accounttype", "assettype", "fromaccounttype", "sourceaccounttype"],
             .destinationAccount: ["toaccount", "destination", "destinationaccount", "transferaccount", "toasset"],
+            .destinationAccountType: ["destinationaccounttype", "toaccounttype", "toassettype"],
             .destinationAmount: ["destinationamount", "toamount", "receivedamount", "inflowamount", "targetamount"],
             .destinationCurrency: ["destinationcurrency", "tocurrency", "receivedcurrency", "inflowcurrency", "targetcurrency"],
             .category: ["category", "subcategory", "categoryname", "categorypath", "zcategory"],
@@ -1367,10 +1379,16 @@ enum FinanceImportBuilder {
             do {
                 let date = try parseDate(value(for: .date, in: row, table: table, mapping: mapping))
                 let rawAmount = value(for: .amount, in: row, table: table, mapping: mapping)
-                let preferredCurrency = parseCurrency(
-                    value(for: .currency, in: row, table: table, mapping: mapping),
-                    default: options.defaultCurrency
-                )
+                let accountName = value(for: .account, in: row, table: table, mapping: mapping)
+                let currencyValue = value(for: .currency, in: row, table: table, mapping: mapping)
+                let explicitCurrency = currencyValue.isEmpty
+                    ? nil
+                    : parseCurrency(currencyValue, default: options.defaultCurrency)
+                let preferredCurrency = explicitCurrency
+                    ?? (existing.accounts + importedAccounts).first(where: {
+                        !$0.name.isEmpty && $0.name.caseInsensitiveCompare(accountName) == .orderedSame
+                    })?.currency
+                    ?? inferredCurrency(for: accountName, fallback: options.defaultCurrency)
                 let signedAmount = try parseAmount(rawAmount, currency: preferredCurrency)
                 guard signedAmount.minorUnits != 0 else {
                     throw FinanceImportError.row("The amount is zero.")
@@ -1380,16 +1398,18 @@ enum FinanceImportBuilder {
                     value(for: .kind, in: row, table: table, mapping: mapping),
                     default: signedAmount.minorUnits < 0 ? .expense : options.defaultKind
                 )
-                let accountName = value(for: .account, in: row, table: table, mapping: mapping)
                 let account = try resolveAccount(
                     name: accountName,
                     currency: preferredCurrency,
+                    explicitCurrency: explicitCurrency,
+                    type: parseAccountType(value(for: .accountType, in: row, table: table, mapping: mapping)),
                     options: options,
                     existing: existing,
                     imported: &importedAccounts
                 )
                 let currency = account.currency
-                let amount = Money(currency: currency, minorUnits: Swift.abs(signedAmount.minorUnits))
+                let recastAmount = signedAmount.recast(to: currency)
+                let amount = Money(currency: recastAmount.currency, minorUnits: Swift.abs(recastAmount.minorUnits))
                 let categoryID = try resolveCategory(
                     value(for: .category, in: row, table: table, mapping: mapping),
                     kind: kind,
@@ -1415,9 +1435,12 @@ enum FinanceImportBuilder {
                         table: table,
                         mapping: mapping
                     )
+                    let explicitDestinationCurrency = destinationCurrencyValue.isEmpty
+                        ? nil
+                        : parseCurrency(destinationCurrencyValue, default: currency)
                     let destinationCurrency: LedgerCurrency
-                    if !destinationCurrencyValue.isEmpty {
-                        destinationCurrency = parseCurrency(destinationCurrencyValue, default: currency)
+                    if let explicitDestinationCurrency {
+                        destinationCurrency = explicitDestinationCurrency
                     } else if let defaultDestinationAccountID = options.defaultDestinationAccountID,
                               let defaultDestination = (existing.accounts + importedAccounts).first(where: {
                                   $0.id == defaultDestinationAccountID
@@ -1428,11 +1451,11 @@ enum FinanceImportBuilder {
                     }) {
                         destinationCurrency = namedDestination.currency
                     } else {
-                        destinationCurrency = currency
+                        destinationCurrency = inferredCurrency(for: destinationName, fallback: currency)
                     }
                     let destinationAmountValue = value(for: .destinationAmount, in: row, table: table, mapping: mapping)
                     let destinationAmount = destinationAmountValue.isEmpty
-                        ? amount
+                        ? amount.recast(to: destinationCurrency)
                         : Money(
                             currency: destinationCurrency,
                             minorUnits: Swift.abs(try parseAmount(destinationAmountValue, currency: destinationCurrency).minorUnits)
@@ -1445,6 +1468,10 @@ enum FinanceImportBuilder {
                     let destination = try resolveDestinationAccount(
                         name: destinationName,
                         currency: destinationAmount.currency,
+                        explicitCurrency: explicitDestinationCurrency,
+                        type: parseAccountType(
+                            value(for: .destinationAccountType, in: row, table: table, mapping: mapping)
+                        ),
                         options: options,
                         existing: existing,
                         imported: &importedAccounts
@@ -1526,6 +1553,8 @@ enum FinanceImportBuilder {
     private static func resolveAccount(
         name rawName: String,
         currency: LedgerCurrency,
+        explicitCurrency: LedgerCurrency?,
+        type: AccountType?,
         options: ImportOptions,
         existing: FinanceData,
         imported: inout [Account]
@@ -1536,11 +1565,20 @@ enum FinanceImportBuilder {
             return account
         }
 
-        if !name.isEmpty,
-           let account = (existing.accounts + imported).first(where: {
-               $0.name.caseInsensitiveCompare(name) == .orderedSame && $0.currency == currency
-           }) {
-            return account
+        if !name.isEmpty {
+            let candidates = existing.accounts + imported
+            if let account = candidates.first(where: {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+                    && explicitCurrency != nil
+                    && $0.currency == currency
+            }) {
+                return account
+            }
+            if let account = candidates.first(where: {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+            }) {
+                return account
+            }
         }
 
         guard !name.isEmpty, options.createMissingAccounts else {
@@ -1549,7 +1587,7 @@ enum FinanceImportBuilder {
 
         let account = Account(
             name: name,
-            type: .cash,
+            type: type ?? inferredAccountType(for: name),
             currency: currency,
             openingBalance: Money(currency: currency, minorUnits: 0)
         )
@@ -1560,6 +1598,8 @@ enum FinanceImportBuilder {
     private static func resolveDestinationAccount(
         name rawName: String,
         currency: LedgerCurrency,
+        explicitCurrency: LedgerCurrency?,
+        type: AccountType?,
         options: ImportOptions,
         existing: FinanceData,
         imported: inout [Account]
@@ -1572,6 +1612,8 @@ enum FinanceImportBuilder {
         return try resolveAccount(
             name: name,
             currency: currency,
+            explicitCurrency: explicitCurrency,
+            type: type,
             options: ImportOptions(
                 defaultKind: options.defaultKind,
                 defaultCurrency: options.defaultCurrency,
@@ -1728,6 +1770,52 @@ enum FinanceImportBuilder {
             throw FinanceImportError.row("Could not read amount \"\(rawValue)\".")
         }
         return amount
+    }
+
+    private static func inferredCurrency(
+        for rawName: String,
+        fallback: LedgerCurrency
+    ) -> LedgerCurrency {
+        let value = rawName.lowercased()
+        if value.contains("lbp") || value.contains("leban") || value.contains("lira") || value.contains("ل.ل") {
+            return .lbp
+        }
+        if value.contains("usd") || value.contains("dollar") || value.contains("$") {
+            return .usd
+        }
+        if value.contains("eur") || value.contains("euro") || value.contains("€") {
+            return .eur
+        }
+        return fallback
+    }
+
+    private static func parseAccountType(_ rawValue: String) -> AccountType? {
+        let value = rawValue.lowercased()
+        guard !value.isEmpty else { return nil }
+
+        if value.contains("loan") || value.contains("debt") || value.contains("credit") || value.contains("mortgage") {
+            return .loan
+        }
+        if value.contains("bank") || value.contains("checking") || value.contains("chequing")
+            || value.contains("savings") || value.contains("saving") {
+            return .bankAccount
+        }
+        if value.contains("invest") || value.contains("broker") || value.contains("stock")
+            || value.contains("portfolio") {
+            return .investment
+        }
+        if value.contains("asset") || value.contains("property") || value.contains("house")
+            || value.contains("home") || value.contains("vehicle") || value.contains("car") {
+            return .physicalAsset
+        }
+        if value.contains("cash") || value.contains("wallet") || value.contains("petty") {
+            return .cash
+        }
+        return nil
+    }
+
+    private static func inferredAccountType(for rawName: String) -> AccountType {
+        parseAccountType(rawName) ?? .cash
     }
 
     private static func parseCurrency(_ rawValue: String, default defaultCurrency: LedgerCurrency) -> LedgerCurrency {

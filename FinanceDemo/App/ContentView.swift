@@ -1909,9 +1909,8 @@ struct AccountEditor: View {
                             Text(currency.rawValue).tag(currency)
                         }
                     }
-                    .disabled(hasActivity)
                     if hasActivity {
-                        Text("Currency cannot change after this account has activity.")
+                        Text("Changing currency updates this account's opening balance and all related transactions. Amounts keep their displayed numeric value; no exchange-rate conversion is applied.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -1935,6 +1934,17 @@ struct AccountEditor: View {
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(account == nil ? "New account" : "Edit account")
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: currency) { oldCurrency, newCurrency in
+                guard let account, oldCurrency != newCurrency,
+                      let balance = Money.parse(openingBalance, currency: oldCurrency) else {
+                    return
+                }
+                let migratedBalance = balance.recast(to: newCurrency)
+                openingBalance = NSDecimalNumber(
+                    decimal: Decimal(migratedBalance.minorUnits)
+                        / Decimal(newCurrency.minorUnitScale)
+                ).stringValue
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
