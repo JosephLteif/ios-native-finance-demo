@@ -577,6 +577,7 @@ struct LedgerCategory: Identifiable, Codable, Equatable {
     var name: String
     var parentID: UUID?
     var systemImage: String
+    var includeInTotals: Bool
     var isArchived: Bool
 
     init(
@@ -584,12 +585,14 @@ struct LedgerCategory: Identifiable, Codable, Equatable {
         name: String,
         parentID: UUID? = nil,
         systemImage: String = "tag",
+        includeInTotals: Bool = true,
         isArchived: Bool = false
     ) {
         self.id = id
         self.name = name
         self.parentID = parentID
         self.systemImage = systemImage
+        self.includeInTotals = includeInTotals
         self.isArchived = isArchived
     }
 
@@ -598,6 +601,7 @@ struct LedgerCategory: Identifiable, Codable, Equatable {
         case name
         case parentID
         case systemImage
+        case includeInTotals
         case isArchived
     }
 
@@ -607,6 +611,7 @@ struct LedgerCategory: Identifiable, Codable, Equatable {
         name = try container.decode(String.self, forKey: .name)
         parentID = try container.decodeIfPresent(UUID.self, forKey: .parentID)
         systemImage = try container.decodeIfPresent(String.self, forKey: .systemImage) ?? "tag"
+        includeInTotals = try container.decodeIfPresent(Bool.self, forKey: .includeInTotals) ?? true
         isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
     }
 
@@ -616,6 +621,7 @@ struct LedgerCategory: Identifiable, Codable, Equatable {
         try container.encode(name, forKey: .name)
         try container.encodeIfPresent(parentID, forKey: .parentID)
         try container.encode(systemImage, forKey: .systemImage)
+        try container.encode(includeInTotals, forKey: .includeInTotals)
         try container.encode(isArchived, forKey: .isArchived)
     }
 }
@@ -896,6 +902,7 @@ func financeNetExpenseAmount(
     in data: FinanceData
 ) -> Int64 {
     guard transaction.kind == .expense else { return 0 }
+    guard financeCategoryIncludedInTotals(transaction.categoryID, in: data.categories) else { return 0 }
 
     func includedAmount(_ movements: [MoneyMovement]) -> Int64 {
         movements
@@ -907,6 +914,21 @@ func financeNetExpenseAmount(
     }
 
     return max(includedAmount(transaction.outflows) - includedAmount(transaction.inflows), 0)
+}
+
+func financeCategoryIncludedInTotals(_ categoryID: UUID?, in categories: [LedgerCategory]) -> Bool {
+    guard var currentID = categoryID else { return true }
+    var visited: Set<UUID> = []
+
+    while !visited.contains(currentID),
+          let category = categories.first(where: { $0.id == currentID }) {
+        visited.insert(currentID)
+        guard category.includeInTotals else { return false }
+        guard let parentID = category.parentID else { return true }
+        currentID = parentID
+    }
+
+    return true
 }
 
 func financeBudgetSpent(

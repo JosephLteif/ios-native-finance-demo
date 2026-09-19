@@ -70,6 +70,7 @@ struct MetricsView: View {
         store.recentTransactions.filter { transaction in
             interval.contains(transaction.date)
                 && matchesCategory(transaction)
+                && financeCategoryIncludedInTotals(transaction.categoryID, in: store.data.categories)
                 && transactionHasIncludedAccount(transaction)
         }
     }

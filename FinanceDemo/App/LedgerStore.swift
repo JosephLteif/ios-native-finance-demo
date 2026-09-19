@@ -64,6 +64,7 @@ final class LedgerStore: ObservableObject {
         var counts: [UUID: Int] = [:]
         for transaction in data.transactions where transaction.kind == .expense
             && transaction.date >= monthStart
+            && financeCategoryIncludedInTotals(transaction.categoryID, in: data.categories)
             && transaction.outflows.contains(where: { includesInTotals(accountID: $0.accountID) }) {
             guard let categoryID = transaction.categoryID else { continue }
             counts[categoryID, default: 0] += 1
@@ -299,6 +300,28 @@ final class LedgerStore: ObservableObject {
             updated,
             successMessage: isArchived ? "Account archived" : "Account restored"
         )
+    }
+
+    @discardableResult
+    func moveAccount(accountID: UUID, by offset: Int) -> Bool {
+        guard offset == -1 || offset == 1,
+              let sourceIndex = data.accounts.firstIndex(where: { $0.id == accountID }),
+              !data.accounts[sourceIndex].isArchived else {
+            return false
+        }
+
+        let accountType = data.accounts[sourceIndex].type
+        let typeIndices = data.accounts.indices.filter { index in
+            let account = data.accounts[index]
+            return !account.isArchived && account.type == accountType
+        }
+        guard let position = typeIndices.firstIndex(of: sourceIndex) else { return false }
+        let targetPosition = position + offset
+        guard typeIndices.indices.contains(targetPosition) else { return false }
+
+        var updated = data
+        updated.accounts.swapAt(sourceIndex, typeIndices[targetPosition])
+        return persist(updated, successMessage: "Account order updated")
     }
 
     @discardableResult

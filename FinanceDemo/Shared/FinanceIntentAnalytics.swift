@@ -408,7 +408,8 @@ private func financeSpendingSummary(
                   categoryID: categoryID,
                   accountID: accountID,
                   in: data
-              ) else {
+              ),
+              financeCategoryIncludedInTotals(transaction.categoryID, in: data.categories) else {
             return false
         }
 

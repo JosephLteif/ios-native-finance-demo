@@ -243,6 +243,26 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(financeBudgetSpent(budget, in: data).minorUnits, 1_500)
     }
 
+    func testExcludedCategoryDoesNotCountInExpenseTotals() {
+        let category = LedgerCategory(name: "Modified balance", includeInTotals: false)
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let transaction = LedgerTransaction(
+            note: "Adjustment",
+            kind: .expense,
+            categoryID: category.id,
+            outflows: [MoneyMovement(accountID: account.id, money: Money(currency: .usd, minorUnits: 1_000))],
+            inflows: []
+        )
+        let data = FinanceData(accounts: [account], categories: [category], transactions: [transaction])
+
+        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .usd, in: data), 0)
+    }
+
     func testBackupBundleRoundTripsAttachmentBytes() throws {
         let attachment = LedgerAttachment(
             fileName: "receipt.jpg",

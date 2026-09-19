@@ -148,9 +148,10 @@ private final class PocketLedgerTabBarController: UITabBarController {
         let tabBarHeight = max(49, systemTabBarFrame.height)
         let buttonSize: CGFloat = 56
         let buttonTrailing = view.bounds.width - view.safeAreaInsets.right - 16
+        let tabBarCenterY = systemTabBarFrame.minY + tabBarHeight / 2
         let buttonFrame = CGRect(
             x: buttonTrailing - buttonSize,
-            y: systemTabBarFrame.midY - buttonSize / 2,
+            y: tabBarCenterY - buttonSize / 2,
             width: buttonSize,
             height: buttonSize
         )
@@ -1432,10 +1433,10 @@ private struct AccountsView: View {
                 screenHeader
                 globalPositionSummary
 
-                ForEach(LedgerCurrency.allCases) { currency in
-                    let accounts = store.activeAccounts.filter { $0.currency == currency }
+                ForEach(AccountType.allCases) { accountType in
+                    let accounts = store.activeAccounts.filter { $0.type == accountType }
                     if !accounts.isEmpty {
-                        accountSection(currency: currency, accounts: accounts)
+                        accountSection(type: accountType, accounts: accounts)
                     }
                 }
 
@@ -1546,7 +1547,7 @@ private struct AccountsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Accounts")
                     .font(.largeTitle.weight(.bold))
-                Text("Tap an account for activity and balance tools")
+                Text("Tap an account for activity; hold it to edit, archive, or reorder")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
@@ -1566,32 +1567,26 @@ private struct AccountsView: View {
         }
     }
 
-    private func accountSection(currency: LedgerCurrency, accounts: [Account]) -> some View {
+    private func accountSection(type: AccountType, accounts: [Account]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 HStack(spacing: 8) {
-                    Text(currency.rawValue)
+                    Image(systemName: type.systemImage)
+                        .foregroundStyle(PocketLedgerTheme.accent)
+                    Text(type.displayName)
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(currency == .usd ? PocketLedgerTheme.income : PocketLedgerTheme.textSecondary)
-                    Text(currency.displayName)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    Text("\(accounts.count) \(accounts.count == 1 ? "account" : "accounts")")
                         .font(.caption)
                         .foregroundStyle(PocketLedgerTheme.textTertiary)
                 }
 
                 Spacer()
-
-                Text(Money(
-                    currency: currency,
-                    minorUnits: accounts
-                        .filter(\.includeInTotals)
-                        .reduce(Int64.zero) { $0 + store.balance(for: $1).minorUnits }
-                ).formatted)
-                    .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
 
             VStack(spacing: 0) {
                 ForEach(accounts) { account in
+                    let accountPosition = accounts.firstIndex(where: { $0.id == account.id }) ?? 0
                     NavigationLink {
                         AccountDetailView(store: store, accountID: account.id)
                     } label: {
@@ -1601,6 +1596,14 @@ private struct AccountsView: View {
                                 Button("Edit", systemImage: "pencil") {
                                     presentAccount(account)
                                 }
+                                Button("Move up", systemImage: "chevron.up") {
+                                    _ = store.moveAccount(accountID: account.id, by: -1)
+                                }
+                                .disabled(accountPosition == 0)
+                                Button("Move down", systemImage: "chevron.down") {
+                                    _ = store.moveAccount(accountID: account.id, by: 1)
+                                }
+                                .disabled(accountPosition == accounts.count - 1)
                                 Button("Archive", systemImage: "archivebox") {
                                     _ = store.setAccountArchived(
                                         accountID: account.id,
@@ -2070,6 +2073,7 @@ private struct CategoryEditor: View {
     @State private var name = ""
     @State private var parentID: UUID?
     @State private var systemImage = "tag"
+    @State private var includeInTotals = true
     @State private var errorMessage: String?
 
     init(
@@ -2083,6 +2087,7 @@ private struct CategoryEditor: View {
         _name = State(initialValue: category?.name ?? "")
         _parentID = State(initialValue: category?.parentID)
         _systemImage = State(initialValue: category?.systemImage ?? "tag")
+        _includeInTotals = State(initialValue: category?.includeInTotals ?? true)
     }
 
     var body: some View {
@@ -2097,6 +2102,12 @@ private struct CategoryEditor: View {
                         }
                     }
                     TextField("SF Symbol", text: $systemImage)
+                    Toggle("Include in totals and metrics", isOn: $includeInTotals)
+                    Text(includeInTotals
+                         ? "Expenses in this category count toward totals and metrics."
+                         : "Expenses in this category are kept in the ledger but excluded from totals and metrics.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -2141,6 +2152,7 @@ private struct CategoryEditor: View {
             name: trimmedName,
             parentID: parentID,
             systemImage: trimmedSymbol.isEmpty ? "tag" : trimmedSymbol,
+            includeInTotals: includeInTotals,
             isArchived: category?.isArchived ?? false
         )
         let saved = category == nil ? store.addCategory(value) : store.updateCategory(value)
