@@ -20,8 +20,19 @@ final class FinanceStorage {
     private let modelContainer: ModelContainer?
     private let storageLocation: StorageLocation
     private let attachmentDirectory: URL?
+    private let recoverySnapshotURL: URL?
     private(set) var loadStatus: LoadStatus = .notLoaded
     private(set) var saveConflict = false
+
+    private struct RecoveryAttachment: Codable {
+        let id: UUID
+        let data: Data
+    }
+
+    private struct RecoverySnapshot: Codable {
+        let data: FinanceData
+        let attachments: [RecoveryAttachment]
+    }
 
     init(context: String) {
         if let groupURL = FileManager.default.containerURL(
@@ -34,6 +45,7 @@ final class FinanceStorage {
             attachmentDirectory = Self.makeAttachmentDirectory(
                 at: groupURL.appendingPathComponent("PocketLedgerAttachments", isDirectory: true)
             )
+            recoverySnapshotURL = groupURL.appendingPathComponent("PocketLedger-last-good.json")
             return
         }
 
@@ -45,6 +57,7 @@ final class FinanceStorage {
             modelContainer = nil
             storageLocation = .unavailable
             attachmentDirectory = nil
+            recoverySnapshotURL = nil
             return
         }
 
@@ -58,6 +71,7 @@ final class FinanceStorage {
             modelContainer = nil
             storageLocation = .unavailable
             attachmentDirectory = nil
+            recoverySnapshotURL = nil
             return
         }
 
@@ -67,6 +81,7 @@ final class FinanceStorage {
             modelContainer = nil
             storageLocation = .unavailable
             attachmentDirectory = nil
+            recoverySnapshotURL = nil
             return
         }
 
@@ -75,6 +90,7 @@ final class FinanceStorage {
         attachmentDirectory = Self.makeAttachmentDirectory(
             at: localDirectory.appendingPathComponent("Attachments", isDirectory: true)
         )
+        recoverySnapshotURL = localDirectory.appendingPathComponent("PocketLedger-last-good.json")
     }
 
     var isPersistent: Bool {
@@ -126,6 +142,45 @@ final class FinanceStorage {
         guard let attachmentDirectory else { return }
         try? FileManager.default.removeItem(at: attachmentDirectory)
         _ = Self.makeAttachmentDirectory(at: attachmentDirectory)
+    }
+
+    var hasRecoverySnapshot: Bool {
+        guard let recoverySnapshotURL else { return false }
+        return FileManager.default.fileExists(atPath: recoverySnapshotURL.path)
+    }
+
+    @discardableResult
+    func writeRecoverySnapshot(_ value: FinanceData) -> Bool {
+        guard let recoverySnapshotURL else { return false }
+
+        var attachments: [RecoveryAttachment] = []
+        for attachment in value.attachments {
+            if let data = attachmentData(relativePath: attachment.relativePath) {
+                attachments.append(RecoveryAttachment(id: attachment.id, data: data))
+            }
+        }
+
+        let snapshot = RecoverySnapshot(data: value, attachments: attachments)
+        guard let encoded = try? JSONEncoder().encode(snapshot) else { return false }
+
+        do {
+            try encoded.write(to: recoverySnapshotURL, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func loadRecoverySnapshot() -> (data: FinanceData, attachmentData: [UUID: Data])? {
+        guard let recoverySnapshotURL,
+              let encoded = try? Data(contentsOf: recoverySnapshotURL),
+              let snapshot = try? JSONDecoder().decode(RecoverySnapshot.self, from: encoded) else {
+            return nil
+        }
+        let attachmentData = snapshot.attachments.reduce(into: [UUID: Data]()) { result, attachment in
+            result[attachment.id] = attachment.data
+        }
+        return (snapshot.data, attachmentData)
     }
 
     func load() -> FinanceData {

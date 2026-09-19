@@ -20,12 +20,16 @@ struct DataTransferView: View {
     @State private var isShowingFinalResetWarning = false
     @State private var isContinuingToResetAfterBackup = false
     @State private var isShowingResetSuccess = false
+    @State private var isShowingRecoveryConfirmation = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
                 introCard
                 backupCard
+                if store.hasRecoverySnapshot {
+                    recoveryCard
+                }
                 importCard
                 resetCard
             }
@@ -107,6 +111,16 @@ struct DataTransferView: View {
         } message: {
             Text("Your Pocket Ledger data is now empty. App lock and appearance settings were kept.")
         }
+        .confirmationDialog(
+            "Restore the last-good ledger?",
+            isPresented: $isShowingRecoveryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Restore last-good snapshot", action: restoreLastGoodSnapshot)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This replaces the current ledger with the snapshot captured before the last destructive restore.")
+        }
         .alert("Data transfer failed", isPresented: errorPresented) {
             Button("OK") { errorMessage = nil }
         } message: {
@@ -187,6 +201,27 @@ struct DataTransferView: View {
         .pocketCard()
     }
 
+    private var recoveryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Last-good recovery snapshot", systemImage: "arrow.uturn.backward.circle")
+                .font(.title3.weight(.bold))
+
+            Text("Pocket Ledger keeps a local recovery copy before replacing the ledger. It includes receipt files when they are still available.")
+                .font(.subheadline)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+            Button {
+                isShowingRecoveryConfirmation = true
+            } label: {
+                Label("Restore last-good snapshot", systemImage: "arrow.uturn.backward")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(PocketLedgerTheme.accent)
+        }
+        .pocketCard()
+    }
+
     private var importCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Import from another app", systemImage: "arrow.down.doc")
@@ -246,6 +281,13 @@ struct DataTransferView: View {
             }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func restoreLastGoodSnapshot() {
+        guard store.restoreLastGoodSnapshot() else {
+            errorMessage = store.lastActionStatus ?? "The recovery snapshot could not be restored."
+            return
         }
     }
 

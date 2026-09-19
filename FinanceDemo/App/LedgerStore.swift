@@ -17,6 +17,10 @@ final class LedgerStore: ObservableObject {
         storage.isPersistent && !storage.isCorrupted
     }
 
+    var hasRecoverySnapshot: Bool {
+        storage.hasRecoverySnapshot
+    }
+
     var sharedStorageAvailable: Bool {
         storage.isAppGroupAvailable
     }
@@ -489,9 +493,19 @@ final class LedgerStore: ObservableObject {
     }
 
     @discardableResult
-    func replaceData(_ imported: FinanceData, attachmentFiles: [UUID: Data] = [:]) -> Bool {
+    func replaceData(
+        _ imported: FinanceData,
+        attachmentFiles: [UUID: Data] = [:],
+        preservingRecoverySnapshot: Bool = false
+    ) -> Bool {
         let prepared = materializeAttachments(in: imported, files: attachmentFiles)
         guard validateImportedData(prepared) else { return false }
+        if !preservingRecoverySnapshot,
+           !storage.isCorrupted,
+           !storage.writeRecoverySnapshot(data) {
+            lastActionStatus = "Restore was not started because the last-good recovery snapshot could not be saved."
+            return false
+        }
         let oldPaths = Set(data.attachments.map(\.relativePath))
         guard persist(prepared, successMessage: "Ledger restored", allowingCorruptedReplacement: true) else {
             return false
@@ -500,6 +514,19 @@ final class LedgerStore: ObservableObject {
             storage.deleteAttachment(relativePath: path)
         }
         return true
+    }
+
+    @discardableResult
+    func restoreLastGoodSnapshot() -> Bool {
+        guard let snapshot = storage.loadRecoverySnapshot() else {
+            lastActionStatus = "No last-good recovery snapshot is available."
+            return false
+        }
+        return replaceData(
+            snapshot.data,
+            attachmentFiles: snapshot.attachmentData,
+            preservingRecoverySnapshot: true
+        )
     }
 
     @discardableResult
