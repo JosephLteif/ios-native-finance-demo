@@ -403,6 +403,94 @@ final class FinanceModelTests: XCTestCase {
         )
     }
 
+    func testImportDefaultsUncategorizedExpensesToOther() throws {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let table = ImportedTable(
+            id: "expenses",
+            name: "Expenses",
+            columns: ["Date", "Type", "Amount", "Currency", "Account", "Category"],
+            rows: [["2026-09-06", "Expense", "30", "USD", "Cash", ""]]
+        )
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: account.id,
+                defaultDestinationAccountID: nil,
+                createMissingAccounts: true,
+                createMissingCategories: true
+            ),
+            existing: FinanceData(accounts: [account], categories: [], transactions: [])
+        )
+
+        let transaction = try XCTUnwrap(result.data.transactions.first)
+        let category = try XCTUnwrap(result.data.categories.first)
+        XCTAssertEqual(category.name, "Other")
+        XCTAssertEqual(transaction.categoryID, category.id)
+    }
+
+    func testImportAddsRateToCrossCurrencyTransfer() throws {
+        let source = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let destination = Account(
+            name: "Reserve",
+            type: .bankAccount,
+            currency: .lbp,
+            openingBalance: Money(currency: .lbp, minorUnits: 0)
+        )
+        let table = ImportedTable(
+            id: "transfers",
+            name: "Transfers",
+            columns: [
+                "Date", "Type", "Amount", "Currency", "Account",
+                "Destination Account", "Destination Amount", "Destination Currency"
+            ],
+            rows: [["2026-09-06", "Transfer", "100", "USD", "Cash", "Reserve", "9000000", "LBP"]]
+        )
+        let existing = FinanceData(accounts: [source, destination], categories: [], transactions: [])
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: source.id,
+                defaultDestinationAccountID: destination.id,
+                createMissingAccounts: true,
+                createMissingCategories: true
+            ),
+            existing: existing
+        )
+
+        let transaction = try XCTUnwrap(result.data.transactions.first)
+        let rate = try XCTUnwrap(transaction.exchangeRate)
+        XCTAssertEqual(rate.baseCurrency, .usd)
+        XCTAssertEqual(rate.quoteCurrency, .lbp)
+        XCTAssertEqual(rate.quoteUnitsPerBaseUnit, 90_000)
+        XCTAssertEqual(result.data.exchangeRates, [rate])
+        XCTAssertNil(
+            FinanceDataValidator.validate(
+                FinanceData(
+                    accounts: existing.accounts,
+                    categories: [],
+                    transactions: [transaction],
+                    exchangeRates: result.data.exchangeRates
+                )
+            )
+        )
+    }
+
     func testRolloverCarriesUnusedPriorMonthAllowance() {
         let calendar = Calendar(identifier: .gregorian)
         let currentMonth = calendar.dateInterval(of: .month, for: .now)!

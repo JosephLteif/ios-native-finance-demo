@@ -117,6 +117,32 @@ struct ContentView: View {
 }
 
 @MainActor
+private final class PocketLedgerTabBarController: UITabBarController {
+    weak var addButton: UIButton?
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+
+        guard let addButton else { return }
+
+        let buttonSize: CGFloat = 44
+        let buttonTrailing = view.bounds.width - view.safeAreaInsets.right - 16
+        let buttonFrame = CGRect(
+            x: buttonTrailing - buttonSize,
+            y: tabBar.frame.midY - buttonSize / 2,
+            width: buttonSize,
+            height: buttonSize
+        )
+        addButton.frame = buttonFrame
+
+        let gap: CGFloat = 12
+        var tabBarFrame = tabBar.frame
+        tabBarFrame.size.width = max(0, buttonFrame.minX - gap - tabBarFrame.minX)
+        tabBar.frame = tabBarFrame
+    }
+}
+
+@MainActor
 private struct NativeTabBarController: UIViewControllerRepresentable {
     @Binding var selectedTab: AppTab
     @ObservedObject var store: LedgerStore
@@ -128,7 +154,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UITabBarController {
-        let controller = UITabBarController()
+        let controller = PocketLedgerTabBarController()
         controller.delegate = context.coordinator
         controller.setViewControllers(makeViewControllers(), animated: false)
         controller.selectedIndex = selectedTab.tabBarIndex
@@ -138,16 +164,8 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
             controller.tabBarMinimizeBehavior = .onScrollDown
 
             let addButton = makeAddButton(context: context)
+            controller.addButton = addButton
             controller.view.addSubview(addButton)
-            NSLayoutConstraint.activate([
-                addButton.widthAnchor.constraint(equalToConstant: 44),
-                addButton.heightAnchor.constraint(equalToConstant: 44),
-                addButton.trailingAnchor.constraint(
-                    equalTo: controller.view.safeAreaLayoutGuide.trailingAnchor,
-                    constant: -16
-                ),
-                addButton.centerYAnchor.constraint(equalTo: controller.tabBar.centerYAnchor)
-            ])
         }
 
         return controller
@@ -218,7 +236,6 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         button.accessibilityIdentifier = "add-transaction-button"
         button.accessibilityLabel = "Add"
         button.accessibilityHint = "Choose what to add"
-        button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }
 
