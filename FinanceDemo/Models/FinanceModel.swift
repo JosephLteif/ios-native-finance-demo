@@ -299,45 +299,51 @@ enum FinanceAccountCurrencyMigration {
         )
 
         for index in updated.transactions.indices {
+            var transaction = updated.transactions[index]
             migrate(
-                outflows: &updated.transactions[index].outflows,
-                inflows: &updated.transactions[index].inflows,
-                amountDue: &updated.transactions[index].amountDue,
-                exchangeRate: &updated.transactions[index].exchangeRate,
-                changeAdjustment: &updated.transactions[index].changeAdjustment,
+                outflows: &transaction.outflows,
+                inflows: &transaction.inflows,
+                amountDue: &transaction.amountDue,
+                exchangeRate: &transaction.exchangeRate,
+                changeAdjustment: &transaction.changeAdjustment,
                 accountID: accountID,
                 from: oldCurrency,
                 to: newCurrency,
-                kind: updated.transactions[index].kind
+                kind: transaction.kind
             )
+            updated.transactions[index] = transaction
         }
 
         for index in updated.scheduledTransactions.indices {
+            var transaction = updated.scheduledTransactions[index]
             migrate(
-                outflows: &updated.scheduledTransactions[index].outflows,
-                inflows: &updated.scheduledTransactions[index].inflows,
-                amountDue: &updated.scheduledTransactions[index].amountDue,
-                exchangeRate: &updated.scheduledTransactions[index].exchangeRate,
-                changeAdjustment: &updated.scheduledTransactions[index].changeAdjustment,
+                outflows: &transaction.outflows,
+                inflows: &transaction.inflows,
+                amountDue: &transaction.amountDue,
+                exchangeRate: &transaction.exchangeRate,
+                changeAdjustment: &transaction.changeAdjustment,
                 accountID: accountID,
                 from: oldCurrency,
                 to: newCurrency,
-                kind: updated.scheduledTransactions[index].kind
+                kind: transaction.kind
             )
+            updated.scheduledTransactions[index] = transaction
         }
 
         for index in updated.templates.indices {
+            var template = updated.templates[index]
             migrate(
-                outflows: &updated.templates[index].outflows,
-                inflows: &updated.templates[index].inflows,
-                amountDue: &updated.templates[index].amountDue,
-                exchangeRate: &updated.templates[index].exchangeRate,
-                changeAdjustment: &updated.templates[index].changeAdjustment,
+                outflows: &template.outflows,
+                inflows: &template.inflows,
+                amountDue: &template.amountDue,
+                exchangeRate: &template.exchangeRate,
+                changeAdjustment: &template.changeAdjustment,
                 accountID: accountID,
                 from: oldCurrency,
                 to: newCurrency,
-                kind: updated.templates[index].kind
+                kind: template.kind
             )
+            updated.templates[index] = template
         }
 
         return updated
