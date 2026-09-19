@@ -211,9 +211,14 @@ struct ScheduledTransactionsView: View {
     private func timingText(for schedule: ScheduledTransaction) -> String {
         let date = schedule.nextRunDate.formatted(.dateTime.month(.abbreviated).day().year())
         if schedule.isEnabled {
-            return schedule.frequency == .once
-                ? "Runs on \(date)"
-                : "Next \(date) · \(schedule.frequency.displayName)"
+            if schedule.frequency == .once {
+                return "Runs on \(date)"
+            }
+            if schedule.frequency == .monthly,
+               schedule.monthlyRule == .lastDayOfMonth {
+                return "Next \(date) · Last day of each month"
+            }
+            return "Next \(date) · \(schedule.frequency.displayName)"
         }
 
         if isCompletedOneTime(schedule), let lastRunDate = schedule.lastRunDate {

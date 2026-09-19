@@ -1920,6 +1920,7 @@ struct TransactionEditor: View {
     @State private var kind: TransactionKind = .expense
     @State private var timing: TransactionTiming = .now
     @State private var scheduleFrequency: ScheduleFrequency = .once
+    @State private var monthlyRule: ScheduleMonthlyRule = .dayOfMonth
     @State private var scheduleEnabled = true
     @State private var categoryID: UUID?
     @State private var dueCurrency: LedgerCurrency = .usd
@@ -1943,6 +1944,7 @@ struct TransactionEditor: View {
     private let editingScheduleLastRunDate: Date?
     private let editingScheduleNextRunDate: Date?
     private let editingScheduleFrequency: ScheduleFrequency?
+    private let editingScheduleRecurrenceDay: Int?
     private let editingTransactionID: UUID?
     private let initialAttachmentData: Data?
     private let initialAttachmentFileName: String?
@@ -2011,6 +2013,7 @@ struct TransactionEditor: View {
         _kind = State(initialValue: sourceTransaction?.kind ?? scheduledTransaction?.kind ?? initialKind)
         _timing = State(initialValue: transaction == nil && scheduledTransaction == nil ? initialTiming : transaction == nil ? .scheduled : .now)
         _scheduleFrequency = State(initialValue: scheduledTransaction?.frequency ?? initialFrequency)
+        _monthlyRule = State(initialValue: scheduledTransaction?.monthlyRule ?? .dayOfMonth)
         _scheduleEnabled = State(initialValue: scheduledTransaction?.isEnabled ?? true)
         _dueCurrency = State(initialValue: amountDue?.currency ?? preferredCurrency ?? .usd)
         _amountDue = State(initialValue: amountDue.map { Self.inputText(for: $0) } ?? "")
@@ -2053,6 +2056,7 @@ struct TransactionEditor: View {
         editingScheduleLastRunDate = scheduledTransaction?.lastRunDate
         editingScheduleNextRunDate = scheduledTransaction?.nextRunDate
         editingScheduleFrequency = scheduledTransaction?.frequency
+        editingScheduleRecurrenceDay = scheduledTransaction?.recurrenceDay
         editingTransactionID = transaction?.id
         self.initialAttachmentData = initialAttachmentData
         self.initialAttachmentFileName = initialAttachmentFileName
@@ -2090,6 +2094,22 @@ struct TransactionEditor: View {
                             ForEach(ScheduleFrequency.allCases) { frequency in
                                 Text(frequency.displayName).tag(frequency)
                             }
+                        }
+
+                        if scheduleFrequency == .monthly {
+                            Picker("Monthly rule", selection: $monthlyRule) {
+                                ForEach(ScheduleMonthlyRule.allCases) { rule in
+                                    Text(rule.displayName).tag(rule)
+                                }
+                            }
+
+                            Text(
+                                monthlyRule == .lastDayOfMonth
+                                    ? "This runs on the last calendar day of each month."
+                                    : "This keeps day \(Calendar.current.component(.day, from: date)) when the month has that day."
+                            )
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                         }
 
                         Toggle("Enabled", isOn: $scheduleEnabled)
@@ -2621,6 +2641,9 @@ struct TransactionEditor: View {
                 !Calendar.current.isDate(date, inSameDayAs: $0)
             } ?? false
             let frequencyChanged = editingScheduleFrequency.map { $0 != scheduleFrequency } ?? false
+            let recurrenceDay = dateChanged || editingScheduleRecurrenceDay == nil
+                ? Calendar.current.component(.day, from: date)
+                : editingScheduleRecurrenceDay!
             let lastRunDate = dateChanged || frequencyChanged ? nil : editingScheduleLastRunDate
             let enabled = lastRunDate != nil && scheduleFrequency == .once
                 ? false
@@ -2629,6 +2652,8 @@ struct TransactionEditor: View {
                 id: editingScheduleID ?? UUID(),
                 nextRunDate: date,
                 frequency: scheduleFrequency,
+                monthlyRule: monthlyRule,
+                recurrenceDay: recurrenceDay,
                 isEnabled: enabled,
                 lastRunDate: lastRunDate,
                 note: transaction.note,

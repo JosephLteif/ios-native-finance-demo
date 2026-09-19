@@ -438,6 +438,70 @@ final class FinanceModelTests: XCTestCase {
         )
     }
 
+    func testMonthlySchedulePreservesDayAnchorAcrossShortMonth() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let january31 = calendar.date(
+            from: DateComponents(year: 2025, month: 1, day: 31, hour: 9)
+        )!
+
+        let february = ScheduleFrequency.monthly.nextDate(
+            after: january31,
+            calendar: calendar,
+            monthlyDay: 31
+        )!
+        XCTAssertEqual(calendar.component(.day, from: february), 28)
+
+        let march = ScheduleFrequency.monthly.nextDate(
+            after: february,
+            calendar: calendar,
+            monthlyDay: 31
+        )!
+        XCTAssertEqual(calendar.component(.day, from: march), 31)
+
+        let lastDayFebruary = ScheduleFrequency.monthly.nextDate(
+            after: january31,
+            calendar: calendar,
+            monthlyRule: .lastDayOfMonth
+        )!
+        XCTAssertEqual(calendar.component(.day, from: lastDayFebruary), 28)
+    }
+
+    func testLegacyScheduledTransactionDecodesMonthlyDefaults() throws {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let schedule = ScheduledTransaction(
+            nextRunDate: Date(timeIntervalSince1970: 1_700_000_000),
+            frequency: .monthly,
+            note: "Rent",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .usd, minorUnits: 1_000)
+                )
+            ],
+            inflows: []
+        )
+        let encoded = try JSONEncoder().encode(schedule)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "monthlyRule")
+        object.removeValue(forKey: "recurrenceDay")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(ScheduledTransaction.self, from: legacyData)
+        XCTAssertEqual(decoded.monthlyRule, .dayOfMonth)
+        XCTAssertEqual(
+            decoded.recurrenceDay,
+            Calendar.current.component(.day, from: schedule.nextRunDate)
+        )
+    }
+
     func testTemplateCreatesFreshTransactionAndMovementIDs() {
         let account = Account(
             name: "Cash",

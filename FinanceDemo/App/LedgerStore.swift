@@ -222,7 +222,12 @@ final class LedgerStore: ObservableObject {
                     break
                 }
 
-                guard let nextDate = scheduledTransaction.frequency.nextDate(after: dueDate, calendar: calendar),
+                guard let nextDate = scheduledTransaction.frequency.nextDate(
+                    after: dueDate,
+                    calendar: calendar,
+                    monthlyDay: scheduledTransaction.recurrenceDay,
+                    monthlyRule: scheduledTransaction.monthlyRule
+                ),
                       nextDate > dueDate else {
                     scheduledTransaction.isEnabled = false
                     break

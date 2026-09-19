@@ -308,7 +308,12 @@ enum ScheduleFrequency: String, Codable, CaseIterable, Identifiable, Hashable, S
         }
     }
 
-    func nextDate(after date: Date, calendar: Calendar = .current) -> Date? {
+    func nextDate(
+        after date: Date,
+        calendar: Calendar = .current,
+        monthlyDay: Int? = nil,
+        monthlyRule: ScheduleMonthlyRule = .dayOfMonth
+    ) -> Date? {
         switch self {
         case .once:
             return nil
@@ -317,9 +322,43 @@ enum ScheduleFrequency: String, Codable, CaseIterable, Identifiable, Hashable, S
         case .weekly:
             return calendar.date(byAdding: .weekOfYear, value: 1, to: date)
         case .monthly:
-            return calendar.date(byAdding: .month, value: 1, to: date)
+            guard let nextMonth = calendar.date(byAdding: .month, value: 1, to: date),
+                  let nextMonthInterval = calendar.dateInterval(of: .month, for: nextMonth),
+                  let followingMonth = calendar.date(byAdding: .month, value: 1, to: nextMonthInterval.start),
+                  let lastDay = calendar.date(byAdding: .day, value: -1, to: followingMonth) else {
+                return nil
+            }
+
+            let maximumDay = calendar.component(.day, from: lastDay)
+            let targetDay: Int
+            switch monthlyRule {
+            case .dayOfMonth:
+                targetDay = min(max(monthlyDay ?? calendar.component(.day, from: date), 1), maximumDay)
+            case .lastDayOfMonth:
+                targetDay = maximumDay
+            }
+
+            var components = calendar.dateComponents([.year, .month, .hour, .minute, .second, .nanosecond], from: nextMonth)
+            components.day = targetDay
+            return calendar.date(from: components)
         case .yearly:
             return calendar.date(byAdding: .year, value: 1, to: date)
+        }
+    }
+}
+
+enum ScheduleMonthlyRule: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
+    case dayOfMonth
+    case lastDayOfMonth
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .dayOfMonth:
+            return "Same day each month"
+        case .lastDayOfMonth:
+            return "Last day of each month"
         }
     }
 }
@@ -515,6 +554,8 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
     let id: UUID
     var nextRunDate: Date
     var frequency: ScheduleFrequency
+    var monthlyRule: ScheduleMonthlyRule
+    var recurrenceDay: Int
     var isEnabled: Bool
     var lastRunDate: Date?
     var note: String
@@ -530,6 +571,8 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         id: UUID = UUID(),
         nextRunDate: Date,
         frequency: ScheduleFrequency,
+        monthlyRule: ScheduleMonthlyRule = .dayOfMonth,
+        recurrenceDay: Int? = nil,
         isEnabled: Bool = true,
         lastRunDate: Date? = nil,
         note: String,
@@ -544,6 +587,8 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         self.id = id
         self.nextRunDate = nextRunDate
         self.frequency = frequency
+        self.monthlyRule = monthlyRule
+        self.recurrenceDay = min(max(recurrenceDay ?? Calendar.current.component(.day, from: nextRunDate), 1), 31)
         self.isEnabled = isEnabled
         self.lastRunDate = lastRunDate
         self.note = note
@@ -554,6 +599,72 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         self.inflows = inflows
         self.exchangeRate = exchangeRate
         self.changeAdjustment = changeAdjustment
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case nextRunDate
+        case frequency
+        case monthlyRule
+        case recurrenceDay
+        case isEnabled
+        case lastRunDate
+        case note
+        case kind
+        case categoryID
+        case amountDue
+        case outflows
+        case inflows
+        case exchangeRate
+        case changeAdjustment
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        nextRunDate = try container.decode(Date.self, forKey: .nextRunDate)
+        frequency = try container.decode(ScheduleFrequency.self, forKey: .frequency)
+        monthlyRule = try container.decodeIfPresent(
+            ScheduleMonthlyRule.self,
+            forKey: .monthlyRule
+        ) ?? .dayOfMonth
+        recurrenceDay = min(
+            max(
+                try container.decodeIfPresent(Int.self, forKey: .recurrenceDay)
+                    ?? Calendar.current.component(.day, from: nextRunDate),
+                1
+            ),
+            31
+        )
+        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        lastRunDate = try container.decodeIfPresent(Date.self, forKey: .lastRunDate)
+        note = try container.decode(String.self, forKey: .note)
+        kind = try container.decode(TransactionKind.self, forKey: .kind)
+        categoryID = try container.decodeIfPresent(UUID.self, forKey: .categoryID)
+        amountDue = try container.decodeIfPresent(Money.self, forKey: .amountDue)
+        outflows = try container.decode([MoneyMovement].self, forKey: .outflows)
+        inflows = try container.decode([MoneyMovement].self, forKey: .inflows)
+        exchangeRate = try container.decodeIfPresent(ExchangeRate.self, forKey: .exchangeRate)
+        changeAdjustment = try container.decodeIfPresent(ChangeAdjustment.self, forKey: .changeAdjustment)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(nextRunDate, forKey: .nextRunDate)
+        try container.encode(frequency, forKey: .frequency)
+        try container.encode(monthlyRule, forKey: .monthlyRule)
+        try container.encode(recurrenceDay, forKey: .recurrenceDay)
+        try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encodeIfPresent(lastRunDate, forKey: .lastRunDate)
+        try container.encode(note, forKey: .note)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(categoryID, forKey: .categoryID)
+        try container.encodeIfPresent(amountDue, forKey: .amountDue)
+        try container.encode(outflows, forKey: .outflows)
+        try container.encode(inflows, forKey: .inflows)
+        try container.encodeIfPresent(exchangeRate, forKey: .exchangeRate)
+        try container.encodeIfPresent(changeAdjustment, forKey: .changeAdjustment)
     }
 
     var transactionTemplate: LedgerTransaction {
