@@ -374,7 +374,7 @@ final class FinanceModelTests: XCTestCase {
                 createMissingAccounts: true,
                 createMissingCategories: true
             ),
-            existing: FinanceData(accounts: [account])
+            existing: FinanceData(accounts: [account], categories: [], transactions: [])
         )
 
         XCTAssertTrue(result.data.accounts.isEmpty)
@@ -403,7 +403,7 @@ final class FinanceModelTests: XCTestCase {
         )
 
         let migrated = FinanceAccountCurrencyMigration.migrating(
-            FinanceData(accounts: [account], transactions: [transaction]),
+            FinanceData(accounts: [account], categories: [], transactions: [transaction]),
             accountID: account.id,
             from: .usd,
             to: .lbp
