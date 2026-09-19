@@ -11,7 +11,7 @@ struct AddDemoExpenseIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")
         let value = storage.load()
-        guard let account = value.accounts.first(where: { $0.currency == .usd && $0.type != .loan && $0.includeInTotals }),
+        guard let account = value.accounts.first(where: { !$0.isArchived && $0.currency == .usd && $0.type != .loan && $0.includeInTotals }),
               let category = value.categories.first(where: { $0.parentID != nil }) else {
             return .result(
                 value: "Ledger is not initialized",
@@ -86,7 +86,7 @@ struct AddConfiguredExpenseIntent: AppIntent {
 
         let data = storage.load()
         guard let account = data.accounts.first(where: {
-            $0.currency == .usd && $0.type != .loan && $0.includeInTotals
+            !$0.isArchived && $0.currency == .usd && $0.type != .loan && $0.includeInTotals
         }), let category = data.categories.first(where: { $0.parentID != nil }),
               let money = financeMoney(amount, currency: .usd) else {
             return .result(
@@ -127,7 +127,7 @@ struct AddDemoIncomeIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")
         let value = storage.load()
-        guard let account = value.accounts.first(where: { $0.currency == .usd && $0.type != .loan && $0.includeInTotals }) else {
+        guard let account = value.accounts.first(where: { !$0.isArchived && $0.currency == .usd && $0.type != .loan && $0.includeInTotals }) else {
             return .result(
                 value: "Ledger is not initialized",
                 dialog: "Pocket Ledger could not find a USD account."
@@ -300,7 +300,7 @@ struct GetAccountBalanceIntent: AppIntent {
         }
 
         let data = storage.load()
-        guard let resolvedAccount = data.accounts.first(where: { $0.id == account.id }) else {
+        guard let resolvedAccount = data.accounts.first(where: { $0.id == account.id && !$0.isArchived }) else {
             return .result(
                 value: "Account unavailable",
                 dialog: "Pocket Ledger could not find the selected account. Refresh the account list and try again."
@@ -377,7 +377,7 @@ struct AddLedgerTransactionIntent: AppIntent {
         }
 
         let data = storage.load()
-        guard let sourceAccount = data.accounts.first(where: { $0.id == account.id }) else {
+        guard let sourceAccount = data.accounts.first(where: { $0.id == account.id && !$0.isArchived }) else {
             return .result(
                 value: "Account unavailable",
                 dialog: "Pocket Ledger could not find the selected account. Refresh the account list and try again."
@@ -392,7 +392,7 @@ struct AddLedgerTransactionIntent: AppIntent {
 
         let destination: Account?
         if let destinationAccount {
-            guard let resolvedDestination = data.accounts.first(where: { $0.id == destinationAccount.id }) else {
+            guard let resolvedDestination = data.accounts.first(where: { $0.id == destinationAccount.id && !$0.isArchived }) else {
                 return .result(
                     value: "Destination account unavailable",
                     dialog: "Pocket Ledger could not find the selected destination account. Refresh the account list and try again."

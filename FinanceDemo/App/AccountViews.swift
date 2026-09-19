@@ -6,6 +6,7 @@ struct AccountDetailView: View {
     @ObservedObject var store: LedgerStore
     let accountID: UUID
 
+    @State private var isPresentingAccountEditor = false
     @State private var isPresentingBalanceEditor = false
 
     private var account: Account? {
@@ -20,12 +21,17 @@ struct AccountDetailView: View {
                 if account != nil {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
-                            isPresentingBalanceEditor = true
+                            isPresentingAccountEditor = true
                         } label: {
                             Image(systemName: "pencil")
                         }
-                        .accessibilityLabel("Edit account balance")
+                        .accessibilityLabel("Edit account")
                     }
+                }
+            }
+            .sheet(isPresented: $isPresentingAccountEditor) {
+                if let account {
+                    AccountEditor(store: store, account: account)
                 }
             }
             .sheet(isPresented: $isPresentingBalanceEditor) {
@@ -176,11 +182,21 @@ struct AccountDetailView: View {
                 .lineLimit(2)
 
             HStack(spacing: 6) {
-                Image(systemName: "pencil.circle")
-                Text("Tap the pencil to reconcile this balance")
+                Image(systemName: "checkmark.circle")
+                Text("Reconcile this balance")
             }
             .font(.caption)
             .foregroundStyle(PocketLedgerTheme.textTertiary)
+
+            Button {
+                isPresentingBalanceEditor = true
+            } label: {
+                Label("Adjust current balance", systemImage: "slider.horizontal.3")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(PocketLedgerTheme.accent)
         }
         .padding(20)
         .background(

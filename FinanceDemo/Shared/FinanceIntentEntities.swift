@@ -87,7 +87,7 @@ struct FinanceAccountQuery: EntityStringQuery, Sendable {
     func entities(for identifiers: [FinanceAccountEntity.ID]) async throws -> [FinanceAccountEntity] {
         let data = FinanceStorage(context: "app-intent").load()
         return identifiers.compactMap { identifier in
-            data.accounts.first(where: { $0.id == identifier }).map {
+            data.accounts.first(where: { $0.id == identifier && !$0.isArchived }).map {
                 FinanceAccountEntity(
                     account: $0,
                     balance: financeAccountBalance(for: $0, in: data)

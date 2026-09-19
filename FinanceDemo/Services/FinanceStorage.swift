@@ -328,7 +328,7 @@ final class FinanceStorage {
 
         func availableBalance(for currency: LedgerCurrency) -> Money {
             let minorUnits = value.accounts
-                .filter { $0.currency == currency && $0.type != .loan && $0.includeInTotals }
+                .filter { !$0.isArchived && $0.currency == currency && $0.type != .loan && $0.includeInTotals }
                 .reduce(Int64.zero) { $0 + balance(for: $1) }
             return Money(currency: currency, minorUnits: minorUnits)
         }

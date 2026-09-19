@@ -146,7 +146,7 @@ private final class PocketLedgerTabBarController: UITabBarController {
 
         let systemTabBarFrame = tabBar.frame
         let tabBarHeight = max(49, systemTabBarFrame.height)
-        let buttonSize: CGFloat = 44
+        let buttonSize: CGFloat = 56
         let buttonTrailing = view.bounds.width - view.safeAreaInsets.right - 16
         let buttonFrame = CGRect(
             x: buttonTrailing - buttonSize,
@@ -271,6 +271,10 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
     private func makeAddButton(context: Context) -> UIButton {
         var configuration = UIButton.Configuration.glass()
         configuration.image = UIImage(systemName: "plus")
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 22,
+            weight: .semibold
+        )
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
         configuration.cornerStyle = .capsule
 
@@ -1429,10 +1433,14 @@ private struct AccountsView: View {
                 globalPositionSummary
 
                 ForEach(LedgerCurrency.allCases) { currency in
-                    let accounts = store.data.accounts.filter { $0.currency == currency }
+                    let accounts = store.activeAccounts.filter { $0.currency == currency }
                     if !accounts.isEmpty {
                         accountSection(currency: currency, accounts: accounts)
                     }
+                }
+
+                if !archivedAccounts.isEmpty {
+                    archivedAccountsSection
                 }
 
                 Text(store.storageAvailable && store.sharedStorageAvailable
@@ -1593,13 +1601,10 @@ private struct AccountsView: View {
                                 Button("Edit", systemImage: "pencil") {
                                     presentAccount(account)
                                 }
-                                Button(
-                                    account.isArchived ? "Restore" : "Archive",
-                                    systemImage: account.isArchived ? "arrow.uturn.backward" : "archivebox"
-                                ) {
+                                Button("Archive", systemImage: "archivebox") {
                                     _ = store.setAccountArchived(
                                         accountID: account.id,
-                                        isArchived: !account.isArchived
+                                        isArchived: true
                                     )
                                 }
                             }
@@ -1609,16 +1614,13 @@ private struct AccountsView: View {
                         Button("Edit", systemImage: "pencil") {
                             presentAccount(account)
                         }
-                        Button(
-                            account.isArchived ? "Restore" : "Archive",
-                            systemImage: account.isArchived ? "arrow.uturn.backward" : "archivebox"
-                        ) {
+                        Button("Archive", systemImage: "archivebox") {
                             _ = store.setAccountArchived(
                                 accountID: account.id,
-                                isArchived: !account.isArchived
+                                isArchived: true
                             )
                         }
-                        .tint(account.isArchived ? PocketLedgerTheme.positive : PocketLedgerTheme.warning)
+                        .tint(PocketLedgerTheme.warning)
                     }
                     Divider().overlay(PocketLedgerTheme.divider)
                 }
@@ -1629,6 +1631,58 @@ private struct AccountsView: View {
                 RoundedRectangle(cornerRadius: 18)
                     .stroke(PocketLedgerTheme.divider, lineWidth: 1)
             }
+        }
+    }
+
+    private var archivedAccounts: [Account] {
+        store.data.accounts.filter(\.isArchived)
+    }
+
+    private var archivedAccountsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Archived")
+                .font(.title3.weight(.bold))
+
+            VStack(spacing: 0) {
+                ForEach(archivedAccounts) { account in
+                    HStack(spacing: 12) {
+                        PocketIcon(
+                            systemImage: account.type.systemImage,
+                            tint: PocketLedgerTheme.textTertiary,
+                            size: 34
+                        )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.name)
+                                .font(.subheadline.weight(.semibold))
+                            Text("\(account.type.displayName) · \(account.currency.rawValue)")
+                                .font(.caption)
+                                .foregroundStyle(PocketLedgerTheme.textTertiary)
+                        }
+
+                        Spacer(minLength: 8)
+
+                        Button("Restore", systemImage: "arrow.uturn.backward") {
+                            _ = store.setAccountArchived(accountID: account.id, isArchived: false)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(.vertical, 10)
+
+                    Divider().overlay(PocketLedgerTheme.divider)
+                }
+            }
+            .padding(.horizontal, 14)
+            .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+            }
+
+            Text("Archived accounts stay available for historical transactions but are hidden from new account selections.")
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
         }
     }
 
