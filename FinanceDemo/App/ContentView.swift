@@ -2450,117 +2450,9 @@ struct TransactionEditor: View {
                     Text("Transaction type")
                 }
 
-                Section("Timing") {
-                    Picker("When", selection: $timing) {
-                        ForEach(TransactionTiming.allCases) { option in
-                            Text(option.displayName).tag(option)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .disabled(isEditingScheduledTransaction)
-
-                    if timing == .scheduled {
-                        DatePicker("First run", selection: $date, displayedComponents: .date)
-
-                        Picker("Repeats", selection: $scheduleFrequency) {
-                            ForEach(ScheduleFrequency.allCases) { frequency in
-                                Text(frequency.displayName).tag(frequency)
-                            }
-                        }
-
-                        if scheduleFrequency == .monthly {
-                            Picker("Monthly rule", selection: $monthlyRule) {
-                                ForEach(ScheduleMonthlyRule.allCases) { rule in
-                                    Text(rule.displayName).tag(rule)
-                                }
-                            }
-
-                            Text(monthlyScheduleDescription)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Toggle("Enabled", isOn: $scheduleEnabled)
-                            .disabled(completedOneTimeSchedule)
-
-                        if completedOneTimeSchedule {
-                            Text("This one-time schedule has already been added to transactions.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        DatePicker("Date", selection: $date, displayedComponents: .date)
-                    }
-                }
-
-                Section("Details") {
-                    TextField("What was this for?", text: $note)
-
-                    if kind == .expense {
-                        HStack {
-                            if selectableCategories.isEmpty {
-                                Text("No categories yet — this expense will be Uncategorized.")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Picker("Category", selection: $categoryID) {
-                                    Text("Uncategorized").tag(UUID?.none)
-                                    ForEach(selectableCategories) { category in
-                                        Text(store.categoryPath(for: category.id))
-                                            .tag(Optional(category.id))
-                                    }
-                                }
-                            }
-
-                            Button("New category", systemImage: "plus.circle") {
-                                isShowingNewCategory = true
-                            }
-                            .labelStyle(.iconOnly)
-                            .accessibilityLabel("New category")
-                        }
-                        Picker("Bill currency", selection: $dueCurrency) {
-                            ForEach(LedgerCurrency.allCases) { currency in
-                                Text(currency.rawValue).tag(currency)
-                            }
-                        }
-                        TextField("Bill total (optional)", text: $amountDue)
-                            .keyboardType(.decimalPad)
-                    }
-                }
-
-                if !attachments.isEmpty {
-                    Section("Attachments") {
-                        ForEach(attachments) { attachment in
-                            HStack {
-                                Button {
-                                    previewAttachment = attachment
-                                } label: {
-                                    Label(attachment.fileName, systemImage: attachment.contentType == "application/pdf" ? "doc.richtext" : "photo")
-                                }
-                                .foregroundStyle(PocketLedgerTheme.textPrimary)
-
-                                Spacer()
-
-                                Button(action: { beginReplacingAttachment(attachment) }) {
-                                    Text("Replace")
-                                }
-                                .font(.footnote.weight(.semibold))
-                            }
-                            .swipeActions {
-                                Button("Delete", systemImage: "trash", role: .destructive) {
-                                    deleteAttachment(attachment)
-                                }
-                            }
-                        }
-                    }
-                } else if let initialAttachmentFileName {
-                    Section("Receipt attachment") {
-                        Label(initialAttachmentFileName, systemImage: initialAttachmentContentType == "application/pdf" ? "doc.richtext" : "photo")
-                        Text("This local file will be saved with the transaction after you tap \(saveButtonTitle.lowercased()).")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                timingSection
+                detailsSection
+                attachmentSection
 
                 outgoingMovementSection
                 receivingMovementSection
@@ -2665,6 +2557,127 @@ struct TransactionEditor: View {
 
     private var isEditingScheduledTransaction: Bool {
         editingScheduleID != nil
+    }
+
+    @ViewBuilder
+    private var timingSection: some View {
+        Section("Timing") {
+            Picker("When", selection: $timing) {
+                ForEach(TransactionTiming.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(isEditingScheduledTransaction)
+
+            if timing == .scheduled {
+                DatePicker("First run", selection: $date, displayedComponents: .date)
+
+                Picker("Repeats", selection: $scheduleFrequency) {
+                    ForEach(ScheduleFrequency.allCases) { frequency in
+                        Text(frequency.displayName).tag(frequency)
+                    }
+                }
+
+                if scheduleFrequency == .monthly {
+                    Picker("Monthly rule", selection: $monthlyRule) {
+                        ForEach(ScheduleMonthlyRule.allCases) { rule in
+                            Text(rule.displayName).tag(rule)
+                        }
+                    }
+
+                    Text(monthlyScheduleDescription)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Toggle("Enabled", isOn: $scheduleEnabled)
+                    .disabled(completedOneTimeSchedule)
+
+                if completedOneTimeSchedule {
+                    Text("This one-time schedule has already been added to transactions.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                DatePicker("Date", selection: $date, displayedComponents: .date)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var detailsSection: some View {
+        Section("Details") {
+            TextField("What was this for?", text: $note)
+
+            if kind == .expense {
+                HStack {
+                    if selectableCategories.isEmpty {
+                        Text("No categories yet — this expense will be Uncategorized.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Category", selection: $categoryID) {
+                            Text("Uncategorized").tag(UUID?.none)
+                            ForEach(selectableCategories) { category in
+                                Text(store.categoryPath(for: category.id))
+                                    .tag(Optional(category.id))
+                            }
+                        }
+                    }
+
+                    Button("New category", systemImage: "plus.circle") {
+                        isShowingNewCategory = true
+                    }
+                    .labelStyle(.iconOnly)
+                    .accessibilityLabel("New category")
+                }
+                Picker("Bill currency", selection: $dueCurrency) {
+                    ForEach(LedgerCurrency.allCases) { currency in
+                        Text(currency.rawValue).tag(currency)
+                    }
+                }
+                TextField("Bill total (optional)", text: $amountDue)
+                    .keyboardType(.decimalPad)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var attachmentSection: some View {
+        if !attachments.isEmpty {
+            Section("Attachments") {
+                ForEach(attachments) { attachment in
+                    HStack {
+                        Button {
+                            previewAttachment = attachment
+                        } label: {
+                            Label(attachment.fileName, systemImage: attachment.contentType == "application/pdf" ? "doc.richtext" : "photo")
+                        }
+                        .foregroundStyle(PocketLedgerTheme.textPrimary)
+
+                        Spacer()
+
+                        Button(action: { beginReplacingAttachment(attachment) }) {
+                            Text("Replace")
+                        }
+                        .font(.footnote.weight(.semibold))
+                    }
+                    .swipeActions {
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            deleteAttachment(attachment)
+                        }
+                    }
+                }
+            }
+        } else if let initialAttachmentFileName {
+            Section("Receipt attachment") {
+                Label(initialAttachmentFileName, systemImage: initialAttachmentContentType == "application/pdf" ? "doc.richtext" : "photo")
+                Text("This local file will be saved with the transaction after you tap \(saveButtonTitle.lowercased()).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var allowsArchivedMovementAccounts: Bool {
