@@ -1197,7 +1197,7 @@ private struct DashboardView: View {
                     }
                 }
                 .padding(.horizontal, 14)
-                .pocketGlassSurface(cornerRadius: 18)
+                .pocketGroupedSurface(cornerRadius: 18)
                 .overlay {
                     RoundedRectangle(cornerRadius: 18)
                         .stroke(PocketLedgerTheme.divider, lineWidth: 1)
