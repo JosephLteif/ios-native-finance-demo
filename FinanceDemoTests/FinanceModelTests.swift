@@ -638,6 +638,28 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(prepared.accounts.map(\.id), [archivedAccount.id])
     }
 
+    func testArchivedHistoricalAccountRemainsValidAndIsExcludedFromActiveChoices() {
+        let archivedAccount = Account(
+            name: "Historical silver",
+            type: .physicalAsset,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0),
+            isArchived: true
+        )
+        let transaction = LedgerTransaction(
+            note: "Historical sale",
+            kind: .income,
+            categoryID: nil,
+            outflows: [],
+            inflows: [MoneyMovement(accountID: archivedAccount.id, money: Money(currency: .usd, minorUnits: 1_000))]
+        )
+        let data = FinanceData(accounts: [archivedAccount], categories: [], transactions: [transaction])
+
+        XCTAssertNil(FinanceDataValidator.validate(data))
+        XCTAssertNil(FinanceTransactionValidator.validate(transaction, in: data, allowArchivedReferences: true))
+        XCTAssertTrue(data.accounts.filter { !$0.isArchived }.isEmpty)
+    }
+
     func testImportWizardDraftPreservesStateAcrossStepsAndDiscardsStagedData() {
         let document = ImportedDocument(
             fileName: "ledger.csv",
