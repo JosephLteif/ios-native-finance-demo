@@ -8,6 +8,9 @@ struct AccountDetailView: View {
 
     @State private var isPresentingAccountEditor = false
     @State private var isPresentingBalanceEditor = false
+    @State private var transactionPage = 0
+
+    private let transactionsPerPage = 25
 
     private var account: Account? {
         store.account(with: accountID)
@@ -52,10 +55,16 @@ struct AccountDetailView: View {
     }
 
     private func accountContent(_ account: Account) -> some View {
-        let transactions = store.recentTransactions.filter { transaction in
-            transaction.outflows.contains { $0.accountID == account.id }
-                || transaction.inflows.contains { $0.accountID == account.id }
-        }
+        let transactions = store.data.transactions
+            .filter { transaction in
+                transaction.outflows.contains { $0.accountID == account.id }
+                    || transaction.inflows.contains { $0.accountID == account.id }
+            }
+            .sorted { $0.date > $1.date }
+        let pageCount = max(1, (transactions.count + transactionsPerPage - 1) / transactionsPerPage)
+        let displayedPage = min(transactionPage, pageCount - 1)
+        let pageStart = displayedPage * transactionsPerPage
+        let pageTransactions = Array(transactions.dropFirst(pageStart).prefix(transactionsPerPage))
         let outgoing = transactions.reduce(Int64.zero) { total, transaction in
             total + transaction.outflows
                 .filter { $0.accountID == account.id && $0.money.currency == account.currency }
@@ -119,8 +128,8 @@ struct AccountDetailView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 28)
                         } else {
-                            VStack(spacing: 0) {
-                                ForEach(transactions) { transaction in
+                            LazyVStack(spacing: 0) {
+                                ForEach(pageTransactions) { transaction in
                                     AccountTransactionRow(
                                         transaction: transaction,
                                         account: account,
@@ -135,6 +144,32 @@ struct AccountDetailView: View {
                                 RoundedRectangle(cornerRadius: 18)
                                     .stroke(PocketLedgerTheme.divider, lineWidth: 1)
                             }
+
+                            if pageCount > 1 {
+                                HStack(spacing: 16) {
+                                    Button {
+                                        transactionPage = max(0, displayedPage - 1)
+                                    } label: {
+                                        Label("Previous", systemImage: "chevron.left")
+                                    }
+                                    .disabled(displayedPage == 0)
+
+                                    Text("Page \(displayedPage + 1) of \(pageCount)")
+                                        .font(.caption.weight(.semibold).monospacedDigit())
+                                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                                    Button {
+                                        transactionPage = min(pageCount - 1, displayedPage + 1)
+                                    } label: {
+                                        Label("Next", systemImage: "chevron.right")
+                                            .labelStyle(.titleAndIcon)
+                                    }
+                                    .disabled(displayedPage == pageCount - 1)
+                                }
+                                .font(.caption.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 4)
+                            }
                         }
                     }
                 }
@@ -142,6 +177,9 @@ struct AccountDetailView: View {
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 24)
+        }
+        .onChange(of: account.id) { _, _ in
+            transactionPage = 0
         }
     }
 

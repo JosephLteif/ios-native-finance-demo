@@ -1039,6 +1039,79 @@ final class FinanceModelTests: XCTestCase {
         )
     }
 
+    func testImportConvertsDestinationCurrencyAmountForKnownSourceAccount() throws {
+        let source = Account(
+            name: "Whish",
+            type: .bankAccount,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let destination = Account(
+            name: "LBP Cash",
+            type: .cash,
+            currency: .lbp,
+            openingBalance: Money(currency: .lbp, minorUnits: 0)
+        )
+        let rate = ExchangeRate(
+            baseCurrency: .usd,
+            quoteCurrency: .lbp,
+            quoteUnitsPerBaseUnit: 90_000
+        )
+        let table = ImportedTable(
+            id: "transfers",
+            name: "Transfers",
+            columns: [
+                "Date", "Type", "Amount", "Currency", "Account",
+                "Destination Account", "Destination Amount", "Destination Currency"
+            ],
+            rows: [[
+                "2026-09-06", "Transfer", "9000000", "LBP", "Whish",
+                "LBP Cash", "9000000", "LBP"
+            ]]
+        )
+        let existing = FinanceData(
+            accounts: [source, destination],
+            categories: [],
+            transactions: [],
+            exchangeRates: [rate]
+        )
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: source.id,
+                defaultDestinationAccountID: destination.id,
+                createMissingAccounts: true,
+                createMissingCategories: true
+            ),
+            existing: existing
+        )
+
+        let transaction = try XCTUnwrap(result.data.transactions.first)
+        XCTAssertEqual(
+            transaction.outflows.first?.money,
+            Money(currency: .usd, minorUnits: 10_000)
+        )
+        XCTAssertEqual(
+            transaction.inflows.first?.money,
+            Money(currency: .lbp, minorUnits: 9_000_000)
+        )
+        XCTAssertEqual(transaction.exchangeRate, rate)
+        XCTAssertNil(
+            FinanceDataValidator.validate(
+                FinanceData(
+                    accounts: existing.accounts,
+                    categories: [],
+                    transactions: [transaction],
+                    exchangeRates: existing.exchangeRates
+                )
+            )
+        )
+    }
+
     func testImportRecastsDestinationMovementToResolvedAccountCurrency() throws {
         let source = Account(
             name: "Cash",

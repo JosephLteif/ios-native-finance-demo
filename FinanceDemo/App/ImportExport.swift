@@ -853,11 +853,11 @@ enum FinanceImportParser {
         if value.contains("lbp") || value.contains("leban") || value.contains("ل.ل") {
             return .lbp
         }
+        if value.contains("usd") || value.contains("dollar") || value.contains("$") || value.contains("whish") {
+            return .usd
+        }
         if value.contains("eur") || value.contains("euro") || value.contains("€") {
             return .eur
-        }
-        if value.contains("usd") || value.contains("dollar") || value.contains("$") {
-            return .usd
         }
         return nil
     }
@@ -1491,13 +1491,17 @@ enum FinanceImportBuilder {
                 let explicitCurrency = currencyValue.isEmpty
                     ? nil
                     : parseCurrency(currencyValue, default: options.defaultCurrency)
-                let preferredCurrency = explicitCurrency
-                    ?? (existing.accounts + importedAccounts).first(where: {
-                        !$0.name.isEmpty && $0.name.caseInsensitiveCompare(accountName) == .orderedSame
-                    })?.currency
+                let knownSourceAccount = matchingAccount(
+                    named: accountName,
+                    defaultID: options.defaultAccountID,
+                    in: existing.accounts + importedAccounts
+                )
+                let preferredCurrency = knownSourceAccount?.currency
+                    ?? explicitCurrency
                     ?? accountSuggestion(for: accountName, in: options.accountSuggestions)?.currency
                     ?? inferredCurrency(for: accountName, fallback: options.defaultCurrency)
-                let signedAmount = try parseAmount(rawAmount, currency: preferredCurrency)
+                let inputCurrency = explicitCurrency ?? preferredCurrency
+                let signedAmount = try parseAmount(rawAmount, currency: inputCurrency)
                 guard signedAmount.minorUnits != 0 else {
                     throw FinanceImportError.row("The amount is zero.")
                 }
@@ -1518,8 +1522,10 @@ enum FinanceImportBuilder {
                     imported: &importedAccounts
                 )
                 let currency = account.currency
-                let recastAmount = signedAmount.recast(to: currency)
-                let amount = Money(currency: recastAmount.currency, minorUnits: Swift.abs(recastAmount.minorUnits))
+                let importedAmount = Money(
+                    currency: inputCurrency,
+                    minorUnits: Swift.abs(signedAmount.minorUnits)
+                )
                 let categoryID = try resolveCategory(
                     value(for: .category, in: row, table: table, mapping: mapping),
                     kind: kind,
@@ -1532,10 +1538,22 @@ enum FinanceImportBuilder {
 
                 var outflows: [MoneyMovement] = []
                 var inflows: [MoneyMovement] = []
+                var amount: Money
+                var exchangeRate: ExchangeRate?
                 switch kind {
                 case .expense:
+                    amount = try convertedAmount(
+                        importedAmount,
+                        to: currency,
+                        using: existing.exchangeRates + importedExchangeRates
+                    )
                     outflows = [MoneyMovement(accountID: account.id, money: amount)]
                 case .income:
+                    amount = try convertedAmount(
+                        importedAmount,
+                        to: currency,
+                        using: existing.exchangeRates + importedExchangeRates
+                    )
                     inflows = [MoneyMovement(accountID: account.id, money: amount)]
                 case .transfer:
                     let destinationName = value(for: .destinationAccount, in: row, table: table, mapping: mapping)
@@ -1548,34 +1566,22 @@ enum FinanceImportBuilder {
                     let explicitDestinationCurrency = destinationCurrencyValue.isEmpty
                         ? nil
                         : parseCurrency(destinationCurrencyValue, default: currency)
-                    let destinationCurrency: LedgerCurrency
-                    if let explicitDestinationCurrency {
-                        destinationCurrency = explicitDestinationCurrency
-                    } else if let defaultDestinationAccountID = options.defaultDestinationAccountID,
-                              let defaultDestination = (existing.accounts + importedAccounts).first(where: {
-                                  $0.id == defaultDestinationAccountID
-                              }) {
-                        destinationCurrency = defaultDestination.currency
-                    } else if let namedDestination = (existing.accounts + importedAccounts).first(where: {
-                        $0.name.caseInsensitiveCompare(destinationName) == .orderedSame
-                    }) {
-                        destinationCurrency = namedDestination.currency
-                    } else {
-                        destinationCurrency = accountSuggestion(
+                    let knownDestinationAccount = matchingAccount(
+                        named: destinationName,
+                        defaultID: options.defaultDestinationAccountID,
+                        in: existing.accounts + importedAccounts
+                    )
+                    let destinationCurrency = knownDestinationAccount?.currency
+                        ?? explicitDestinationCurrency
+                        ?? accountSuggestion(
                             for: destinationName,
                             in: options.accountSuggestions
-                        )?.currency ?? inferredCurrency(for: destinationName, fallback: currency)
-                    }
+                        )?.currency
+                        ?? inferredCurrency(for: destinationName, fallback: currency)
                     let destinationAmountValue = value(for: .destinationAmount, in: row, table: table, mapping: mapping)
-                    let destinationAmount = destinationAmountValue.isEmpty
-                        ? amount.recast(to: destinationCurrency)
-                        : Money(
-                            currency: destinationCurrency,
-                            minorUnits: Swift.abs(try parseAmount(destinationAmountValue, currency: destinationCurrency).minorUnits)
-                        )
                     let destination = try resolveDestinationAccount(
                         name: destinationName,
-                        currency: destinationAmount.currency,
+                        currency: destinationCurrency,
                         explicitCurrency: explicitDestinationCurrency,
                         type: parseAccountType(
                             value(for: .destinationAccountType, in: row, table: table, mapping: mapping)
@@ -1587,36 +1593,115 @@ enum FinanceImportBuilder {
                         existing: existing,
                         imported: &importedAccounts
                     )
-                    let recastDestinationAmount = destinationAmount.recast(to: destination.currency)
-                    if destination.currency != currency && destinationAmountValue.isEmpty {
-                        warnings.append(
-                            "Row \(rowOffset + 2): no destination amount was provided; the source amount was used to infer the cross-currency rate."
+                    let destinationMoneyCurrency = destination.currency
+                    let availableRates = existing.exchangeRates + importedExchangeRates
+                    let destinationAmount: Money
+
+                    if currency == destinationMoneyCurrency {
+                        amount = try convertedAmount(
+                            importedAmount,
+                            to: currency,
+                            using: availableRates
                         )
+                        if destinationAmountValue.isEmpty {
+                            destinationAmount = amount
+                        } else {
+                            let parsedDestinationAmount = Money(
+                                currency: destinationMoneyCurrency,
+                                minorUnits: Swift.abs(
+                                    try parseAmount(
+                                        destinationAmountValue,
+                                        currency: destinationMoneyCurrency
+                                    ).minorUnits
+                                )
+                            )
+                            destinationAmount = try convertedAmount(
+                                parsedDestinationAmount,
+                                to: destinationMoneyCurrency,
+                                using: availableRates
+                            )
+                        }
+                    } else if !destinationAmountValue.isEmpty {
+                        let parsedDestinationAmount = Money(
+                            currency: destinationMoneyCurrency,
+                            minorUnits: Swift.abs(
+                                try parseAmount(
+                                    destinationAmountValue,
+                                    currency: destinationMoneyCurrency
+                                ).minorUnits
+                            )
+                        )
+                        amount = try convertedAmount(
+                            importedAmount,
+                            to: currency,
+                            using: availableRates
+                        )
+                        destinationAmount = parsedDestinationAmount
+                        exchangeRate = inferredExchangeRate(from: amount, to: destinationAmount)
+                    } else if importedAmount.currency == destinationMoneyCurrency {
+                        guard let rate = storedExchangeRate(
+                            from: currency,
+                            to: destinationMoneyCurrency,
+                            in: availableRates
+                        ) else {
+                            throw FinanceImportError.row(
+                                "No exchange rate is available to convert the imported destination amount from \(destinationMoneyCurrency.rawValue) to \(currency.rawValue)."
+                            )
+                        }
+                        destinationAmount = importedAmount
+                        amount = try convertedAmount(
+                            destinationAmount,
+                            to: currency,
+                            using: rate
+                        )
+                        exchangeRate = rate
+                    } else {
+                        guard let rate = storedExchangeRate(
+                            from: currency,
+                            to: destinationMoneyCurrency,
+                            in: availableRates
+                        ) else {
+                            throw FinanceImportError.row(
+                                "No exchange rate is available to convert the imported source amount from \(currency.rawValue) to \(destinationMoneyCurrency.rawValue)."
+                            )
+                        }
+                        amount = try convertedAmount(
+                            importedAmount,
+                            to: currency,
+                            using: availableRates
+                        )
+                        destinationAmount = try convertedAmount(
+                            amount,
+                            to: destinationMoneyCurrency,
+                            using: rate
+                        )
+                        exchangeRate = rate
+                    }
+
+                    if currency != destinationMoneyCurrency, exchangeRate == nil {
+                        guard let inferredRate = inferredExchangeRate(from: amount, to: destinationAmount) else {
+                            throw FinanceImportError.row(
+                                "The cross-currency transfer does not contain positive amounts for both currencies."
+                            )
+                        }
+                        exchangeRate = inferredRate
                     }
                     outflows = [MoneyMovement(accountID: account.id, money: amount)]
-                    inflows = [MoneyMovement(accountID: destination.id, money: recastDestinationAmount)]
+                    inflows = [MoneyMovement(accountID: destination.id, money: destinationAmount)]
                 }
 
-                let exchangeRate: ExchangeRate?
-                if kind == .transfer,
-                   let destinationMovement = inflows.first,
-                   amount.currency != destinationMovement.money.currency {
-                    guard let inferredRate = inferredExchangeRate(
-                        from: amount,
-                        to: destinationMovement.money
-                    ) else {
-                        throw FinanceImportError.row("The cross-currency transfer does not contain positive amounts for both currencies.")
-                    }
-                    exchangeRate = inferredRate
+                if let exchangeRate,
+                   !importedExchangeRates.contains(where: {
+                       $0.baseCurrency == exchangeRate.baseCurrency
+                           && $0.quoteCurrency == exchangeRate.quoteCurrency
+                   }) {
                     importedExchangeRates.removeAll {
                         Set([$0.baseCurrency, $0.quoteCurrency]) == Set([
-                            inferredRate.baseCurrency,
-                            inferredRate.quoteCurrency
+                            exchangeRate.baseCurrency,
+                            exchangeRate.quoteCurrency
                         ])
                     }
-                    importedExchangeRates.append(inferredRate)
-                } else {
-                    exchangeRate = nil
+                    importedExchangeRates.append(exchangeRate)
                 }
 
                 importedTransactions.append(
@@ -1665,6 +1750,85 @@ enum FinanceImportBuilder {
             return ""
         }
         return row[index].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func matchingAccount(
+        named rawName: String,
+        defaultID: UUID?,
+        in accounts: [Account]
+    ) -> Account? {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty {
+            return accounts.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        }
+        guard let defaultID else { return nil }
+        return accounts.first { $0.id == defaultID }
+    }
+
+    private static func storedExchangeRate(
+        from baseCurrency: LedgerCurrency,
+        to quoteCurrency: LedgerCurrency,
+        in rates: [ExchangeRate]
+    ) -> ExchangeRate? {
+        guard baseCurrency != quoteCurrency else { return nil }
+
+        if let exact = rates.first(where: {
+            $0.baseCurrency == baseCurrency && $0.quoteCurrency == quoteCurrency
+        }) {
+            return exact
+        }
+
+        guard let reverse = rates.first(where: {
+            $0.baseCurrency == quoteCurrency && $0.quoteCurrency == baseCurrency
+        }), reverse.quoteUnitsPerBaseUnit > 0 else {
+            return nil
+        }
+        return ExchangeRate(
+            baseCurrency: baseCurrency,
+            quoteCurrency: quoteCurrency,
+            quoteUnitsPerBaseUnit: Decimal(1) / reverse.quoteUnitsPerBaseUnit
+        )
+    }
+
+    private static func convertedAmount(
+        _ money: Money,
+        to currency: LedgerCurrency,
+        using rates: [ExchangeRate]
+    ) throws -> Money {
+        guard money.currency != currency else { return money }
+        guard let rate = storedExchangeRate(from: money.currency, to: currency, in: rates),
+              let converted = convertedAmount(money, to: currency, using: rate) else {
+            throw FinanceImportError.row(
+                "No exchange rate is available to convert \(money.currency.rawValue) to \(currency.rawValue)."
+            )
+        }
+        return converted
+    }
+
+    private static func convertedAmount(
+        _ money: Money,
+        to currency: LedgerCurrency,
+        using rate: ExchangeRate
+    ) -> Money? {
+        guard rate.quoteUnitsPerBaseUnit > 0 else { return nil }
+
+        let sourceUnits = Decimal(money.minorUnits) / Decimal(money.currency.minorUnitScale)
+        let targetUnits: Decimal
+        if money.currency == rate.baseCurrency && currency == rate.quoteCurrency {
+            targetUnits = sourceUnits * rate.quoteUnitsPerBaseUnit
+        } else if money.currency == rate.quoteCurrency && currency == rate.baseCurrency {
+            targetUnits = sourceUnits / rate.quoteUnitsPerBaseUnit
+        } else {
+            return nil
+        }
+
+        let targetMinorUnits = targetUnits * Decimal(currency.minorUnitScale)
+        var rounded = Decimal()
+        var value = targetMinorUnits
+        NSDecimalRound(&rounded, &value, 0, .plain)
+        let minorUnits = NSDecimalNumber(decimal: rounded).int64Value
+        guard minorUnits > 0 else { return nil }
+        return Money(currency: currency, minorUnits: minorUnits)
     }
 
     private static func accountSuggestion(
@@ -1907,7 +2071,7 @@ enum FinanceImportBuilder {
         if value.contains("lbp") || value.contains("leban") || value.contains("lira") || value.contains("ل.ل") {
             return .lbp
         }
-        if value.contains("usd") || value.contains("dollar") || value.contains("$") {
+        if value.contains("usd") || value.contains("dollar") || value.contains("$") || value.contains("whish") {
             return .usd
         }
         if value.contains("eur") || value.contains("euro") || value.contains("€") {

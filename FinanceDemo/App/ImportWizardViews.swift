@@ -1547,14 +1547,20 @@ private struct ImportWizardTransactionRow: View {
         DisclosureGroup {
             if !transaction.outflows.isEmpty {
                 Picker("Source account", selection: sourceAccountBinding) {
-                    ForEach(accountOptions(for: transaction.outflows[0].accountID)) { account in
+                    ForEach(accountOptions(
+                        for: transaction.outflows[0].accountID,
+                        movementCurrency: transaction.outflows[0].money.currency
+                    )) { account in
                         Text(accountLabel(account)).tag(Optional(account.id))
                     }
                 }
             }
             if transaction.kind == .transfer, !transaction.inflows.isEmpty {
                 Picker("Destination account", selection: destinationAccountBinding) {
-                    ForEach(accountOptions(for: transaction.inflows[0].accountID)) { account in
+                    ForEach(accountOptions(
+                        for: transaction.inflows[0].accountID,
+                        movementCurrency: transaction.inflows[0].money.currency
+                    )) { account in
                         Text(accountLabel(account)).tag(Optional(account.id))
                     }
                 }
@@ -1617,8 +1623,14 @@ private struct ImportWizardTransactionRow: View {
         return "\(transaction.date.formatted(date: .abbreviated, time: .omitted)) · \(amount)"
     }
 
-    private func accountOptions(for currentID: UUID) -> [Account] {
-        accounts.filter { !$0.isArchived || $0.id == currentID }
+    private func accountOptions(
+        for currentID: UUID,
+        movementCurrency: LedgerCurrency
+    ) -> [Account] {
+        accounts.filter { account in
+            (!account.isArchived || account.id == currentID)
+                && (account.currency == movementCurrency || account.id == currentID)
+        }
     }
 
     private func accountLabel(_ account: Account) -> String {
@@ -1628,8 +1640,7 @@ private struct ImportWizardTransactionRow: View {
     private func updateMovement(in movements: inout [MoneyMovement], to accountID: UUID?) {
         guard let accountID,
               let index = movements.indices.first,
-              let account = accounts.first(where: { $0.id == accountID }) else { return }
+              accounts.contains(where: { $0.id == accountID }) else { return }
         movements[index].accountID = accountID
-        movements[index].money = movements[index].money.recast(to: account.currency)
     }
 }
