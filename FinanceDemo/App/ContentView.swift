@@ -175,25 +175,27 @@ private final class PocketLedgerTabBarController: UITabBarController {
         guard visibleTabBar.superview != nil else { return }
 
         let systemTabBarFrame = tabBar.frame
-        let tabBarHeight = max(49, systemTabBarFrame.height)
+        // The system tab bar frame includes the bottom safe-area region. The
+        // visible tab row and Add control should share the content row's center.
+        let tabBarHeight = max(49, visibleTabBar.sizeThatFits(view.bounds.size).height)
         let buttonSize: CGFloat = 56
         let buttonTrailing = view.bounds.width - view.safeAreaInsets.right - 16
-        let tabBarCenterY = systemTabBarFrame.minY + tabBarHeight / 2
-        let buttonFrame = CGRect(
-            x: buttonTrailing - buttonSize,
-            y: tabBarCenterY - buttonSize / 2,
-            width: buttonSize,
-            height: buttonSize
-        )
-
+        let tabBarLeading = max(view.safeAreaInsets.left, 16)
         let gap: CGFloat = 12
         let tabBarFrame = CGRect(
-            x: max(view.safeAreaInsets.left, 16),
+            x: tabBarLeading,
             y: systemTabBarFrame.minY,
-            width: max(0, buttonFrame.minX - gap - max(view.safeAreaInsets.left, 16)),
+            width: max(0, buttonTrailing - buttonSize - gap - tabBarLeading),
             height: tabBarHeight
         )
         visibleTabBar.frame = tabBarFrame
+
+        let buttonFrame = CGRect(
+            x: buttonTrailing - buttonSize,
+            y: tabBarFrame.midY - buttonSize / 2,
+            width: buttonSize,
+            height: buttonSize
+        )
         addButton?.frame = buttonFrame
     }
 }
