@@ -1689,24 +1689,7 @@ struct TransactionsView: View {
 
                                 VStack(spacing: 0) {
                                     ForEach(day.transactions) { transaction in
-                                        TransactionRow(
-                                            transaction: transaction,
-                                            store: store,
-                                            onEdit: {
-                                                if isSelectingTransactions {
-                                                    toggleSelection(for: transaction)
-                                                } else {
-                                                    editingTransaction = transaction
-                                                }
-                                            },
-                                            onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
-                                            onDelete: { transactionToDelete = transaction },
-                                            onSaveTemplate: { transactionToTemplate = transaction },
-                                            allowsActions: !isSelectingTransactions,
-                                            isSelectionMode: isSelectingTransactions,
-                                            isSelected: selectedTransactionIDs.contains(transaction.id),
-                                            onToggleSelection: { toggleSelection(for: transaction) }
-                                        )
+                                        transactionRow(for: transaction)
                                         Divider().overlay(PocketLedgerTheme.divider)
                                     }
                                 }
@@ -1807,7 +1790,28 @@ struct TransactionsView: View {
         } message: {
             Text("This can be undone from the message at the bottom of the screen.")
         }
-        }
+    }
+
+    private func transactionRow(for transaction: LedgerTransaction) -> some View {
+        TransactionRow(
+            transaction: transaction,
+            store: store,
+            onEdit: {
+                if isSelectingTransactions {
+                    toggleSelection(for: transaction)
+                } else {
+                    editingTransaction = transaction
+                }
+            },
+            onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
+            onDelete: { transactionToDelete = transaction },
+            onSaveTemplate: { transactionToTemplate = transaction },
+            allowsActions: !isSelectingTransactions,
+            isSelectionMode: isSelectingTransactions,
+            isSelected: selectedTransactionIDs.contains(transaction.id),
+            onToggleSelection: { toggleSelection(for: transaction) }
+        )
+    }
 
     private var selectionToolbar: some View {
         HStack(spacing: 10) {
