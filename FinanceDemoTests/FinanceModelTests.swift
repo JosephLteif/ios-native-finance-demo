@@ -52,7 +52,7 @@ final class FinanceModelTests: XCTestCase {
                     ? []
                     : [
                         MoneyMovement(
-                            accountID: accountID,
+                            accountID: accountID ?? cash.id,
                             money: Money(currency: .usd, minorUnits: returned)
                         )
                     ]
