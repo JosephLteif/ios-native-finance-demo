@@ -265,7 +265,12 @@ struct ImportWizardView: View {
         let currentDraft = draft
 
         Task { @MainActor in
-            let accountMapping = await FoundationModelService.classifyImportAccounts(candidates)
+            let accountMapping: FoundationModelService.AccountMappingResult
+            if ProcessInfo.processInfo.arguments.contains("-ImportWizardUITest") {
+                accountMapping = FoundationModelService.AccountMappingResult(suggestions: [:], warning: nil)
+            } else {
+                accountMapping = await FoundationModelService.classifyImportAccounts(candidates)
+            }
             guard !Task.isCancelled else {
                 isPreparing = false
                 return
