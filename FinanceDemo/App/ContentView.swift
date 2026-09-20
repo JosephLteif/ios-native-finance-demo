@@ -1859,6 +1859,8 @@ struct TransactionsView: View {
         }
         .padding(12)
         .pocketGlassSurface(cornerRadius: 16, tint: PocketLedgerTheme.accent.opacity(0.08))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Transaction selection tools")
         .accessibilityIdentifier("transaction-selection-toolbar")
     }
 
