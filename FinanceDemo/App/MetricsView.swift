@@ -147,7 +147,7 @@ struct MetricsView: View {
                         categoryRows(snapshot)
                         activityMix(snapshot)
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, PocketLedgerTheme.screenHorizontalPadding)
                     .padding(.top, 12)
                     .padding(.bottom, 24)
                 }
@@ -177,7 +177,7 @@ struct MetricsView: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Metrics")
-                    .font(.largeTitle.weight(.bold))
+                    .font(.largeTitle.weight(.semibold))
                 Text("See how your money moves")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -419,7 +419,7 @@ struct MetricsView: View {
             }
         }
         .padding(.horizontal, 14)
-        .pocketGlassSurface(cornerRadius: 18)
+        .pocketGroupedSurface(cornerRadius: 18)
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)

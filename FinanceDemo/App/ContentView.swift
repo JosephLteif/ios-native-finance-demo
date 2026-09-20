@@ -666,7 +666,7 @@ private struct DashboardView: View {
                                 .padding(.horizontal, 4)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, PocketLedgerTheme.screenHorizontalPadding)
                     .padding(.top, 12)
                     .padding(.bottom, 24)
                 }
@@ -689,7 +689,7 @@ private struct DashboardView: View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Pocket Ledger")
-                    .font(.largeTitle.weight(.bold))
+                    .font(.largeTitle.weight(.semibold))
                 Text(Date.now, style: .date)
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -729,7 +729,7 @@ private struct DashboardView: View {
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
         }
         .padding(20)
-        .pocketGlassSurface(cornerRadius: 22, tint: PocketLedgerTheme.accent.opacity(0.08))
+        .pocketGroupedSurface(cornerRadius: 22)
     }
 
     private func balanceRow(for currency: LedgerCurrency) -> some View {
@@ -782,7 +782,7 @@ private struct DashboardView: View {
                         .foregroundStyle(PocketLedgerTheme.textTertiary)
                 }
                 .padding(16)
-                .pocketGlassSurface(cornerRadius: 20, tint: PocketLedgerTheme.warning.opacity(0.07))
+                .pocketGroupedSurface(cornerRadius: 20)
                 .overlay {
                     RoundedRectangle(cornerRadius: 20)
                         .stroke(PocketLedgerTheme.warning.opacity(0.28), lineWidth: 1)
@@ -868,7 +868,7 @@ private struct DashboardView: View {
             }
         }
         .padding(16)
-        .pocketGlassSurface(cornerRadius: 20)
+        .pocketGroupedSurface(cornerRadius: 20)
         .overlay {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -943,7 +943,7 @@ private struct DashboardView: View {
                 }
             }
             .padding(14)
-            .pocketGlassSurface(cornerRadius: 17)
+            .pocketGroupedSurface(cornerRadius: 17)
         }
     }
 
@@ -974,7 +974,7 @@ private struct DashboardView: View {
                     }
                 }
                 .padding(.horizontal, 14)
-                .pocketGlassSurface(cornerRadius: 17)
+                .pocketGroupedSurface(cornerRadius: 17)
 
                 if schedules.count > 3 {
                     Text("+\(schedules.count - 3) more scheduled \(schedules.count - 3 == 1 ? "entry" : "entries")")
@@ -1101,7 +1101,7 @@ private struct DashboardView: View {
                     }
                 }
                 .padding(.horizontal, 14)
-                .pocketGlassSurface(cornerRadius: 17)
+                .pocketGroupedSurface(cornerRadius: 17)
 
                 if LedgerCurrency.allCases.contains(where: {
                     (snapshot.scheduledChanges[$0] ?? 0) < 0
@@ -1129,7 +1129,7 @@ private struct DashboardView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
         .padding(13)
-        .pocketGlassSurface(cornerRadius: 17)
+        .pocketGroupedSurface(cornerRadius: 17)
     }
 
     private func monthExpenseRow(currency: LedgerCurrency, total: Int64) -> some View {
@@ -1258,7 +1258,7 @@ private struct DashboardView: View {
                     }
                 }
                 .padding(14)
-                .pocketGlassSurface(cornerRadius: 17)
+                .pocketGroupedSurface(cornerRadius: 17)
             }
         }
     }
@@ -1770,7 +1770,7 @@ struct TransactionsView: View {
                                     }
                                 }
                                 .padding(.horizontal, 14)
-                                .pocketGlassSurface(cornerRadius: 18)
+                                .pocketGroupedSurface(cornerRadius: 18)
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 18)
                                         .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -1989,7 +1989,7 @@ struct TransactionsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Transactions")
-                    .font(.largeTitle.weight(.bold))
+                    .font(.largeTitle.weight(.semibold))
                 Text("Every inflow and outflow, in one place")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -2492,7 +2492,7 @@ private struct AccountsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Accounts")
-                    .font(.largeTitle.weight(.bold))
+                    .font(.largeTitle.weight(.semibold))
                 Text("Tap an account for activity; hold it to edit, archive, or reorder")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -2748,7 +2748,7 @@ private struct CategoriesView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Categories")
-                    .font(.largeTitle.weight(.bold))
+                    .font(.largeTitle.weight(.semibold))
                 Text("Make every expense easy to understand")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)

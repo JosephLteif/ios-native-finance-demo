@@ -203,6 +203,11 @@ enum PocketLedgerTheme {
     static var positive: Color { palette.positive }
     static var warning: Color { palette.warning }
     static var glassTint: Color { accent.opacity(0.10) }
+
+    static let screenHorizontalPadding: CGFloat = 16
+    static let contentSpacing: CGFloat = 20
+    static let sectionSpacing: CGFloat = 12
+    static let cardCornerRadius: CGFloat = 20
 }
 
 struct PocketIcon: View {
@@ -264,7 +269,27 @@ extension View {
         self
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .pocketGlassSurface(cornerRadius: cornerRadius)
+            .pocketGroupedSurface(cornerRadius: cornerRadius)
+    }
+
+    /// A calm, grouped content surface for information that does not need to
+    /// float above the page. Interactive controls should use Liquid Glass.
+    @ViewBuilder
+    func pocketGroupedSurface(cornerRadius: CGFloat = PocketLedgerTheme.cardCornerRadius) -> some View {
+        self
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(PocketLedgerTheme.surface)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(PocketLedgerTheme.divider.opacity(0.65), lineWidth: 0.75)
+            }
+            .shadow(
+                color: Color.black.opacity(0.04),
+                radius: 12,
+                y: 5
+            )
     }
 
     @ViewBuilder

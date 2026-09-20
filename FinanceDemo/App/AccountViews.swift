@@ -185,7 +185,7 @@ struct AccountDetailView: View {
                                 }
                             }
                             .padding(.horizontal, 14)
-                            .pocketGlassSurface(cornerRadius: 18)
+                            .pocketGroupedSurface(cornerRadius: 18)
                             .overlay {
                                 RoundedRectangle(cornerRadius: 18)
                                     .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -220,7 +220,7 @@ struct AccountDetailView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, PocketLedgerTheme.screenHorizontalPadding)
             .padding(.top, 12)
             .padding(.bottom, 24)
         }
@@ -254,7 +254,7 @@ struct AccountDetailView: View {
         }
         .tint(PocketLedgerTheme.accent)
         .padding(16)
-        .pocketGlassSurface(cornerRadius: 18)
+        .pocketGroupedSurface(cornerRadius: 18)
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -304,7 +304,7 @@ struct AccountDetailView: View {
             .tint(PocketLedgerTheme.accent)
         }
         .padding(20)
-        .pocketGlassSurface(cornerRadius: 22, tint: PocketLedgerTheme.accent.opacity(0.08))
+        .pocketGroupedSurface(cornerRadius: 22)
     }
 
     private func accountMetric(title: String, value: String, systemImage: String, tint: Color) -> some View {
@@ -321,7 +321,7 @@ struct AccountDetailView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
         .padding(11)
-        .pocketGlassSurface(cornerRadius: 16)
+        .pocketGroupedSurface(cornerRadius: 16)
     }
 }
 
