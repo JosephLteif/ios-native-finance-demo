@@ -229,7 +229,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
     private func makeViewControllers() -> [UIViewController] {
         let addExpense = onAddAction
 
-        AppTab.tabBarOrder.map { tab in
+        return AppTab.tabBarOrder.map { tab in
             let viewController: UIViewController
             switch tab {
             case .overview:
