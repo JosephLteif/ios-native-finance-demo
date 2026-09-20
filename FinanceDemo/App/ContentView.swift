@@ -2040,7 +2040,7 @@ struct AccountEditor: View {
             }
             .scrollContentBackground(.hidden)
             .pocketScreen()
-            .listRowBackground(.clear)
+            .listRowBackground(Color.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(account == nil ? "New account" : "Edit account")
             .navigationBarTitleDisplayMode(.inline)
@@ -2165,7 +2165,7 @@ private struct CategoryEditor: View {
             }
             .scrollContentBackground(.hidden)
             .pocketScreen()
-            .listRowBackground(.clear)
+            .listRowBackground(Color.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(category == nil ? "New category" : "Edit category")
             .navigationBarTitleDisplayMode(.inline)
@@ -2614,7 +2614,7 @@ struct TransactionEditor: View {
             }
             .scrollContentBackground(.hidden)
             .pocketScreen()
-            .listRowBackground(.clear)
+            .listRowBackground(Color.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)

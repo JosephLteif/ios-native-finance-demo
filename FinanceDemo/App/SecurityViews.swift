@@ -155,7 +155,7 @@ struct SecuritySettingsView: View {
             }
             .scrollContentBackground(.hidden)
             .pocketScreen()
-            .listRowBackground(.clear)
+            .listRowBackground(Color.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -249,7 +249,7 @@ private struct PasscodeSetupView: View {
             }
             .scrollContentBackground(.hidden)
             .pocketScreen()
-            .listRowBackground(.clear)
+            .listRowBackground(Color.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(mode.title)
             .navigationBarTitleDisplayMode(.inline)

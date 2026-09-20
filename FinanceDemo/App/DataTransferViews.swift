@@ -385,7 +385,7 @@ private struct BackupRestoreView: View {
             }
             .scrollContentBackground(.hidden)
             .pocketScreen()
-            .listRowBackground(.clear)
+            .listRowBackground(Color.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle("Restore backup")
             .navigationBarTitleDisplayMode(.inline)
@@ -567,7 +567,7 @@ private struct ImportMappingView: View {
             }
             .scrollContentBackground(.hidden)
             .pocketScreen()
-            .listRowBackground(.clear)
+            .listRowBackground(Color.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle("Map import")
             .navigationBarTitleDisplayMode(.inline)
@@ -794,7 +794,7 @@ private struct ImportReviewView: View {
             }
             .scrollContentBackground(.hidden)
             .pocketScreen()
-            .listRowBackground(.clear)
+            .listRowBackground(Color.clear)
             .tint(PocketLedgerTheme.accent)
             .searchable(text: $searchText, prompt: "Search imported rows")
             .navigationTitle("Review import")

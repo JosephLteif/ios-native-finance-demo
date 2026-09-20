@@ -363,7 +363,7 @@ private struct AccountBalanceEditor: View {
             }
             .scrollContentBackground(.hidden)
             .pocketScreen()
-            .listRowBackground(.clear)
+            .listRowBackground(Color.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle("Edit balance")
             .navigationBarTitleDisplayMode(.inline)
