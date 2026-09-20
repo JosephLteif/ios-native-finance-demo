@@ -2475,13 +2475,9 @@ struct TransactionEditor: View {
                                 }
                             }
 
-                            Text(
-                                monthlyRule == .lastDayOfMonth
-                                    ? "This runs on the last calendar day of each month."
-                                    : "This keeps day \(Calendar.current.component(.day, from: date)) when the month has that day."
-                            )
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            Text(monthlyScheduleDescription)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
 
                         Toggle("Enabled", isOn: $scheduleEnabled)
@@ -2674,6 +2670,13 @@ struct TransactionEditor: View {
 
     private var allowsArchivedMovementAccounts: Bool {
         editingTransactionID != nil || editingScheduleID != nil
+    }
+
+    private var monthlyScheduleDescription: String {
+        if monthlyRule == .lastDayOfMonth {
+            return "This runs on the last calendar day of each month."
+        }
+        return "This keeps day \(Calendar.current.component(.day, from: date)) when the month has that day."
     }
 
     @ViewBuilder
