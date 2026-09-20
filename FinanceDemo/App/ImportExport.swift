@@ -263,7 +263,25 @@ struct ImportOptions {
     let defaultDestinationAccountID: UUID?
     let createMissingAccounts: Bool
     let createMissingCategories: Bool
-    let accountSuggestions: [String: ImportAccountSuggestion] = [:]
+    let accountSuggestions: [String: ImportAccountSuggestion]
+
+    init(
+        defaultKind: TransactionKind,
+        defaultCurrency: LedgerCurrency,
+        defaultAccountID: UUID?,
+        defaultDestinationAccountID: UUID?,
+        createMissingAccounts: Bool,
+        createMissingCategories: Bool,
+        accountSuggestions: [String: ImportAccountSuggestion] = [:]
+    ) {
+        self.defaultKind = defaultKind
+        self.defaultCurrency = defaultCurrency
+        self.defaultAccountID = defaultAccountID
+        self.defaultDestinationAccountID = defaultDestinationAccountID
+        self.createMissingAccounts = createMissingAccounts
+        self.createMissingCategories = createMissingCategories
+        self.accountSuggestions = accountSuggestions
+    }
 }
 
 struct ImportAccountCandidate: Equatable, Sendable {
@@ -1708,7 +1726,8 @@ enum FinanceImportBuilder {
                 defaultAccountID: options.defaultDestinationAccountID,
                 defaultDestinationAccountID: nil,
                 createMissingAccounts: options.createMissingAccounts,
-                createMissingCategories: options.createMissingCategories
+                createMissingCategories: options.createMissingCategories,
+                accountSuggestions: options.accountSuggestions
             ),
             existing: existing,
             imported: &imported

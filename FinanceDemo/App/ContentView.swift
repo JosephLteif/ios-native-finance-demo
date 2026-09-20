@@ -2500,9 +2500,7 @@ struct TransactionEditor: View {
                             }
                             .swipeActions {
                                 Button("Delete", systemImage: "trash", role: .destructive) {
-                                    if store.deleteAttachment(id: attachment.id) {
-                                        attachmentIDs.removeAll { $0 == attachment.id }
-                                    }
+                                    deleteAttachment(attachment)
                                 }
                             }
                         }
@@ -3290,5 +3288,10 @@ struct TransactionEditor: View {
             UserDefaults.standard.set(categoryID.uuidString, forKey: Self.lastCategoryKey)
         }
         dismiss()
+    }
+
+    private func deleteAttachment(_ attachment: LedgerAttachment) {
+        guard store.deleteAttachment(id: attachment.id) else { return }
+        attachmentIDs.removeAll { $0 == attachment.id }
     }
 }
