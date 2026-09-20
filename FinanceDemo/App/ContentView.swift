@@ -2514,139 +2514,9 @@ struct TransactionEditor: View {
                     }
                 }
 
-                if kind != .income {
-                    Section {
-                        ForEach($outflows) { $line in
-                            MovementLineEditor(
-                                store: store,
-                                line: $line,
-                                amountPlaceholder: kind == .transfer ? "Amount sent" : "Amount leaving account",
-                                onCreateAccount: {
-                                    accountCreationLineID = $line.wrappedValue.id
-                                    isShowingNewAccount = true
-                                },
-                                allowsArchivedAccount: allowsArchivedMovementAccounts
-                            )
-                        }
-                        .onDelete { outflows.remove(atOffsets: $0) }
-
-                        Button {
-                            outflows.append(newMovementDraft)
-                        } label: {
-                            Label("Add another account", systemImage: "plus.circle")
-                        }
-                    } header: {
-                        Text(kind == .transfer ? "From" : "Money leaving accounts")
-                    } footer: {
-                        Text(kind == .transfer
-                             ? "Choose the account and amount sending the transfer."
-                             : "Use one line for each currency or account used to pay.")
-                    }
-                }
-
-                Section {
-                    if inflows.isEmpty {
-                        Button {
-                            inflows.append(newMovementDraft)
-                        } label: {
-                            Label(
-                                kind == .expense ? "Add returned money" : "Add receiving account",
-                                systemImage: "arrow.down.circle"
-                            )
-                        }
-                    } else {
-                        ForEach($inflows) { $line in
-                            MovementLineEditor(
-                                store: store,
-                                line: $line,
-                                amountPlaceholder: kind == .transfer ? "Amount received" : "Amount entering account",
-                                onCreateAccount: {
-                                    accountCreationLineID = $line.wrappedValue.id
-                                    isShowingNewAccount = true
-                                },
-                                allowsArchivedAccount: allowsArchivedMovementAccounts
-                            )
-                        }
-                        .onDelete { inflows.remove(atOffsets: $0) }
-
-                        Button {
-                            inflows.append(newMovementDraft)
-                        } label: {
-                            Label("Add another receiving account", systemImage: "plus.circle")
-                        }
-
-                        if kind == .expense && inflows.count == 1 {
-                            TextField("Requested change (optional)", text: $requestedChange)
-                                .keyboardType(.decimalPad)
-                            if let preview = shortfallPreview {
-                                Text(preview)
-                                    .font(.footnote)
-                                    .foregroundStyle(PocketLedgerTheme.warning)
-                            }
-                        }
-                    }
-                } header: {
-                    Text(kind == .transfer
-                         ? "To"
-                         : kind == .expense ? "Change / money returned" : "Money entering accounts")
-                } footer: {
-                    Text(kind == .transfer
-                         ? "The amount is filled from the sending amount when possible. You can edit it for a specific transfer."
-                         : kind == .expense
-                            ? "Returned money may go to a different account and currency than the payment."
-                            : "Choose the account and currency receiving the money.")
-                }
-
-                if selectedCurrencies.count > 1 {
-                    Section("Exchange rate") {
-                        LabeledContent("Applied rate") {
-                            Text(appliedExchangeRate?.summary ?? "Rate required")
-                                .font(.subheadline.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(appliedExchangeRate == nil
-                                    ? PocketLedgerTheme.warning
-                                    : PocketLedgerTheme.textPrimary)
-                                .multilineTextAlignment(.trailing)
-                        }
-
-                        Toggle(
-                            kind == .transfer ? "Override for this transaction" : "Use a custom rate",
-                            isOn: $useCustomRate
-                        )
-
-                        if !useCustomRate {
-                            Text("The rate is calculated from the entered amounts, or uses the saved pair rate until both amounts are entered.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if useCustomRate {
-                            Picker("Base", selection: $rateBase) {
-                                ForEach(selectedCurrencies) { currency in
-                                    Text(currency.rawValue).tag(currency)
-                                }
-                            }
-                            Picker("Quote", selection: $rateQuote) {
-                                ForEach(selectedCurrencies) { currency in
-                                    Text(currency.rawValue).tag(currency)
-                                }
-                            }
-                            TextField("Quote units per base unit", text: $rateText)
-                                .keyboardType(.decimalPad)
-
-                            if let savedRate {
-                                Button {
-                                    rateText = NSDecimalNumber(decimal: savedRate.quoteUnitsPerBaseUnit).stringValue
-                                } label: {
-                                    Label("Use saved rate: \(savedRate.summary)", systemImage: "arrow.clockwise")
-                                }
-                            }
-
-                            Text("Enter how many \(rateQuote.rawValue) equal 1 \(rateBase.rawValue).")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
+                outgoingMovementSection
+                receivingMovementSection
+                exchangeRateSection
             }
             .onAppear {
                 if kind == .transfer && inflows.isEmpty {
@@ -2751,6 +2621,148 @@ struct TransactionEditor: View {
 
     private var allowsArchivedMovementAccounts: Bool {
         editingTransactionID != nil || editingScheduleID != nil
+    }
+
+    @ViewBuilder
+    private var outgoingMovementSection: some View {
+        if kind != .income {
+            Section {
+                ForEach($outflows) { $line in
+                    MovementLineEditor(
+                        store: store,
+                        line: $line,
+                        amountPlaceholder: kind == .transfer ? "Amount sent" : "Amount leaving account",
+                        onCreateAccount: {
+                            accountCreationLineID = $line.wrappedValue.id
+                            isShowingNewAccount = true
+                        },
+                        allowsArchivedAccount: allowsArchivedMovementAccounts
+                    )
+                }
+                .onDelete { outflows.remove(atOffsets: $0) }
+
+                Button {
+                    outflows.append(newMovementDraft)
+                } label: {
+                    Label("Add another account", systemImage: "plus.circle")
+                }
+            } header: {
+                Text(kind == .transfer ? "From" : "Money leaving accounts")
+            } footer: {
+                Text(kind == .transfer
+                     ? "Choose the account and amount sending the transfer."
+                     : "Use one line for each currency or account used to pay.")
+            }
+        }
+    }
+
+    private var receivingMovementSection: some View {
+        Section {
+            if inflows.isEmpty {
+                Button {
+                    inflows.append(newMovementDraft)
+                } label: {
+                    Label(
+                        kind == .expense ? "Add returned money" : "Add receiving account",
+                        systemImage: "arrow.down.circle"
+                    )
+                }
+            } else {
+                ForEach($inflows) { $line in
+                    MovementLineEditor(
+                        store: store,
+                        line: $line,
+                        amountPlaceholder: kind == .transfer ? "Amount received" : "Amount entering account",
+                        onCreateAccount: {
+                            accountCreationLineID = $line.wrappedValue.id
+                            isShowingNewAccount = true
+                        },
+                        allowsArchivedAccount: allowsArchivedMovementAccounts
+                    )
+                }
+                .onDelete { inflows.remove(atOffsets: $0) }
+
+                Button {
+                    inflows.append(newMovementDraft)
+                } label: {
+                    Label("Add another receiving account", systemImage: "plus.circle")
+                }
+
+                if kind == .expense && inflows.count == 1 {
+                    TextField("Requested change (optional)", text: $requestedChange)
+                        .keyboardType(.decimalPad)
+                    if let preview = shortfallPreview {
+                        Text(preview)
+                            .font(.footnote)
+                            .foregroundStyle(PocketLedgerTheme.warning)
+                    }
+                }
+            }
+        } header: {
+            Text(kind == .transfer
+                 ? "To"
+                 : kind == .expense ? "Change / money returned" : "Money entering accounts")
+        } footer: {
+            Text(kind == .transfer
+                 ? "The amount is filled from the sending amount when possible. You can edit it for a specific transfer."
+                 : kind == .expense
+                    ? "Returned money may go to a different account and currency than the payment."
+                    : "Choose the account and currency receiving the money.")
+        }
+    }
+
+    @ViewBuilder
+    private var exchangeRateSection: some View {
+        if selectedCurrencies.count > 1 {
+            Section("Exchange rate") {
+                LabeledContent("Applied rate") {
+                    Text(appliedExchangeRate?.summary ?? "Rate required")
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(appliedExchangeRate == nil
+                            ? PocketLedgerTheme.warning
+                            : PocketLedgerTheme.textPrimary)
+                        .multilineTextAlignment(.trailing)
+                }
+
+                Toggle(
+                    kind == .transfer ? "Override for this transaction" : "Use a custom rate",
+                    isOn: $useCustomRate
+                )
+
+                if !useCustomRate {
+                    Text("The rate is calculated from the entered amounts, or uses the saved pair rate until both amounts are entered.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if useCustomRate {
+                    Picker("Base", selection: $rateBase) {
+                        ForEach(selectedCurrencies) { currency in
+                            Text(currency.rawValue).tag(currency)
+                        }
+                    }
+                    Picker("Quote", selection: $rateQuote) {
+                        ForEach(selectedCurrencies) { currency in
+                            Text(currency.rawValue).tag(currency)
+                        }
+                    }
+                    TextField("Quote units per base unit", text: $rateText)
+                        .keyboardType(.decimalPad)
+
+                    if let savedRate {
+                        Button {
+                            rateText = NSDecimalNumber(decimal: savedRate.quoteUnitsPerBaseUnit).stringValue
+                        } label: {
+                            Label("Use saved rate: \(savedRate.summary)", systemImage: "arrow.clockwise")
+                        }
+                    }
+
+                    Text("Enter how many \(rateQuote.rawValue) equal 1 \(rateBase.rawValue).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private var completedOneTimeSchedule: Bool {
