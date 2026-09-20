@@ -83,6 +83,19 @@ struct BudgetsView: View {
         let allowance = store.budgetAllowance(budget)
         let ratio = min(Double(spent.minorUnits) / Double(max(allowance.minorUnits, 1)), 1)
         let over = spent.minorUnits > allowance.minorUnits
+        let remaining = allowance.minorUnits - spent.minorUnits
+        let calendar = Calendar.current
+        let dayCount = calendar.range(of: .day, in: .month, for: .now)?.count ?? 30
+        let elapsedDay = calendar.component(.day, from: .now)
+        let monthProgress = min(
+            max(Double(elapsedDay) / Double(max(dayCount, 1)), 0.01),
+            1
+        )
+        let projectedMinorUnits = Int64(
+            (Double(spent.minorUnits) / monthProgress).rounded()
+        )
+        let projectedOver = projectedMinorUnits > allowance.minorUnits
+        let percentUsed = Int((Double(spent.minorUnits) / Double(max(allowance.minorUnits, 1)) * 100).rounded())
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -98,11 +111,40 @@ struct BudgetsView: View {
                     .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.textPrimary)
             }
             ProgressView(value: ratio)
-                .tint(over ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
+                .tint(projectedOver ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
             HStack {
-                Text(over ? "Over by \(Money(currency: budget.currency, minorUnits: spent.minorUnits - allowance.minorUnits).formatted)" : "Remaining \(Money(currency: budget.currency, minorUnits: allowance.minorUnits - spent.minorUnits).formatted)")
+                Text(over
+                     ? "Over by \(Money(currency: budget.currency, minorUnits: -remaining).formatted)"
+                     : "Remaining \(Money(currency: budget.currency, minorUnits: remaining).formatted)")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.positive)
+                Spacer()
+                Text("\(percentUsed)% used")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+            }
+            HStack {
+                Text("Projected \(Money(currency: budget.currency, minorUnits: projectedMinorUnits).formatted)")
+                    .font(.caption)
+                    .foregroundStyle(projectedOver ? PocketLedgerTheme.warning : PocketLedgerTheme.textSecondary)
+                Spacer()
+                Text("\(max(dayCount - elapsedDay, 0)) days left")
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+            }
+            HStack {
+                NavigationLink {
+                    TransactionsView(
+                        store: store,
+                        initialFilter: .expense,
+                        initialPeriod: .thisMonth,
+                        initialSearch: store.categoryPath(for: budget.categoryID)
+                    )
+                } label: {
+                    Label("View transactions", systemImage: "list.bullet")
+                }
+                .buttonStyle(.glass)
+                .tint(PocketLedgerTheme.accent)
                 Spacer()
                 Button("Edit") { editingBudget = budget; isPresentingEditor = true }
                     .buttonStyle(.borderless)

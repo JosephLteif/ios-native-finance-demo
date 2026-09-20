@@ -46,6 +46,25 @@ final class FinanceDemoUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Expense"].waitForExistence(timeout: 5))
     }
 
+    func testTransactionsExposeSelectionAndSavedFilters() {
+        let app = XCUIApplication()
+        app.launch()
+
+        let skipButton = app.buttons["Skip for now"]
+        if skipButton.waitForExistence(timeout: 5) {
+            skipButton.tap()
+        }
+
+        app.tabBars.firstMatch.buttons["More"].tap()
+        app.buttons["Transactions"].tap()
+
+        XCTAssertTrue(app.buttons["select-transactions"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["transaction-saved-filter"].waitForExistence(timeout: 5))
+
+        app.buttons["select-transactions"].tap()
+        XCTAssertTrue(app.otherElements["transaction-selection-toolbar"].waitForExistence(timeout: 5))
+    }
+
     func testImportWizardStepsBulkArchiveExceptionsAndFinalConfirmation() {
         let app = XCUIApplication()
         app.launchArguments.append("-ImportWizardUITest")

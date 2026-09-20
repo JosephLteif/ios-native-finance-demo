@@ -23,7 +23,9 @@ struct BalanceTimelineProvider: TimelineProvider {
                 eurAvailable: Money(currency: .eur, minorUnits: 0),
                 latestTransactionDescription: "No transactions yet",
                 lastUpdated: .now,
-                appGroupAvailable: true
+                appGroupAvailable: true,
+                attentionCount: 0,
+                upcomingScheduledCount: 0
             )
         )
     }
@@ -73,6 +75,26 @@ struct BalanceWidgetEntryView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .privacySensitive()
+
+                    if entry.snapshot.attentionCount > 0 || entry.snapshot.upcomingScheduledCount > 0 {
+                        HStack(spacing: 6) {
+                            if entry.snapshot.attentionCount > 0 {
+                                Label(
+                                    "\(entry.snapshot.attentionCount) attention",
+                                    systemImage: "exclamationmark.circle"
+                                )
+                                .foregroundStyle(PocketWidgetTheme.warning)
+                            }
+                            if entry.snapshot.upcomingScheduledCount > 0 {
+                                Label(
+                                    "\(entry.snapshot.upcomingScheduledCount) upcoming",
+                                    systemImage: "calendar.badge.clock"
+                                )
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        .font(.caption2.weight(.semibold))
+                    }
                 }
             } else {
                 Text("Shared storage unavailable")

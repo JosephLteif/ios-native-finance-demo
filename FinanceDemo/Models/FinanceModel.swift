@@ -718,6 +718,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
     var recurrenceDay: Int
     var isEnabled: Bool
     var lastRunDate: Date?
+    var lastSkippedDate: Date?
     var note: String
     var kind: TransactionKind
     var categoryID: UUID?
@@ -735,6 +736,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         recurrenceDay: Int? = nil,
         isEnabled: Bool = true,
         lastRunDate: Date? = nil,
+        lastSkippedDate: Date? = nil,
         note: String,
         kind: TransactionKind,
         categoryID: UUID?,
@@ -751,6 +753,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         self.recurrenceDay = min(max(recurrenceDay ?? Calendar.current.component(.day, from: nextRunDate), 1), 31)
         self.isEnabled = isEnabled
         self.lastRunDate = lastRunDate
+        self.lastSkippedDate = lastSkippedDate
         self.note = note
         self.kind = kind
         self.categoryID = categoryID
@@ -769,6 +772,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         case recurrenceDay
         case isEnabled
         case lastRunDate
+        case lastSkippedDate
         case note
         case kind
         case categoryID
@@ -798,6 +802,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         )
         isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
         lastRunDate = try container.decodeIfPresent(Date.self, forKey: .lastRunDate)
+        lastSkippedDate = try container.decodeIfPresent(Date.self, forKey: .lastSkippedDate)
         note = try container.decode(String.self, forKey: .note)
         kind = try container.decode(TransactionKind.self, forKey: .kind)
         categoryID = try container.decodeIfPresent(UUID.self, forKey: .categoryID)
@@ -817,6 +822,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         try container.encode(recurrenceDay, forKey: .recurrenceDay)
         try container.encode(isEnabled, forKey: .isEnabled)
         try container.encodeIfPresent(lastRunDate, forKey: .lastRunDate)
+        try container.encodeIfPresent(lastSkippedDate, forKey: .lastSkippedDate)
         try container.encode(note, forKey: .note)
         try container.encode(kind, forKey: .kind)
         try container.encodeIfPresent(categoryID, forKey: .categoryID)
@@ -863,6 +869,8 @@ struct FinanceWidgetSnapshot: Equatable, Sendable {
     let latestTransactionDescription: String
     let lastUpdated: Date
     let appGroupAvailable: Bool
+    let attentionCount: Int
+    let upcomingScheduledCount: Int
 
     var balanceSummary: String {
         [usdAvailable, lbpAvailable, eurAvailable]
@@ -894,6 +902,19 @@ struct LedgerBudget: Identifiable, Codable, Equatable {
         self.rollover = rollover
         self.startedAt = startedAt
     }
+}
+
+struct FinanceAttentionState: Codable, Equatable {
+    var dismissedIDs: Set<String>
+
+    init(dismissedIDs: Set<String> = []) {
+        self.dismissedIDs = dismissedIDs
+    }
+}
+
+struct AccountReconciliation: Codable, Equatable {
+    var lastReconciledAt: Date
+    var difference: Money
 }
 
 func financeConvertedMinorUnits(
@@ -1150,6 +1171,8 @@ struct FinanceData: Codable, Equatable {
     var budgets: [LedgerBudget]
     var templates: [LedgerTemplate]
     var attachments: [LedgerAttachment]
+    var attentionState: FinanceAttentionState
+    var reconciliations: [UUID: AccountReconciliation]
 
     init(
         accounts: [Account],
@@ -1159,7 +1182,9 @@ struct FinanceData: Codable, Equatable {
         exchangeRates: [ExchangeRate] = [],
         budgets: [LedgerBudget] = [],
         templates: [LedgerTemplate] = [],
-        attachments: [LedgerAttachment] = []
+        attachments: [LedgerAttachment] = [],
+        attentionState: FinanceAttentionState = FinanceAttentionState(),
+        reconciliations: [UUID: AccountReconciliation] = [:]
     ) {
         self.accounts = accounts
         self.categories = categories
@@ -1169,6 +1194,8 @@ struct FinanceData: Codable, Equatable {
         self.budgets = budgets
         self.templates = templates
         self.attachments = attachments
+        self.attentionState = attentionState
+        self.reconciliations = reconciliations
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1180,6 +1207,8 @@ struct FinanceData: Codable, Equatable {
         case budgets
         case templates
         case attachments
+        case attentionState
+        case reconciliations
     }
 
     init(from decoder: Decoder) throws {
@@ -1198,6 +1227,14 @@ struct FinanceData: Codable, Equatable {
         budgets = try container.decodeIfPresent([LedgerBudget].self, forKey: .budgets) ?? []
         templates = try container.decodeIfPresent([LedgerTemplate].self, forKey: .templates) ?? []
         attachments = try container.decodeIfPresent([LedgerAttachment].self, forKey: .attachments) ?? []
+        attentionState = try container.decodeIfPresent(
+            FinanceAttentionState.self,
+            forKey: .attentionState
+        ) ?? FinanceAttentionState()
+        reconciliations = try container.decodeIfPresent(
+            [UUID: AccountReconciliation].self,
+            forKey: .reconciliations
+        ) ?? [:]
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1210,6 +1247,8 @@ struct FinanceData: Codable, Equatable {
         try container.encode(budgets, forKey: .budgets)
         try container.encode(templates, forKey: .templates)
         try container.encode(attachments, forKey: .attachments)
+        try container.encode(attentionState, forKey: .attentionState)
+        try container.encode(reconciliations, forKey: .reconciliations)
     }
 
     static var empty: FinanceData {

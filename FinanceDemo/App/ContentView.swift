@@ -534,6 +534,28 @@ private struct MoreView: View {
     var body: some View {
         NavigationStack {
             List {
+                if !store.attentionItems.isEmpty || !store.data.attentionState.dismissedIDs.isEmpty {
+                    Section("Review") {
+                        NavigationLink {
+                            AttentionInboxView(store: store, onAddExpense: onAddExpense)
+                        } label: {
+                            Label {
+                                HStack {
+                                    Text("Needs attention")
+                                    Spacer()
+                                    Text("\(store.attentionItems.count)")
+                                        .font(.caption.weight(.bold).monospacedDigit())
+                                        .foregroundStyle(PocketLedgerTheme.warning)
+                                }
+                            } icon: {
+                                Image(systemName: "exclamationmark.circle")
+                                    .foregroundStyle(PocketLedgerTheme.warning)
+                            }
+                        }
+                        .accessibilityHint("Review unresolved ledger items")
+                    }
+                }
+
                 Section("History") {
                     NavigationLink {
                         TransactionsView(store: store, onAddExpense: onAddExpense)
@@ -627,9 +649,12 @@ private struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         dashboardHeader
                         balanceHero
+                        attentionSnapshot
+                        accountBreakdown
                         monthSnapshot
                         recentActivity
                         upcomingSchedules
+                        cashFlowSnapshot
                         budgetSnapshot
                         storageNotice
 
@@ -726,6 +751,142 @@ private struct DashboardView: View {
         .padding(.vertical, 9)
     }
 
+    @ViewBuilder
+    private var attentionSnapshot: some View {
+        if !store.attentionItems.isEmpty {
+            NavigationLink {
+                AttentionInboxView(store: store, onAddExpense: onAddExpense)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(PocketLedgerTheme.warning)
+                        .frame(width: 38, height: 38)
+                        .pocketGlassSurface(cornerRadius: 19, tint: PocketLedgerTheme.warning.opacity(0.14))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Needs attention")
+                            .font(.headline)
+                            .foregroundStyle(PocketLedgerTheme.textPrimary)
+                        Text("\(store.attentionItems.count) area\(store.attentionItems.count == 1 ? "" : "s") to review")
+                            .font(.subheadline)
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    }
+
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                }
+                .padding(16)
+                .pocketGlassSurface(cornerRadius: 20, tint: PocketLedgerTheme.warning.opacity(0.07))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(PocketLedgerTheme.warning.opacity(0.28), lineWidth: 1)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Needs attention, \(store.attentionItems.count) areas to review")
+            .accessibilityIdentifier("dashboard-needs-attention")
+        }
+    }
+
+    private var accountBreakdown: some View {
+        let activeAccounts = store.activeAccounts
+        let includedCount = activeAccounts.filter(\.includeInTotals).count
+        let excludedCount = activeAccounts.count - includedCount
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Balance scope")
+                        .font(.title3.weight(.bold))
+                    Text("Account balances by type")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
+                Spacer()
+                NavigationLink {
+                    AccountsView(store: store)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                }
+                .accessibilityLabel("Open accounts")
+            }
+
+            HStack(spacing: 10) {
+                scopeMetric(title: "Included", value: "\(includedCount)", tint: PocketLedgerTheme.positive)
+                scopeMetric(title: "Excluded", value: "\(excludedCount)", tint: PocketLedgerTheme.textTertiary)
+            }
+
+            Text(excludedCount == 0
+                 ? "Included accounts feed totals; loans remain separate from available balance."
+                 : "Excluded accounts remain visible in Accounts but do not affect balances or metrics. Loans remain separate from available balance.")
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+            if activeAccounts.isEmpty {
+                Text("Add an account to start tracking a balance.")
+                    .font(.subheadline)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+            } else {
+                ForEach(AccountType.allCases) { type in
+                    let accounts = activeAccounts.filter { $0.type == type }
+                    if !accounts.isEmpty {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Label(type.displayName, systemImage: type.systemImage)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                            ForEach(accounts.prefix(3)) { account in
+                                HStack(spacing: 9) {
+                                    Circle()
+                                        .fill(account.includeInTotals ? PocketLedgerTheme.accent : PocketLedgerTheme.textTertiary)
+                                        .frame(width: 7, height: 7)
+                                    Text(account.name)
+                                        .font(.subheadline)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(store.balance(for: account).formatted)
+                                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                                        .foregroundStyle(account.includeInTotals ? PocketLedgerTheme.textPrimary : PocketLedgerTheme.textTertiary)
+                                }
+                            }
+                            if accounts.count > 3 {
+                                Text("+\(accounts.count - 3) more")
+                                    .font(.caption)
+                                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .pocketGlassSurface(cornerRadius: 20)
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+        }
+    }
+
+    private func scopeMetric(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(.headline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(tint)
+            Text(title.uppercased())
+                .font(.caption2.weight(.bold))
+                .tracking(0.5)
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(11)
+        .pocketGlassSurface(cornerRadius: 15)
+    }
+
     private var monthSnapshot: some View {
         let expenses = store.monthlyExpenseTotals()
 
@@ -733,19 +894,40 @@ private struct DashboardView: View {
             sectionHeader(title: "This month", detail: Date.now.formatted(.dateTime.month(.wide).year()))
 
             HStack(spacing: 10) {
-                snapshotMetric(
-                    title: "Transactions",
-                    value: "\(store.monthTransactionCount)",
-                    systemImage: "arrow.left.arrow.right",
-                    tint: PocketLedgerTheme.income
-                )
+                NavigationLink {
+                    TransactionsView(
+                        store: store,
+                        onAddExpense: onAddExpense,
+                        initialFilter: .all,
+                        initialPeriod: .thisMonth
+                    )
+                } label: {
+                    snapshotMetric(
+                        title: "Transactions",
+                        value: "\(store.monthTransactionCount)",
+                        systemImage: "arrow.left.arrow.right",
+                        tint: PocketLedgerTheme.income
+                    )
+                }
+                .buttonStyle(.plain)
 
-                snapshotMetric(
-                    title: "Top category",
-                    value: store.topCategoryThisMonth ?? "No activity",
-                    systemImage: "tag.fill",
-                    tint: PocketLedgerTheme.accent
-                )
+                NavigationLink {
+                    TransactionsView(
+                        store: store,
+                        onAddExpense: onAddExpense,
+                        initialFilter: .expense,
+                        initialPeriod: .thisMonth,
+                        initialSearch: store.topCategoryThisMonth ?? ""
+                    )
+                } label: {
+                    snapshotMetric(
+                        title: "Top category",
+                        value: store.topCategoryThisMonth ?? "No activity",
+                        systemImage: "tag.fill",
+                        tint: PocketLedgerTheme.accent
+                    )
+                }
+                .buttonStyle(.plain)
             }
 
             VStack(spacing: 0) {
@@ -864,6 +1046,107 @@ private struct DashboardView: View {
         }
     }
 
+    @ViewBuilder
+    private var cashFlowSnapshot: some View {
+        let calendar = Calendar.current
+        let horizon = calendar.date(byAdding: .day, value: 30, to: .now) ?? .now
+        let schedules = store.data.scheduledTransactions.filter {
+            $0.isEnabled && $0.nextRunDate <= horizon
+        }
+
+        if !schedules.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    sectionHeader(title: "Next 30 days", detail: "Projected cash flow")
+                    NavigationLink {
+                        ScheduledTransactionsView(store: store)
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    }
+                    .accessibilityLabel("Open cash flow schedules")
+                }
+
+                Text("Confirmed balances plus enabled recurring entries. Scheduled items are not included in the ledger until they run.")
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                VStack(spacing: 0) {
+                    ForEach(LedgerCurrency.allCases) { currency in
+                        let current = store.availableBalance(for: currency)
+                        let change = scheduledChange(for: currency, schedules: schedules)
+                        let projected = Money(currency: currency, minorUnits: current.minorUnits + change)
+
+                        if currency != LedgerCurrency.allCases[0] {
+                            Divider().overlay(PocketLedgerTheme.divider)
+                        }
+
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(currency.rawValue)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                                Text("\(schedules.count) scheduled \(schedules.count == 1 ? "entry" : "entries")")
+                                    .font(.caption2)
+                                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+                            }
+
+                            Spacer()
+
+                            VStack(alignment: .trailing, spacing: 3) {
+                                Text(projected.formatted)
+                                    .font(.subheadline.weight(.bold).monospacedDigit())
+                                    .foregroundStyle(projected.minorUnits < 0 ? PocketLedgerTheme.warning : PocketLedgerTheme.textPrimary)
+                                Text(change >= 0 ? "+\(Money(currency: currency, minorUnits: change).formatted) scheduled"
+                                     : "\(Money(currency: currency, minorUnits: change).formatted) scheduled")
+                                    .font(.caption2.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(change >= 0 ? PocketLedgerTheme.income : PocketLedgerTheme.warning)
+                            }
+                        }
+                        .padding(.vertical, 10)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .pocketGlassSurface(cornerRadius: 17)
+
+                if LedgerCurrency.allCases.contains(where: {
+                    scheduledChange(for: $0, schedules: schedules) < 0
+                }) {
+                    Label("Review upcoming outflows before they affect your available balance.", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.warning)
+                }
+            }
+        }
+    }
+
+    private func scheduledChange(
+        for currency: LedgerCurrency,
+        schedules: [ScheduledTransaction]
+    ) -> Int64 {
+        schedules.reduce(Int64.zero) { total, schedule in
+            total + scheduledChange(for: schedule, currency: currency)
+        }
+    }
+
+    private func scheduledChange(
+        for schedule: ScheduledTransaction,
+        currency: LedgerCurrency
+    ) -> Int64 {
+        let inflow = schedule.inflows
+            .filter {
+                $0.money.currency == currency && store.includesInTotals(accountID: $0.accountID)
+            }
+            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+        let outflow = schedule.outflows
+            .filter {
+                $0.money.currency == currency && store.includesInTotals(accountID: $0.accountID)
+            }
+            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+        return inflow - outflow
+    }
+
     private func snapshotMetric(title: String, value: String, systemImage: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Image(systemName: systemImage)
@@ -977,6 +1260,18 @@ private struct DashboardView: View {
                         let spent = store.budgetSpent(budget)
                         let allowance = store.budgetAllowance(budget)
                         let over = spent.minorUnits > allowance.minorUnits
+                        let calendar = Calendar.current
+                        let dayCount = calendar.range(of: .day, in: .month, for: .now)?.count ?? 30
+                        let elapsedDay = calendar.component(.day, from: .now)
+                        let progressThroughMonth = min(
+                            max(Double(elapsedDay) / Double(max(dayCount, 1)), 0.01),
+                            1
+                        )
+                        let projected = Int64(
+                            (Double(spent.minorUnits) / progressThroughMonth).rounded()
+                        )
+                        let remaining = allowance.minorUnits - spent.minorUnits
+                        let projectedOver = projected > allowance.minorUnits
                         let ratio = min(
                             Double(spent.minorUnits) / Double(max(allowance.minorUnits, 1)),
                             1
@@ -993,7 +1288,17 @@ private struct DashboardView: View {
                                     .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.textSecondary)
                             }
                             ProgressView(value: ratio)
-                                .tint(over ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
+                                .tint(projectedOver ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
+                            HStack(spacing: 10) {
+                                Text(over
+                                     ? "Over by \(Money(currency: budget.currency, minorUnits: -remaining).formatted)"
+                                     : "Remaining \(Money(currency: budget.currency, minorUnits: remaining).formatted)")
+                                    .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.positive)
+                                Spacer()
+                                Text("Projected \(Money(currency: budget.currency, minorUnits: projected).formatted)")
+                                    .foregroundStyle(projectedOver ? PocketLedgerTheme.warning : PocketLedgerTheme.textTertiary)
+                            }
+                            .font(.caption.weight(.semibold).monospacedDigit())
                         }
                     }
                 }
@@ -1036,11 +1341,142 @@ private struct DashboardView: View {
     }
 }
 
-private enum TransactionFilter: String, CaseIterable, Identifiable, Hashable {
+@MainActor
+private struct AttentionInboxView: View {
+    @ObservedObject var store: LedgerStore
+    let onAddExpense: () -> Void
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                if store.attentionItems.isEmpty {
+                    emptyState
+                } else {
+                    Text("Resolve these items to keep balances, budgets, and metrics trustworthy.")
+                        .font(.subheadline)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                    ForEach(store.attentionItems) { item in
+                        attentionCard(item)
+                    }
+                }
+
+                if !store.data.attentionState.dismissedIDs.isEmpty {
+                    Button("Restore dismissed items", systemImage: "arrow.uturn.backward") {
+                        _ = store.restoreDismissedAttention()
+                    }
+                    .buttonStyle(.glass)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(16)
+        }
+        .pocketScreen()
+        .navigationTitle("Needs attention")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("needs-attention-inbox")
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "checkmark.seal")
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundStyle(PocketLedgerTheme.positive)
+            Text("Everything looks clear")
+                .font(.headline)
+            Text("Pocket Ledger has no unresolved balance, budget, or transaction issues.")
+                .font(.subheadline)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 54)
+        .padding(.horizontal, 20)
+        .pocketGlassSurface(cornerRadius: 20, tint: PocketLedgerTheme.positive.opacity(0.08))
+    }
+
+    private func attentionCard(_ item: FinanceAttentionItem) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: item.systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(item.severity == .warning ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
+                .frame(width: 38, height: 38)
+                .pocketGlassSurface(
+                    cornerRadius: 19,
+                    tint: (item.severity == .warning ? PocketLedgerTheme.warning : PocketLedgerTheme.accent).opacity(0.14)
+                )
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(item.title)
+                    .font(.headline)
+                Text(item.detail)
+                    .font(.subheadline)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                Text("\(item.count) \(item.count == 1 ? "item" : "items")")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+
+                NavigationLink {
+                    destination(for: item.destination)
+                } label: {
+                    Label("Review", systemImage: "arrow.right")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.glassProminent)
+                .tint(item.severity == .warning ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
+                .padding(.top, 3)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                _ = store.dismissAttention(id: item.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Dismiss \(item.title)")
+        }
+        .padding(16)
+        .pocketGlassSurface(cornerRadius: 20)
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func destination(for destination: FinanceAttentionDestination) -> some View {
+        switch destination {
+        case .uncategorizedTransactions:
+            TransactionsView(
+                store: store,
+                onAddExpense: onAddExpense,
+                initialFilter: .uncategorized
+            )
+        case .transferTransactions:
+            TransactionsView(
+                store: store,
+                onAddExpense: onAddExpense,
+                initialFilter: .transfer
+            )
+        case .scheduledTransactions:
+            ScheduledTransactionsView(store: store)
+        case .budgets:
+            BudgetsView(store: store)
+        }
+    }
+}
+
+enum TransactionFilter: String, CaseIterable, Identifiable, Hashable {
     case all = "All"
     case expense = "Expenses"
     case income = "Income"
     case transfer = "Transfers"
+    case uncategorized = "Uncategorized"
 
     var id: String { rawValue }
 
@@ -1054,15 +1490,18 @@ private enum TransactionFilter: String, CaseIterable, Identifiable, Hashable {
             return .income
         case .transfer:
             return .transfer
+        case .uncategorized:
+            return .expense
         }
     }
 }
 
-private enum TransactionPeriod: String, CaseIterable, Identifiable, Hashable {
+enum TransactionPeriod: String, CaseIterable, Identifiable, Hashable {
     case all = "All time"
     case thisMonth = "This month"
     case lastMonth = "Last month"
     case thisYear = "This year"
+    case custom = "Custom range"
 
     var id: String { rawValue }
 
@@ -1079,6 +1518,33 @@ private enum TransactionPeriod: String, CaseIterable, Identifiable, Hashable {
             return calendar.dateInterval(of: .month, for: lastMonth)?.contains(date) ?? true
         case .thisYear:
             return calendar.dateInterval(of: .year, for: .now)?.contains(date) ?? true
+        case .custom:
+            return true
+        }
+    }
+}
+
+private enum TransactionQuickFilter: String, CaseIterable, Identifiable {
+    case none
+    case thisMonth
+    case uncategorized
+    case needsReceipt
+    case cash
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .none:
+            return "All transactions"
+        case .thisMonth:
+            return "This month"
+        case .uncategorized:
+            return "Uncategorized"
+        case .needsReceipt:
+            return "Needs receipt"
+        case .cash:
+            return "Cash"
         }
     }
 }
@@ -1091,25 +1557,65 @@ private struct TransactionDay: Identifiable {
 }
 
 @MainActor
-private struct TransactionsView: View {
+struct TransactionsView: View {
+    private static let lastQuickFilterKey = "pocketLedger.lastTransactionQuickFilter"
+
     @ObservedObject var store: LedgerStore
     let onAddExpense: () -> Void
-    @State private var selectedFilter: TransactionFilter = .all
-    @State private var selectedPeriod: TransactionPeriod = .all
-    @State private var searchText = ""
+    @State private var selectedFilter: TransactionFilter
+    @State private var selectedPeriod: TransactionPeriod
+    @State private var selectedQuickFilter: TransactionQuickFilter
+    @State private var searchText: String
+    @State private var customStartDate: Date
+    @State private var customEndDate: Date
     @State private var transactionPage = 0
     @State private var editingTransaction: LedgerTransaction?
     @State private var transactionToDelete: LedgerTransaction?
     @State private var transactionToTemplate: LedgerTransaction?
     @State private var isPresentingBillScanner = false
+    @State private var isSelectingTransactions = false
+    @State private var selectedTransactionIDs: Set<UUID> = []
+    @State private var isShowingBulkDeleteConfirmation = false
+    @State private var deletedTransactionsForUndo: [LedgerTransaction] = []
 
     private let transactionsPerPage = 25
+
+    init(
+        store: LedgerStore,
+        onAddExpense: @escaping () -> Void = {},
+        initialFilter: TransactionFilter = .all,
+        initialPeriod: TransactionPeriod = .all,
+        initialSearch: String = ""
+    ) {
+        _store = ObservedObject(wrappedValue: store)
+        self.onAddExpense = onAddExpense
+        _selectedFilter = State(initialValue: initialFilter)
+        _selectedPeriod = State(initialValue: initialPeriod)
+        let hasExplicitContext = initialFilter != .all || initialPeriod != .all || !initialSearch.isEmpty
+        let persistedQuickFilter = TransactionQuickFilter(
+            rawValue: UserDefaults.standard.string(forKey: Self.lastQuickFilterKey) ?? ""
+        ) ?? .none
+        _selectedQuickFilter = State(
+            initialValue: initialFilter == .uncategorized
+                ? .uncategorized
+                : hasExplicitContext ? .none : persistedQuickFilter
+        )
+        _searchText = State(initialValue: initialSearch)
+        let calendar = Calendar.current
+        let start = calendar.date(byAdding: .day, value: -30, to: .now) ?? .now
+        _customStartDate = State(initialValue: start)
+        _customEndDate = State(initialValue: .now)
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             PocketGlassContainer(spacing: 14) {
                 VStack(alignment: .leading, spacing: 18) {
                     screenHeader
+
+                    if isSelectingTransactions {
+                        selectionToolbar
+                    }
 
                     Picker("Filter", selection: $selectedFilter) {
                         ForEach(TransactionFilter.allCases) { filter in
@@ -1125,6 +1631,34 @@ private struct TransactionsView: View {
                     }
                     .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Menu {
+                        ForEach(TransactionQuickFilter.allCases) { filter in
+                            Button {
+                                applyQuickFilter(filter)
+                            } label: {
+                                if selectedQuickFilter == filter {
+                                    Label(filter.title, systemImage: "checkmark")
+                                } else {
+                                    Text(filter.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Saved filter: \(selectedQuickFilter.title)", systemImage: "line.3.horizontal.decrease.circle")
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityIdentifier("transaction-saved-filter")
+
+                    if selectedPeriod == .custom {
+                        VStack(alignment: .leading, spacing: 8) {
+                            DatePicker("From", selection: $customStartDate, displayedComponents: .date)
+                            DatePicker("To", selection: $customEndDate, displayedComponents: .date)
+                        }
+                        .font(.subheadline)
+                        .padding(12)
+                        .pocketGlassSurface(cornerRadius: 15)
+                    }
 
                     TextField("Search transactions, categories, or accounts", text: $searchText)
                         .textFieldStyle(.roundedBorder)
@@ -1158,11 +1692,20 @@ private struct TransactionsView: View {
                                         TransactionRow(
                                             transaction: transaction,
                                             store: store,
-                                            onEdit: { editingTransaction = transaction },
+                                            onEdit: {
+                                                if isSelectingTransactions {
+                                                    toggleSelection(for: transaction)
+                                                } else {
+                                                    editingTransaction = transaction
+                                                }
+                                            },
                                             onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
                                             onDelete: { transactionToDelete = transaction },
                                             onSaveTemplate: { transactionToTemplate = transaction },
-                                            allowsActions: true
+                                            allowsActions: !isSelectingTransactions,
+                                            isSelectionMode: isSelectingTransactions,
+                                            isSelected: selectedTransactionIDs.contains(transaction.id),
+                                            onToggleSelection: { toggleSelection(for: transaction) }
                                         )
                                         Divider().overlay(PocketLedgerTheme.divider)
                                     }
@@ -1185,14 +1728,36 @@ private struct TransactionsView: View {
             }
         }
         .pocketScreen()
+        .overlay(alignment: .bottom) {
+            if !deletedTransactionsForUndo.isEmpty {
+                undoBanner(for: deletedTransactionsForUndo)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+            }
+        }
         .onChange(of: selectedFilter) { _, _ in
             transactionPage = 0
         }
         .onChange(of: selectedPeriod) { _, _ in
             transactionPage = 0
         }
+        .onChange(of: customStartDate) { _, _ in
+            if customStartDate > customEndDate {
+                customEndDate = customStartDate
+            }
+            transactionPage = 0
+        }
+        .onChange(of: customEndDate) { _, _ in
+            if customEndDate < customStartDate {
+                customStartDate = customEndDate
+            }
+            transactionPage = 0
+        }
         .onChange(of: searchText) { _, _ in
             transactionPage = 0
+        }
+        .onChange(of: selectedQuickFilter) { _, newValue in
+            UserDefaults.standard.set(newValue.rawValue, forKey: Self.lastQuickFilterKey)
         }
         .sheet(isPresented: $isPresentingBillScanner) {
             BillScannerView(store: store)
@@ -1213,7 +1778,9 @@ private struct TransactionsView: View {
         ) {
             Button("Delete", role: .destructive) {
                 if let transactionToDelete {
-                    _ = store.deleteTransaction(id: transactionToDelete.id)
+                    if store.deleteTransaction(id: transactionToDelete.id) {
+                        deletedTransactionsForUndo = [transactionToDelete]
+                    }
                 }
                 self.transactionToDelete = nil
             }
@@ -1221,7 +1788,107 @@ private struct TransactionsView: View {
         } message: {
             Text(transactionToDelete?.note ?? "")
         }
+        .confirmationDialog(
+            "Delete selected transactions?",
+            isPresented: $isShowingBulkDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(selectedTransactionIDs.count) transactions", role: .destructive) {
+                let selected = store.data.transactions.filter {
+                    selectedTransactionIDs.contains($0.id)
+                }
+                if store.deleteTransactions(ids: selectedTransactionIDs) {
+                    deletedTransactionsForUndo = selected
+                    selectedTransactionIDs.removeAll()
+                    isSelectingTransactions = false
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can be undone from the message at the bottom of the screen.")
         }
+        }
+
+    private var selectionToolbar: some View {
+        HStack(spacing: 10) {
+            Text("\(selectedTransactionIDs.count) selected")
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+            Spacer()
+
+            Menu {
+                Button("Remove category", systemImage: "tag.slash") {
+                    applyBulkCategory(nil)
+                }
+                ForEach(store.activeCategories) { category in
+                    Button(store.categoryPath(for: category.id), systemImage: category.systemImage) {
+                        applyBulkCategory(category.id)
+                    }
+                }
+            } label: {
+                Label("Category", systemImage: "tag")
+            }
+            .disabled(selectedTransactionIDs.isEmpty)
+
+            Menu {
+                ForEach(store.activeAccounts) { account in
+                    Button("\(account.name) · \(account.currency.rawValue)", systemImage: account.type.systemImage) {
+                        applyBulkAccount(account.id)
+                    }
+                }
+            } label: {
+                Label("Account", systemImage: "wallet.pass")
+            }
+            .disabled(selectedTransactionIDs.isEmpty)
+
+            Button {
+                isShowingBulkDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.glass)
+            .tint(PocketLedgerTheme.warning)
+            .disabled(selectedTransactionIDs.isEmpty)
+            .accessibilityLabel("Delete selected transactions")
+        }
+        .padding(12)
+        .pocketGlassSurface(cornerRadius: 16, tint: PocketLedgerTheme.accent.opacity(0.08))
+        .accessibilityIdentifier("transaction-selection-toolbar")
+    }
+
+    private func undoBanner(for transactions: [LedgerTransaction]) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash")
+                .foregroundStyle(PocketLedgerTheme.warning)
+            Text(transactions.count == 1
+                 ? "Deleted \(transactions[0].note.isEmpty ? "transaction" : transactions[0].note)"
+                 : "Deleted \(transactions.count) transactions")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button("Undo") {
+                _ = store.restoreTransactions(transactions)
+                deletedTransactionsForUndo.removeAll()
+            }
+            .font(.subheadline.weight(.bold))
+            Button {
+                deletedTransactionsForUndo.removeAll()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Dismiss undo message")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .padding(.vertical, 7)
+        .pocketGlassCapsule(tint: PocketLedgerTheme.warning.opacity(0.12))
+        .accessibilityElement(children: .contain)
+    }
 
     private var screenHeader: some View {
         HStack {
@@ -1234,6 +1901,30 @@ private struct TransactionsView: View {
             }
 
             Spacer()
+
+            if isSelectingTransactions {
+                Button("Done") {
+                    isSelectingTransactions = false
+                    selectedTransactionIDs.removeAll()
+                }
+                .font(.subheadline.weight(.semibold))
+            } else {
+                Button {
+                    isSelectingTransactions = true
+                } label: {
+                    Image(systemName: "checklist")
+                        .font(.body.weight(.bold))
+                        .foregroundStyle(PocketLedgerTheme.accent)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .pocketGlassSurface(
+                            cornerRadius: 22,
+                            tint: PocketLedgerTheme.accent.opacity(0.18),
+                            interactive: true
+                        )
+                }
+                .accessibilityLabel("Select transactions")
+                .accessibilityIdentifier("select-transactions")
+            }
 
             Button {
                 isPresentingBillScanner = true
@@ -1253,11 +1944,50 @@ private struct TransactionsView: View {
         }
     }
 
+    private func toggleSelection(for transaction: LedgerTransaction) {
+        if selectedTransactionIDs.contains(transaction.id) {
+            selectedTransactionIDs.remove(transaction.id)
+        } else {
+            selectedTransactionIDs.insert(transaction.id)
+        }
+    }
+
+    private func applyBulkCategory(_ categoryID: UUID?) {
+        guard !selectedTransactionIDs.isEmpty else { return }
+        if store.updateTransactionCategories(ids: selectedTransactionIDs, categoryID: categoryID) {
+            selectedTransactionIDs.removeAll()
+            isSelectingTransactions = false
+        }
+    }
+
+    private func applyBulkAccount(_ accountID: UUID) {
+        guard !selectedTransactionIDs.isEmpty else { return }
+        if store.updateSingleAccountTransactions(ids: selectedTransactionIDs, accountID: accountID) {
+            selectedTransactionIDs.removeAll()
+            isSelectingTransactions = false
+        }
+    }
+
     private var filteredTransactions: [LedgerTransaction] {
         store.recentTransactions.filter { transaction in
-            let matchesKind = selectedFilter.kind.map { transaction.kind == $0 } ?? true
+            let matchesKind: Bool
+            if selectedFilter == .uncategorized {
+                matchesKind = transaction.kind == .expense && transaction.categoryID == nil
+            } else {
+                matchesKind = selectedFilter.kind.map { transaction.kind == $0 } ?? true
+            }
             guard matchesKind else { return false }
-            guard selectedPeriod.includes(transaction.date) else { return false }
+            guard periodIncludes(transaction.date) else { return false }
+            switch selectedQuickFilter {
+            case .none, .thisMonth, .uncategorized:
+                break
+            case .needsReceipt:
+                guard transaction.attachmentIDs.isEmpty else { return false }
+            case .cash:
+                guard (transaction.outflows + transaction.inflows).contains(where: {
+                    store.account(with: $0.accountID)?.type == .cash
+                }) else { return false }
+            }
             let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !query.isEmpty else { return true }
             let accountNames = (transaction.outflows + transaction.inflows)
@@ -1271,6 +2001,34 @@ private struct TransactionsView: View {
             ].joined(separator: " ")
             return searchable.localizedCaseInsensitiveContains(query)
         }
+    }
+
+    private func periodIncludes(_ date: Date) -> Bool {
+        if selectedPeriod == .custom {
+            let start = Calendar.current.startOfDay(for: customStartDate)
+            let end = Calendar.current.date(
+                byAdding: DateComponents(day: 1),
+                to: Calendar.current.startOfDay(for: customEndDate)
+            ) ?? customEndDate
+            return date >= start && date < end
+        }
+        return selectedPeriod.includes(date)
+    }
+
+    private func applyQuickFilter(_ filter: TransactionQuickFilter) {
+        selectedQuickFilter = filter
+        switch filter {
+        case .none:
+            selectedFilter = .all
+        case .thisMonth:
+            selectedFilter = .all
+            selectedPeriod = .thisMonth
+        case .uncategorized:
+            selectedFilter = .uncategorized
+        case .needsReceipt, .cash:
+            selectedFilter = .all
+        }
+        transactionPage = 0
     }
 
     private var groupedTransactions: [TransactionDay] {
@@ -1425,15 +2183,18 @@ private struct TransactionRow: View {
     let onDelete: () -> Void
     let onSaveTemplate: () -> Void
     let allowsActions: Bool
+    let isSelectionMode: Bool = false
+    let isSelected: Bool = false
+    let onToggleSelection: () -> Void = {}
 
     var body: some View {
-        Button(action: onEdit) {
+        Button(action: isSelectionMode ? onToggleSelection : onEdit) {
             rowContent
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(transaction.note), \(rowSubtitle), \(amountText)")
-        .accessibilityHint("Opens transaction details")
+        .accessibilityHint(isSelectionMode ? "Toggles transaction selection" : "Opens transaction details")
         .contextMenu {
             if allowsActions {
                 Button("Edit", systemImage: "pencil", action: onEdit)
@@ -1452,6 +2213,13 @@ private struct TransactionRow: View {
 
     private var rowContent: some View {
         HStack(spacing: 12) {
+            if isSelectionMode {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? PocketLedgerTheme.accent : PocketLedgerTheme.textTertiary)
+                    .accessibilityHidden(true)
+            }
+
             Image(systemName: iconName)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(accentColor)

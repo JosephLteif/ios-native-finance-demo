@@ -54,6 +54,25 @@ struct WatchHomeView: View {
                         }
                     }
 
+                    if snapshot.attentionCount > 0 || snapshot.upcomingScheduledCount > 0 {
+                        Section("Planning") {
+                            if snapshot.attentionCount > 0 {
+                                Label(
+                                    "\(snapshot.attentionCount) item\(snapshot.attentionCount == 1 ? "" : "s") needs attention",
+                                    systemImage: "exclamationmark.circle"
+                                )
+                                .foregroundStyle(.orange)
+                            }
+                            if snapshot.upcomingScheduledCount > 0 {
+                                Label(
+                                    "\(snapshot.upcomingScheduledCount) scheduled in the next 30 days",
+                                    systemImage: "calendar.badge.clock"
+                                )
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
                     Section("Recent") {
                         if snapshot.recentTransactions.isEmpty {
                             Text("No transactions yet")

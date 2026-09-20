@@ -228,7 +228,15 @@ struct AccountDetailView: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.circle")
-                Text("Reconcile this balance")
+                if let reconciliation = store.reconciliation(for: account.id) {
+                    Text(
+                        reconciliation.difference.minorUnits == 0
+                            ? "Reconciled \(reconciliation.lastReconciledAt.formatted(.dateTime.month(.abbreviated).day()))"
+                            : "Adjusted by \(Money(currency: account.currency, minorUnits: Swift.abs(reconciliation.difference.minorUnits)).formatted)"
+                    )
+                } else {
+                    Text("Not reconciled yet")
+                }
             }
             .font(.caption)
             .foregroundStyle(PocketLedgerTheme.textTertiary)

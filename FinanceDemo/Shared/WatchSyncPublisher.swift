@@ -93,6 +93,17 @@ enum WatchSyncPublisher {
                 balance: Money(currency: currency, minorUnits: totalMinorUnits)
             )
         }
+        let attentionCount = data.transactions.filter {
+            $0.kind == .expense && $0.categoryID == nil
+        }.count
+            + data.budgets.filter { budget in
+                financeBudgetSpent(budget, in: data).minorUnits
+                    > financeBudgetAllowance(budget, in: data).minorUnits
+            }.count
+        let upcomingScheduledCount = data.scheduledTransactions.filter {
+            $0.isEnabled
+                && $0.nextRunDate <= (Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now)
+        }.count
 
         return WatchLedgerSnapshot(
             version: WatchLedgerSnapshot.currentVersion,
@@ -100,7 +111,9 @@ enum WatchSyncPublisher {
             balances: balances,
             accounts: accountSummaries,
             categories: categorySummaries,
-            recentTransactions: Array(transactionSummaries)
+            recentTransactions: Array(transactionSummaries),
+            attentionCount: attentionCount,
+            upcomingScheduledCount: upcomingScheduledCount
         )
     }
 

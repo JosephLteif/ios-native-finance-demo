@@ -187,6 +187,21 @@ struct ScheduledTransactionsView: View {
                 .foregroundStyle(schedule.isEnabled ? PocketLedgerTheme.accent : PocketLedgerTheme.textTertiary)
 
             HStack {
+                if schedule.isEnabled {
+                    Menu {
+                        Button("Record now", systemImage: "checkmark.circle") {
+                            _ = store.recordScheduledTransactionNow(id: schedule.id)
+                        }
+                        Button("Skip next", systemImage: "forward.end") {
+                            _ = store.skipNextScheduledTransaction(id: schedule.id)
+                        }
+                    } label: {
+                        Label("Actions", systemImage: "ellipsis.circle")
+                    }
+                    .buttonStyle(.glass)
+                    .tint(PocketLedgerTheme.accent)
+                }
+
                 Button("Edit") {
                     editingSchedule = schedule
                     isPresentingEditor = true
@@ -214,6 +229,13 @@ struct ScheduledTransactionsView: View {
 
     private func timingText(for schedule: ScheduledTransaction) -> String {
         let date = schedule.nextRunDate.formatted(.dateTime.month(.abbreviated).day().year())
+        if let skippedDate = schedule.lastSkippedDate,
+           schedule.lastRunDate.map({ skippedDate > $0 }) ?? true {
+            if schedule.frequency == .once {
+                return "Skipped \(skippedDate.formatted(.dateTime.month(.abbreviated).day().year()))"
+            }
+            return "Skipped \(skippedDate.formatted(.dateTime.month(.abbreviated).day())) · Next \(date)"
+        }
         if schedule.isEnabled {
             if schedule.frequency == .once {
                 return "Runs on \(date)"

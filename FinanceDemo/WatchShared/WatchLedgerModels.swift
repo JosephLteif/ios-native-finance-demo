@@ -39,7 +39,7 @@ struct WatchTransactionSummary: Identifiable, Codable, Equatable, Sendable {
 }
 
 struct WatchLedgerSnapshot: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     let version: Int
     let generatedAt: Date
@@ -47,6 +47,69 @@ struct WatchLedgerSnapshot: Codable, Equatable, Sendable {
     let accounts: [WatchAccountSummary]
     let categories: [WatchCategorySummary]
     let recentTransactions: [WatchTransactionSummary]
+    let attentionCount: Int = 0
+    let upcomingScheduledCount: Int = 0
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case generatedAt
+        case balances
+        case accounts
+        case categories
+        case recentTransactions
+        case attentionCount
+        case upcomingScheduledCount
+    }
+
+    init(
+        version: Int,
+        generatedAt: Date,
+        balances: [WatchBalanceSummary],
+        accounts: [WatchAccountSummary],
+        categories: [WatchCategorySummary],
+        recentTransactions: [WatchTransactionSummary],
+        attentionCount: Int = 0,
+        upcomingScheduledCount: Int = 0
+    ) {
+        self.version = version
+        self.generatedAt = generatedAt
+        self.balances = balances
+        self.accounts = accounts
+        self.categories = categories
+        self.recentTransactions = recentTransactions
+        self.attentionCount = attentionCount
+        self.upcomingScheduledCount = upcomingScheduledCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        balances = try container.decode([WatchBalanceSummary].self, forKey: .balances)
+        accounts = try container.decode([WatchAccountSummary].self, forKey: .accounts)
+        categories = try container.decode([WatchCategorySummary].self, forKey: .categories)
+        recentTransactions = try container.decode(
+            [WatchTransactionSummary].self,
+            forKey: .recentTransactions
+        )
+        attentionCount = try container.decodeIfPresent(Int.self, forKey: .attentionCount) ?? 0
+        upcomingScheduledCount = try container.decodeIfPresent(
+            Int.self,
+            forKey: .upcomingScheduledCount
+        ) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(generatedAt, forKey: .generatedAt)
+        try container.encode(balances, forKey: .balances)
+        try container.encode(accounts, forKey: .accounts)
+        try container.encode(categories, forKey: .categories)
+        try container.encode(recentTransactions, forKey: .recentTransactions)
+        try container.encode(attentionCount, forKey: .attentionCount)
+        try container.encode(upcomingScheduledCount, forKey: .upcomingScheduledCount)
+    }
 }
 
 struct WatchExpenseCommand: Codable, Equatable, Sendable {

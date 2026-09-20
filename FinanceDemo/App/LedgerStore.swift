@@ -2,6 +2,28 @@ import Combine
 import Foundation
 import WidgetKit
 
+enum FinanceAttentionDestination: Hashable {
+    case uncategorizedTransactions
+    case transferTransactions
+    case scheduledTransactions
+    case budgets
+}
+
+enum FinanceAttentionSeverity: Hashable {
+    case notice
+    case warning
+}
+
+struct FinanceAttentionItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let detail: String
+    let systemImage: String
+    let severity: FinanceAttentionSeverity
+    let count: Int
+    let destination: FinanceAttentionDestination
+}
+
 @MainActor
 final class LedgerStore: ObservableObject {
     @Published private(set) var data: FinanceData
@@ -40,6 +62,104 @@ final class LedgerStore: ObservableObject {
 
     var recentTransactions: [LedgerTransaction] {
         data.transactions.sorted { $0.date > $1.date }
+    }
+
+    var attentionItems: [FinanceAttentionItem] {
+        var items: [FinanceAttentionItem] = []
+
+        let uncategorizedCount = data.transactions.filter {
+            $0.kind == .expense
+                && $0.categoryID == nil
+                && transactionHasIncludedAccount($0)
+        }.count
+        if uncategorizedCount > 0 {
+            items.append(
+                FinanceAttentionItem(
+                    id: "uncategorized-expenses",
+                    title: "Uncategorized expenses",
+                    detail: "Assign categories so budgets and metrics stay accurate.",
+                    systemImage: "tag",
+                    severity: .notice,
+                    count: uncategorizedCount,
+                    destination: .uncategorizedTransactions
+                )
+            )
+        }
+
+        let missingRateCount = data.transactions.filter { transaction in
+            guard transaction.kind == .transfer, transaction.exchangeRate == nil else {
+                return false
+            }
+            let currencies = Set((transaction.outflows + transaction.inflows).map { $0.money.currency })
+            return currencies.count > 1
+        }.count
+        if missingRateCount > 0 {
+            items.append(
+                FinanceAttentionItem(
+                    id: "missing-exchange-rates",
+                    title: "Transfers need exchange rates",
+                    detail: "Review cross-currency transfers before relying on their totals.",
+                    systemImage: "arrow.left.arrow.right",
+                    severity: .warning,
+                    count: missingRateCount,
+                    destination: .transferTransactions
+                )
+            )
+        }
+
+        let overduePausedCount = data.scheduledTransactions.filter { schedule in
+            !schedule.isEnabled
+                && schedule.nextRunDate <= .now
+                && !(schedule.frequency == .once && schedule.lastRunDate != nil)
+                && schedule.lastSkippedDate == nil
+        }.count
+        if overduePausedCount > 0 {
+            items.append(
+                FinanceAttentionItem(
+                    id: "paused-scheduled-transactions",
+                    title: "Paused scheduled entries",
+                    detail: "Some recurring entries are past their next run date.",
+                    systemImage: "pause.circle",
+                    severity: .warning,
+                    count: overduePausedCount,
+                    destination: .scheduledTransactions
+                )
+            )
+        }
+
+        let overBudgetCount = data.budgets.filter { budget in
+            budgetProjection(budget).minorUnits > budgetAllowance(budget).minorUnits
+        }.count
+        if overBudgetCount > 0 {
+            items.append(
+                FinanceAttentionItem(
+                    id: "over-budget",
+                    title: "Budgets need attention",
+                    detail: "Review categories that are over limit or projected to exceed it.",
+                    systemImage: "exclamationmark.triangle",
+                    severity: .warning,
+                    count: overBudgetCount,
+                    destination: .budgets
+                )
+            )
+        }
+
+        return items.filter { !data.attentionState.dismissedIDs.contains($0.id) }
+    }
+
+    @discardableResult
+    func dismissAttention(id: String) -> Bool {
+        var updated = data
+        updated.attentionState.dismissedIDs.insert(id)
+        return persist(updated, successMessage: "Attention item dismissed")
+    }
+
+    @discardableResult
+    func restoreDismissedAttention() -> Bool {
+        guard !data.attentionState.dismissedIDs.isEmpty else { return true }
+        var updated = data
+        updated.attentionState.dismissedIDs.removeAll()
+        return persist(updated, successMessage: "Dismissed attention items restored")
     }
 
     var rootCategories: [LedgerCategory] {
@@ -108,6 +228,117 @@ final class LedgerStore: ObservableObject {
             return false
         }
         return persist(updated, successMessage: "Transaction deleted")
+    }
+
+    @discardableResult
+    func restoreTransaction(_ transaction: LedgerTransaction) -> Bool {
+        guard !data.transactions.contains(where: { $0.id == transaction.id }) else {
+            lastActionStatus = "Transaction is already in the ledger"
+            return false
+        }
+        guard validate(transaction, allowArchivedReferences: true) else { return false }
+        var updated = data
+        updated.transactions.append(transaction)
+        return persist(updated, successMessage: "Transaction restored")
+    }
+
+    @discardableResult
+    func restoreTransactions(_ transactions: [LedgerTransaction]) -> Bool {
+        let missing = transactions.filter { transaction in
+            !data.transactions.contains(where: { $0.id == transaction.id })
+        }
+        guard !missing.isEmpty else {
+            lastActionStatus = "Transactions are already in the ledger"
+            return false
+        }
+        guard missing.allSatisfy({ validate($0, allowArchivedReferences: true) }) else {
+            return false
+        }
+        var updated = data
+        updated.transactions.append(contentsOf: missing)
+        return persist(updated, successMessage: "Transactions restored")
+    }
+
+    @discardableResult
+    func updateTransactionCategories(
+        ids: Set<UUID>,
+        categoryID: UUID?
+    ) -> Bool {
+        guard categoryID == nil || data.categories.contains(where: { $0.id == categoryID }) else {
+            lastActionStatus = "Category not found"
+            return false
+        }
+
+        var updated = data
+        var changed = false
+        for index in updated.transactions.indices where ids.contains(updated.transactions[index].id) {
+            updated.transactions[index].categoryID = categoryID
+            changed = true
+        }
+        guard changed else {
+            lastActionStatus = "No transactions selected"
+            return false
+        }
+        return persist(updated, successMessage: "Transaction categories updated")
+    }
+
+    @discardableResult
+    func updateSingleAccountTransactions(
+        ids: Set<UUID>,
+        accountID: UUID
+    ) -> Bool {
+        guard let targetAccount = account(with: accountID) else {
+            lastActionStatus = "Account not found"
+            return false
+        }
+
+        var updated = data
+        var changed = 0
+        for index in updated.transactions.indices where ids.contains(updated.transactions[index].id) {
+            var transaction = updated.transactions[index]
+            guard transaction.outflows.count + transaction.inflows.count == 1 else { continue }
+
+            if let movementIndex = transaction.outflows.indices.first,
+               transaction.outflows[movementIndex].money.currency == targetAccount.currency {
+                transaction.outflows[movementIndex].accountID = accountID
+            } else if let movementIndex = transaction.inflows.indices.first,
+                      transaction.inflows[movementIndex].money.currency == targetAccount.currency {
+                transaction.inflows[movementIndex].accountID = accountID
+            } else {
+                continue
+            }
+
+            guard FinanceTransactionValidator.validate(
+                transaction,
+                in: updated,
+                allowArchivedReferences: true
+            ) == nil else {
+                continue
+            }
+            updated.transactions[index] = transaction
+            changed += 1
+        }
+
+        guard changed > 0 else {
+            lastActionStatus = "No selected single-account transactions matched that account"
+            return false
+        }
+        return persist(updated, successMessage: "Transaction accounts updated")
+    }
+
+    @discardableResult
+    func deleteTransactions(ids: Set<UUID>) -> Bool {
+        var updated = data
+        let originalCount = updated.transactions.count
+        updated.transactions.removeAll { ids.contains($0.id) }
+        guard updated.transactions.count != originalCount else {
+            lastActionStatus = "No transactions selected"
+            return false
+        }
+        return persist(
+            updated,
+            successMessage: "Deleted \(originalCount - updated.transactions.count) transactions"
+        )
     }
 
     @discardableResult
@@ -193,6 +424,83 @@ final class LedgerStore: ObservableObject {
     }
 
     @discardableResult
+    func skipNextScheduledTransaction(id: UUID) -> Bool {
+        guard let index = data.scheduledTransactions.firstIndex(where: { $0.id == id }) else {
+            lastActionStatus = "Scheduled transaction not found"
+            return false
+        }
+
+        var schedule = data.scheduledTransactions[index]
+        guard schedule.isEnabled else {
+            lastActionStatus = "Enable the scheduled transaction before skipping it"
+            return false
+        }
+
+        schedule.lastSkippedDate = .now
+        if schedule.frequency == .once {
+            schedule.isEnabled = false
+        } else if let nextDate = schedule.frequency.nextDate(
+            after: schedule.nextRunDate,
+            calendar: .current,
+            monthlyDay: schedule.recurrenceDay,
+            monthlyRule: schedule.monthlyRule
+        ) {
+            schedule.nextRunDate = nextDate
+        } else {
+            schedule.isEnabled = false
+        }
+
+        var updated = data
+        updated.scheduledTransactions[index] = schedule
+        return persist(updated, successMessage: "Next scheduled entry skipped")
+    }
+
+    @discardableResult
+    func recordScheduledTransactionNow(id: UUID, now: Date = .now) -> Bool {
+        guard let index = data.scheduledTransactions.firstIndex(where: { $0.id == id }) else {
+            lastActionStatus = "Scheduled transaction not found"
+            return false
+        }
+
+        var schedule = data.scheduledTransactions[index]
+        guard schedule.isEnabled else {
+            lastActionStatus = "Enable the scheduled transaction before recording it"
+            return false
+        }
+
+        let transaction = schedule.materializedTransaction(on: now)
+        guard validate(transaction, allowArchivedReferences: true) else { return false }
+
+        var updated = data
+        updated.transactions.append(transaction)
+        schedule.lastRunDate = now
+        schedule.lastSkippedDate = nil
+
+        if schedule.frequency == .once {
+            schedule.isEnabled = false
+        } else {
+            var nextDate = schedule.nextRunDate
+            repeat {
+                guard let candidate = schedule.frequency.nextDate(
+                    after: nextDate,
+                    calendar: .current,
+                    monthlyDay: schedule.recurrenceDay,
+                    monthlyRule: schedule.monthlyRule
+                ),
+                candidate > nextDate else {
+                    schedule.isEnabled = false
+                    break
+                }
+                nextDate = candidate
+            } while nextDate <= now
+            schedule.nextRunDate = nextDate
+        }
+
+        updated.scheduledTransactions[index] = schedule
+        return persist(updated, successMessage: "Scheduled transaction recorded")
+    }
+
+    @discardableResult
     func deleteScheduledTransaction(id: UUID) -> Bool {
         var updated = data
         let originalCount = updated.scheduledTransactions.count
@@ -221,6 +529,7 @@ final class LedgerStore: ObservableObject {
                 materializedCount += 1
                 changed = true
                 scheduledTransaction.lastRunDate = dueDate
+                scheduledTransaction.lastSkippedDate = nil
 
                 guard scheduledTransaction.frequency != .once else {
                     scheduledTransaction.isEnabled = false
@@ -448,6 +757,21 @@ final class LedgerStore: ObservableObject {
 
     func budgetAllowance(_ budget: LedgerBudget, for interval: DateInterval? = nil) -> Money {
         financeBudgetAllowance(budget, in: data, interval: interval)
+    }
+
+    func budgetProjection(_ budget: LedgerBudget, on date: Date = .now) -> Money {
+        let spent = budgetSpent(budget)
+        let calendar = Calendar.current
+        let dayCount = calendar.range(of: .day, in: .month, for: date)?.count ?? 30
+        let elapsedDay = calendar.component(.day, from: date)
+        let progress = min(
+            max(Double(elapsedDay) / Double(max(dayCount, 1)), 0.01),
+            1
+        )
+        return Money(
+            currency: budget.currency,
+            minorUnits: Int64((Double(spent.minorUnits) / progress).rounded())
+        )
     }
 
     func exchangeRate(base: LedgerCurrency, quote: LedgerCurrency) -> ExchangeRate? {
@@ -738,6 +1062,10 @@ final class LedgerStore: ObservableObject {
         return Money(currency: account.currency, minorUnits: balance)
     }
 
+    func reconciliation(for accountID: UUID) -> AccountReconciliation? {
+        data.reconciliations[accountID]
+    }
+
     @discardableResult
     func updateAccountBalance(
         accountID: UUID,
@@ -755,8 +1083,12 @@ final class LedgerStore: ObservableObject {
         let difference = targetBalance.minorUnits - currentBalance.minorUnits
 
         guard difference != 0 else {
-            lastActionStatus = "Balance already matches"
-            return true
+            var updated = data
+            updated.reconciliations[accountID] = AccountReconciliation(
+                lastReconciledAt: .now,
+                difference: Money(currency: account.currency, minorUnits: 0)
+            )
+            return persist(updated, successMessage: "Balance reconciled")
         }
 
         var updated = data
@@ -786,6 +1118,10 @@ final class LedgerStore: ObservableObject {
                 minorUnits: account.openingBalance.minorUnits + difference
             )
         }
+        updated.reconciliations[accountID] = AccountReconciliation(
+            lastReconciledAt: .now,
+            difference: Money(currency: account.currency, minorUnits: difference)
+        )
 
         return persist(
             updated,

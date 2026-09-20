@@ -52,6 +52,8 @@ final class FinanceModelTests: XCTestCase {
         )
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         object.removeValue(forKey: "attachments")
+        object.removeValue(forKey: "attentionState")
+        object.removeValue(forKey: "reconciliations")
         var accounts = try XCTUnwrap(object["accounts"] as? [[String: Any]])
         accounts[0].removeValue(forKey: "isArchived")
         object["accounts"] = accounts
@@ -69,6 +71,43 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertFalse(decoded.categories[0].isArchived)
         XCTAssertEqual(decoded.transactions[0].attachmentIDs, [])
         XCTAssertEqual(decoded.attachments, [])
+        XCTAssertEqual(decoded.attentionState.dismissedIDs, [])
+        XCTAssertEqual(decoded.reconciliations, [:])
+    }
+
+    func testAttentionStateRoundTripsWithFinanceData() throws {
+        let data = FinanceData(
+            accounts: [],
+            categories: [],
+            transactions: [],
+            attentionState: FinanceAttentionState(
+                dismissedIDs: ["over-budget", "uncategorized-expenses"]
+            )
+        )
+
+        let encoded = try JSONEncoder().encode(data)
+        let decoded = try JSONDecoder().decode(FinanceData.self, from: encoded)
+
+        XCTAssertEqual(decoded.attentionState.dismissedIDs, data.attentionState.dismissedIDs)
+    }
+
+    func testReconciliationStateRoundTripsWithFinanceData() throws {
+        let accountID = UUID()
+        let reconciliation = AccountReconciliation(
+            lastReconciledAt: Date(timeIntervalSince1970: 1_700_000_000),
+            difference: Money(currency: .usd, minorUnits: 125)
+        )
+        let data = FinanceData(
+            accounts: [],
+            categories: [],
+            transactions: [],
+            reconciliations: [accountID: reconciliation]
+        )
+
+        let encoded = try JSONEncoder().encode(data)
+        let decoded = try JSONDecoder().decode(FinanceData.self, from: encoded)
+
+        XCTAssertEqual(decoded.reconciliations[accountID], reconciliation)
     }
 
     func testSameCurrencyTransferMustBalance() {
@@ -1452,6 +1491,7 @@ final class FinanceModelTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         object.removeValue(forKey: "monthlyRule")
         object.removeValue(forKey: "recurrenceDay")
+        object.removeValue(forKey: "lastSkippedDate")
         let legacyData = try JSONSerialization.data(withJSONObject: object)
 
         let decoded = try JSONDecoder().decode(ScheduledTransaction.self, from: legacyData)
@@ -1460,6 +1500,7 @@ final class FinanceModelTests: XCTestCase {
             decoded.recurrenceDay,
             Calendar.current.component(.day, from: schedule.nextRunDate)
         )
+        XCTAssertNil(decoded.lastSkippedDate)
     }
 
     func testTemplateCreatesFreshTransactionAndMovementIDs() {
@@ -1541,5 +1582,28 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(snapshot.accounts.first?.name, "Cash")
         XCTAssertEqual(snapshot.recentTransactions.first?.categoryPath, "Food")
         XCTAssertEqual(snapshot.recentTransactions.first?.amount.minorUnits, 1_250)
+    }
+
+    func testLegacyWatchSnapshotDefaultsPlanningFields() throws {
+        let snapshot = WatchLedgerSnapshot(
+            version: 1,
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            balances: [],
+            accounts: [],
+            categories: [],
+            recentTransactions: []
+        )
+        let encoded = try JSONEncoder().encode(snapshot)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "attentionCount")
+        object.removeValue(forKey: "upcomingScheduledCount")
+
+        let decoded = try JSONDecoder().decode(
+            WatchLedgerSnapshot.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertEqual(decoded.attentionCount, 0)
+        XCTAssertEqual(decoded.upcomingScheduledCount, 0)
     }
 }

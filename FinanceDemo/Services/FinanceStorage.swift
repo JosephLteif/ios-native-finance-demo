@@ -334,6 +334,18 @@ final class FinanceStorage {
         }
 
         let latest = value.transactions.max { $0.date < $1.date }
+        let attentionCount = value.transactions.filter {
+            $0.kind == .expense && $0.categoryID == nil
+        }.count
+            + value.budgets.filter { budget in
+                let spent = financeBudgetSpent(budget, in: value)
+                let allowance = financeBudgetAllowance(budget, in: value)
+                return spent.minorUnits > allowance.minorUnits
+            }.count
+        let upcomingScheduledCount = value.scheduledTransactions.filter {
+            $0.isEnabled
+                && $0.nextRunDate <= (Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now)
+        }.count
 
         return FinanceWidgetSnapshot(
             usdAvailable: availableBalance(for: .usd),
@@ -341,7 +353,9 @@ final class FinanceStorage {
             eurAvailable: availableBalance(for: .eur),
             latestTransactionDescription: latest?.note ?? "No transactions yet",
             lastUpdated: latest?.date ?? .now,
-            appGroupAvailable: isAppGroupAvailable
+            appGroupAvailable: isAppGroupAvailable,
+            attentionCount: attentionCount,
+            upcomingScheduledCount: upcomingScheduledCount
         )
     }
 
