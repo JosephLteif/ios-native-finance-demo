@@ -862,11 +862,12 @@ final class FinanceModelTests: XCTestCase {
         let mapping: [ImportField: String?] = [
             .date: "When",
             .amount: "Value",
-            .account: "Wallet"
+            .account: "Wallet",
+            .note: nil
         ]
         let rules = ImportRuleStore.remembering(
             mapping: mapping,
-            explicitFields: [.date, .account],
+            explicitFields: [.date, .account, .note],
             columns: columns,
             accountRules: [
                 ImportAccountRule(key: "gold", type: .physicalAsset, currency: .usd, isArchived: true)
@@ -884,6 +885,13 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(applied[.date] ?? nil, "When")
         XCTAssertEqual(applied[.account] ?? nil, "Wallet")
         XCTAssertNil(applied[.amount] ?? nil)
+        XCTAssertNil(
+            ImportRuleStore.applying(
+                remembered: decoded,
+                to: [.note: "Notes"],
+                columns: columns
+            )[.note] ?? nil
+        )
         XCTAssertEqual(ImportRuleStore.accountSuggestion(for: "Gold", in: decoded)?.type, .physicalAsset)
         XCTAssertTrue(ImportRuleStore.accountRule(for: "Gold", in: decoded)?.isArchived == true)
 

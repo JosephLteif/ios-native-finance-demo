@@ -253,12 +253,11 @@ enum ImportRuleStore {
                     result[pair.key.rawValue] = column
                 }
             },
-            unmappedFields: mapping.compactMap { pair in
-                guard pair.value == nil,
-                      explicitFields == nil || explicitFields?.contains(pair.key) == true else {
+            unmappedFields: (explicitFields ?? Set(ImportField.allCases)).compactMap { field in
+                guard (mapping[field] ?? nil) == nil else {
                     return nil
                 }
-                return pair.key.rawValue
+                return field.rawValue
             }.sorted()
         )
 
@@ -266,7 +265,9 @@ enum ImportRuleStore {
             columnMappings: rules.columnMappings,
             accountRules: rules.accountRules
         )
-        if explicitFields == nil || !storedMapping.mappings.isEmpty {
+        if explicitFields == nil
+            || !storedMapping.mappings.isEmpty
+            || !storedMapping.unmappedFields.isEmpty {
             updated.columnMappings.removeAll { $0.signature == signature }
             updated.columnMappings.append(storedMapping)
         }
