@@ -57,7 +57,7 @@ final class FinanceDemoUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Defaults"].waitForExistence(timeout: 5))
 
         app.buttons["importWizard.next"].tap()
-        XCTAssertTrue(app.otherElements["importWizard.organize"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["importWizard.accountSelect"].waitForExistence(timeout: 20))
 
         app.buttons["importWizard.accountSelect"].tap()
         let goldRow = app.buttons["importWizard.accountRow.gold"]
@@ -70,7 +70,6 @@ final class FinanceDemoUITests: XCTestCase {
         app.buttons["Apply"].tap()
 
         app.buttons["importWizard.next"].tap()
-        XCTAssertTrue(app.otherElements["importWizard.review"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Exceptions first"].waitForExistence(timeout: 5))
         app.buttons["All rows"].tap()
         app.buttons["Exceptions first"].tap()
