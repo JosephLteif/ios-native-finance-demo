@@ -1027,8 +1027,14 @@ final class FinanceModelTests: XCTestCase {
             rate.quoteUnitsPerBaseUnit,
             try XCTUnwrap(Decimal(string: "0.0000112"))
         )
-        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .lbp, in: result.data), 200_000)
-        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .usd, in: result.data), 224)
+        let mergedData = FinanceData(
+            accounts: [account] + result.data.accounts,
+            categories: result.data.categories,
+            transactions: result.data.transactions,
+            exchangeRates: result.data.exchangeRates
+        )
+        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .lbp, in: mergedData), 200_000)
+        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .usd, in: mergedData), 224)
     }
 
     func testImportExcludesModifiedBalanceFromMetrics() throws {
@@ -1064,7 +1070,13 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertFalse(category.includeInTotals)
         let legacyCategory = LedgerCategory(name: "Modified Bal.")
         XCTAssertFalse(financeCategoryIncludedInTotals(legacyCategory.id, in: [legacyCategory]))
-        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .usd, in: result.data), 0)
+        let mergedData = FinanceData(
+            accounts: [account] + result.data.accounts,
+            categories: result.data.categories,
+            transactions: result.data.transactions,
+            exchangeRates: result.data.exchangeRates
+        )
+        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .usd, in: mergedData), 0)
     }
 
     func testImportAddsRateToCrossCurrencyTransfer() throws {
