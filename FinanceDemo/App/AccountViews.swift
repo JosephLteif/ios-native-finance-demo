@@ -1,6 +1,61 @@
 import Foundation
 import SwiftUI
 
+private struct AccountDetailSnapshot {
+    let transactions: [LedgerTransaction]
+    let pageTransactions: [LedgerTransaction]
+    let pageCount: Int
+    let displayedPage: Int
+    let incoming: Int64
+    let outgoing: Int64
+
+    static var empty: AccountDetailSnapshot {
+        AccountDetailSnapshot(
+            transactions: [],
+            pageTransactions: [],
+            pageCount: 1,
+            displayedPage: 0,
+            incoming: 0,
+            outgoing: 0
+        )
+    }
+
+    static func make(
+        index: LedgerIndex,
+        account: Account,
+        page: Int,
+        pageSize: Int
+    ) -> AccountDetailSnapshot {
+        let transactions = index.sortedTransactions.filter { transaction in
+            transaction.outflows.contains { $0.accountID == account.id }
+                || transaction.inflows.contains { $0.accountID == account.id }
+        }
+        var outgoing: Int64 = 0
+        var incoming: Int64 = 0
+        for transaction in transactions {
+            outgoing += transaction.outflows
+                .filter { $0.accountID == account.id && $0.money.currency == account.currency }
+                .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+            incoming += transaction.inflows
+                .filter { $0.accountID == account.id && $0.money.currency == account.currency }
+                .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+        }
+
+        let pageCount = max(1, (transactions.count + pageSize - 1) / pageSize)
+        let displayedPage = min(page, pageCount - 1)
+        let pageStart = displayedPage * pageSize
+        let pageTransactions = Array(transactions.dropFirst(pageStart).prefix(pageSize))
+        return AccountDetailSnapshot(
+            transactions: transactions,
+            pageTransactions: pageTransactions,
+            pageCount: pageCount,
+            displayedPage: displayedPage,
+            incoming: incoming,
+            outgoing: outgoing
+        )
+    }
+}
+
 @MainActor
 struct AccountDetailView: View {
     @ObservedObject var store: LedgerStore
@@ -10,6 +65,7 @@ struct AccountDetailView: View {
     @State private var isPresentingBalanceEditor = false
     @State private var editingTransaction: LedgerTransaction?
     @State private var transactionPage = 0
+    @State private var snapshot = AccountDetailSnapshot.empty
 
     private let transactionsPerPage = 25
 
@@ -47,39 +103,24 @@ struct AccountDetailView: View {
                 TransactionEditor(store: store, transaction: transaction)
             }
             .pocketScreen()
+            .onAppear(perform: refreshSnapshot)
+            .onChange(of: accountID) { _, _ in
+                transactionPage = 0
+                refreshSnapshot()
+            }
+            .onChange(of: store.ledgerRevision) { _, _ in refreshSnapshot() }
     }
 
     @ViewBuilder
     private var content: some View {
         if let account {
-            accountContent(account)
+            accountContent(account, snapshot: snapshot)
         } else {
             ContentUnavailableView("Account unavailable", systemImage: "wallet.pass")
         }
     }
 
-    private func accountContent(_ account: Account) -> some View {
-        let transactions = store.data.transactions
-            .filter { transaction in
-                transaction.outflows.contains { $0.accountID == account.id }
-                    || transaction.inflows.contains { $0.accountID == account.id }
-            }
-            .sorted { $0.date > $1.date }
-        let pageCount = max(1, (transactions.count + transactionsPerPage - 1) / transactionsPerPage)
-        let displayedPage = min(transactionPage, pageCount - 1)
-        let pageStart = displayedPage * transactionsPerPage
-        let pageTransactions = Array(transactions.dropFirst(pageStart).prefix(transactionsPerPage))
-        let outgoing = transactions.reduce(Int64.zero) { total, transaction in
-            total + transaction.outflows
-                .filter { $0.accountID == account.id && $0.money.currency == account.currency }
-                .reduce(Int64.zero) { $0 + $1.money.minorUnits }
-        }
-        let incoming = transactions.reduce(Int64.zero) { total, transaction in
-            total + transaction.inflows
-                .filter { $0.accountID == account.id && $0.money.currency == account.currency }
-                .reduce(Int64.zero) { $0 + $1.money.minorUnits }
-        }
-
+    private func accountContent(_ account: Account, snapshot: AccountDetailSnapshot) -> some View {
         return ScrollView(showsIndicators: false) {
             PocketGlassContainer(spacing: 14) {
                 VStack(alignment: .leading, spacing: 18) {
@@ -89,19 +130,19 @@ struct AccountDetailView: View {
                     HStack(spacing: 10) {
                         accountMetric(
                             title: "Transactions",
-                            value: "\(transactions.count)",
+                            value: "\(snapshot.transactions.count)",
                             systemImage: "arrow.left.arrow.right",
                             tint: PocketLedgerTheme.accent
                         )
                         accountMetric(
                             title: "Money in",
-                            value: Money(currency: account.currency, minorUnits: incoming).formatted,
+                            value: Money(currency: account.currency, minorUnits: snapshot.incoming).formatted,
                             systemImage: "arrow.down.left",
                             tint: PocketLedgerTheme.income
                         )
                         accountMetric(
                             title: "Money out",
-                            value: Money(currency: account.currency, minorUnits: outgoing).formatted,
+                            value: Money(currency: account.currency, minorUnits: snapshot.outgoing).formatted,
                             systemImage: "arrow.up.right",
                             tint: PocketLedgerTheme.warning
                         )
@@ -117,7 +158,7 @@ struct AccountDetailView: View {
                                 .foregroundStyle(PocketLedgerTheme.textTertiary)
                         }
 
-                        if transactions.isEmpty {
+                        if snapshot.transactions.isEmpty {
                             VStack(spacing: 8) {
                                 Image(systemName: "tray")
                                     .font(.title2)
@@ -133,7 +174,7 @@ struct AccountDetailView: View {
                             .padding(.vertical, 28)
                         } else {
                             LazyVStack(spacing: 0) {
-                                ForEach(pageTransactions) { transaction in
+                                ForEach(snapshot.pageTransactions) { transaction in
                                     AccountTransactionRow(
                                         transaction: transaction,
                                         account: account,
@@ -150,26 +191,26 @@ struct AccountDetailView: View {
                                     .stroke(PocketLedgerTheme.divider, lineWidth: 1)
                             }
 
-                            if pageCount > 1 {
+                            if snapshot.pageCount > 1 {
                                 HStack(spacing: 16) {
                                     Button {
-                                        transactionPage = max(0, displayedPage - 1)
+                                        transactionPage = max(0, snapshot.displayedPage - 1)
                                     } label: {
                                         Label("Previous", systemImage: "chevron.left")
                                     }
-                                    .disabled(displayedPage == 0)
+                                    .disabled(snapshot.displayedPage == 0)
 
-                                    Text("Page \(displayedPage + 1) of \(pageCount)")
+                                    Text("Page \(snapshot.displayedPage + 1) of \(snapshot.pageCount)")
                                         .font(.caption.weight(.semibold).monospacedDigit())
                                         .foregroundStyle(PocketLedgerTheme.textSecondary)
 
                                     Button {
-                                        transactionPage = min(pageCount - 1, displayedPage + 1)
+                                        transactionPage = min(snapshot.pageCount - 1, snapshot.displayedPage + 1)
                                     } label: {
                                         Label("Next", systemImage: "chevron.right")
                                             .labelStyle(.titleAndIcon)
                                     }
-                                    .disabled(displayedPage == pageCount - 1)
+                                    .disabled(snapshot.displayedPage == snapshot.pageCount - 1)
                                 }
                                 .font(.caption.weight(.semibold))
                                 .frame(maxWidth: .infinity)
@@ -183,9 +224,20 @@ struct AccountDetailView: View {
             .padding(.top, 12)
             .padding(.bottom, 24)
         }
-        .onChange(of: account.id) { _, _ in
-            transactionPage = 0
+        .onChange(of: transactionPage) { _, _ in refreshSnapshot() }
+    }
+
+    private func refreshSnapshot() {
+        guard let account else {
+            snapshot = .empty
+            return
         }
+        snapshot = AccountDetailSnapshot.make(
+            index: store.ledgerIndex,
+            account: account,
+            page: transactionPage,
+            pageSize: transactionsPerPage
+        )
     }
 
     private func totalsScopeCard(_ account: Account) -> some View {
@@ -346,9 +398,8 @@ private struct AccountTransactionRow: View {
     }
 
     private var iconName: String {
-        if let categoryID = transaction.categoryID,
-           let category = store.data.categories.first(where: { $0.id == categoryID }) {
-            return category.systemImage
+        if transaction.categoryID != nil {
+            return store.ledgerIndex.categorySystemImage(for: transaction.categoryID)
         }
 
         switch transaction.kind {

@@ -10,15 +10,7 @@ private enum MetricsPeriod: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private struct CategoryMetric: Identifiable {
-    let id: String
-    let categoryID: UUID?
-    let title: String
-    let currency: LedgerCurrency
-    let amount: Int64
-    let count: Int
-    let colorIndex: Int
-}
+private typealias CategoryMetric = MetricsCategorySnapshot
 
 private struct CategoryMonthPoint: Identifiable {
     let date: Date
@@ -33,6 +25,81 @@ private struct MetricsReportShareItem: Identifiable {
     var id: URL { url }
 }
 
+private struct CategoryMetricsDetailSnapshot {
+    let monthlyPoints: [CategoryMonthPoint]
+    let selectedMonthTransactions: [LedgerTransaction]
+    let selectedMonthTotal: Int64
+
+    static var empty: CategoryMetricsDetailSnapshot {
+        CategoryMetricsDetailSnapshot(
+            monthlyPoints: [],
+            selectedMonthTransactions: [],
+            selectedMonthTotal: 0
+        )
+    }
+
+    static func make(
+        index: LedgerIndex,
+        categoryID: UUID?,
+        currency: LedgerCurrency,
+        anchorDate: Date,
+        calendar: Calendar = .current
+    ) -> CategoryMetricsDetailSnapshot {
+        let currentMonth = calendar.dateInterval(of: .month, for: anchorDate)?.start ?? anchorDate
+        let monthStarts = (0..<7).compactMap {
+            calendar.date(byAdding: .month, value: $0 - 6, to: currentMonth)
+                .flatMap { calendar.dateInterval(of: .month, for: $0)?.start }
+        }
+        guard let firstMonth = monthStarts.first,
+              let lastMonth = monthStarts.last,
+              let lastInterval = calendar.dateInterval(of: .month, for: lastMonth) else {
+            return .empty
+        }
+
+        let range = DateInterval(start: firstMonth, end: lastInterval.end)
+        var monthlyAmounts = monthStarts.reduce(into: [Date: Int64]()) { result, month in
+            result[month] = 0
+        }
+        var selectedMonthTransactions: [LedgerTransaction] = []
+        var selectedMonthTotal: Int64 = 0
+
+        for transaction in index.sortedTransactions {
+            guard transaction.kind == .expense,
+                  range.contains(transaction.date),
+                  transaction.categoryID == categoryID,
+                  transaction.outflows.contains(where: {
+                      $0.money.currency == currency
+                          && index.includesInTotals(accountID: $0.accountID)
+                  }),
+                  let monthStart = calendar.dateInterval(of: .month, for: transaction.date)?.start else {
+                continue
+            }
+
+            let outflowAmount = transaction.outflows.reduce(Int64.zero) { total, movement in
+                guard movement.money.currency == currency,
+                      index.includesInTotals(accountID: movement.accountID) else {
+                    return total
+                }
+                return total + movement.money.minorUnits
+            }
+            monthlyAmounts[monthStart, default: 0] += outflowAmount
+
+            if monthStart == currentMonth {
+                selectedMonthTransactions.append(transaction)
+                selectedMonthTotal += outflowAmount
+            }
+        }
+
+        return CategoryMetricsDetailSnapshot(
+            monthlyPoints: monthStarts.map {
+                CategoryMonthPoint(date: $0, amount: monthlyAmounts[$0] ?? 0)
+            },
+            selectedMonthTransactions: selectedMonthTransactions,
+            selectedMonthTotal: selectedMonthTotal
+        )
+    }
+}
+
 @MainActor
 struct MetricsView: View {
     @ObservedObject var store: LedgerStore
@@ -45,6 +112,7 @@ struct MetricsView: View {
     @State private var selectedCategoryID: UUID?
     @State private var reportToShare: MetricsReportShareItem?
     @State private var reportError: String?
+    @State private var snapshot = MetricsSnapshot.empty
 
     private var interval: DateInterval {
         let calendar = Calendar.current
@@ -66,76 +134,6 @@ struct MetricsView: View {
         }
     }
 
-    private var filteredTransactions: [LedgerTransaction] {
-        store.recentTransactions.filter { transaction in
-            interval.contains(transaction.date)
-                && matchesCategory(transaction)
-                && financeCategoryIncludedInTotals(transaction.categoryID, in: store.data.categories)
-                && transactionHasIncludedAccount(transaction)
-        }
-    }
-
-    private var expenseTotals: [LedgerCurrency: Int64] {
-        var totals: [LedgerCurrency: Int64] = [:]
-        for transaction in filteredTransactions where transaction.kind == .expense {
-            for currency in LedgerCurrency.allCases {
-                totals[currency, default: 0] += financeNetExpenseAmount(
-                    transaction,
-                    currency: currency,
-                    in: store.data
-                )
-            }
-        }
-        return totals
-    }
-
-    private var incomeTotals: [LedgerCurrency: Int64] {
-        totals(for: .income, movements: \LedgerTransaction.inflows)
-    }
-
-    private var selectedCurrencyExpense: Int64 {
-        expenseTotals[selectedCurrency] ?? 0
-    }
-
-    private var categoryMetrics: [CategoryMetric] {
-        var metrics: [String: (categoryID: UUID?, title: String, amount: Int64, count: Int)] = [:]
-
-        for transaction in filteredTransactions where transaction.kind == .expense {
-            let categoryID = transaction.categoryID
-            let categoryName = store.categoryPath(for: categoryID)
-            let amount = financeNetExpenseAmount(
-                transaction,
-                currency: selectedCurrency,
-                in: store.data
-            )
-            guard amount > 0 else { continue }
-
-            let key = "\(categoryID?.uuidString ?? "uncategorized")-\(selectedCurrency.rawValue)"
-            let current = metrics[key] ?? (categoryID, categoryName, 0, 0)
-            metrics[key] = (
-                current.categoryID,
-                current.title,
-                current.amount + amount,
-                current.count + 1
-            )
-        }
-
-        return metrics.values
-            .sorted { $0.amount > $1.amount }
-            .enumerated()
-            .map { index, metric in
-                CategoryMetric(
-                    id: "\(metric.categoryID?.uuidString ?? "uncategorized")-\(selectedCurrency.rawValue)",
-                    categoryID: metric.categoryID,
-                    title: metric.title,
-                    currency: selectedCurrency,
-                    amount: metric.amount,
-                    count: metric.count,
-                    colorIndex: index
-                )
-            }
-    }
-
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
@@ -144,10 +142,10 @@ struct MetricsView: View {
                         screenHeader
                         periodControls
                         periodNavigator
-                        totalsHeader
-                        spendingChart
-                        categoryRows
-                        activityMix
+                        totalsHeader(snapshot)
+                        spendingChart(snapshot)
+                        categoryRows(snapshot)
+                        activityMix(snapshot)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
@@ -156,6 +154,14 @@ struct MetricsView: View {
             }
             .pocketScreen()
             .toolbar(.hidden, for: .navigationBar)
+            .onAppear(perform: refreshSnapshot)
+            .onChange(of: period) { _, _ in refreshSnapshot() }
+            .onChange(of: selectedCurrency) { _, _ in refreshSnapshot() }
+            .onChange(of: anchorDate) { _, _ in refreshSnapshot() }
+            .onChange(of: customStart) { _, _ in refreshSnapshot() }
+            .onChange(of: customEnd) { _, _ in refreshSnapshot() }
+            .onChange(of: selectedCategoryID) { _, _ in refreshSnapshot() }
+            .onChange(of: store.ledgerRevision) { _, _ in refreshSnapshot() }
             .sheet(item: $reportToShare) { report in
                 MetricsReportShareSheet(url: report.url)
             }
@@ -205,6 +211,7 @@ struct MetricsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .accessibilityIdentifier("metrics-period-picker")
 
                 Picker("Currency", selection: $selectedCurrency) {
                     ForEach(LedgerCurrency.allCases) { currency in
@@ -257,6 +264,7 @@ struct MetricsView: View {
 
                     Text(periodTitle)
                         .font(.headline.weight(.semibold))
+                        .accessibilityIdentifier("metrics-period-title")
 
                     Spacer()
 
@@ -280,13 +288,13 @@ struct MetricsView: View {
         .padding(.vertical, 12)
     }
 
-    private var totalsHeader: some View {
+    private func totalsHeader(_ snapshot: MetricsSnapshot) -> some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Income")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
-                Text(Money(currency: selectedCurrency, minorUnits: incomeTotals[selectedCurrency] ?? 0).formatted)
+                Text(Money(currency: selectedCurrency, minorUnits: snapshot.income).formatted)
                     .font(.title3.weight(.semibold).monospacedDigit())
                     .foregroundStyle(PocketLedgerTheme.income)
             }
@@ -297,7 +305,7 @@ struct MetricsView: View {
                 Text("Expenses")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
-                Text(Money(currency: selectedCurrency, minorUnits: selectedCurrencyExpense).formatted)
+                Text(Money(currency: selectedCurrency, minorUnits: snapshot.expenses).formatted)
                     .font(.title3.weight(.semibold).monospacedDigit())
                     .foregroundStyle(PocketLedgerTheme.warning)
             }
@@ -305,18 +313,18 @@ struct MetricsView: View {
         .padding(.bottom, 12)
     }
 
-    private var spendingChart: some View {
+    private func spendingChart(_ snapshot: MetricsSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Spending by category")
                     .font(.title3.weight(.bold))
                 Spacer()
-                Text("\(filteredTransactions.count) entries")
+                Text("\(snapshot.filteredTransactions.count) entries")
                     .font(.caption)
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
 
-            if categoryMetrics.isEmpty {
+            if snapshot.categories.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "chart.pie")
                         .font(.title2)
@@ -329,7 +337,7 @@ struct MetricsView: View {
                 .padding(.vertical, 46)
             } else {
                 ZStack {
-                    Chart(categoryMetrics) { metric in
+                    Chart(snapshot.categories) { metric in
                         SectorMark(
                             angle: .value("Amount", Double(metric.amount)),
                             innerRadius: .ratio(0.61),
@@ -337,8 +345,8 @@ struct MetricsView: View {
                         )
                         .foregroundStyle(chartColor(for: metric.colorIndex))
                         .annotation(position: .overlay) {
-                            if share(for: metric) >= 0.08 {
-                                Text("\(percentage(for: metric))%")
+                            if share(for: metric, total: snapshot.expenses) >= 0.08 {
+                                Text("\(percentage(for: metric, total: snapshot.expenses))%")
                                     .font(.caption2.weight(.bold))
                                     .foregroundStyle(.white)
                             }
@@ -348,7 +356,7 @@ struct MetricsView: View {
                     .frame(height: 246)
 
                     VStack(spacing: 3) {
-                        Text(Money(currency: selectedCurrency, minorUnits: selectedCurrencyExpense).formatted)
+                        Text(Money(currency: selectedCurrency, minorUnits: snapshot.expenses).formatted)
                             .font(.headline.weight(.bold).monospacedDigit())
                             .minimumScaleFactor(0.8)
                             .lineLimit(1)
@@ -363,12 +371,12 @@ struct MetricsView: View {
         .pocketCard()
     }
 
-    private var categoryRows: some View {
+    private func categoryRows(_ snapshot: MetricsSnapshot) -> some View {
         VStack(spacing: 0) {
-            if categoryMetrics.isEmpty {
+            if snapshot.categories.isEmpty {
                 EmptyView()
             } else {
-                ForEach(categoryMetrics) { metric in
+                ForEach(snapshot.categories) { metric in
                     NavigationLink {
                         CategoryMetricsDetailView(
                             store: store,
@@ -379,7 +387,7 @@ struct MetricsView: View {
                         )
                     } label: {
                         HStack(spacing: 10) {
-                            Text("\(percentage(for: metric))%")
+                            Text("\(percentage(for: metric, total: snapshot.expenses))%")
                                 .font(.caption.weight(.bold).monospacedDigit())
                                 .foregroundStyle(.white)
                                 .frame(width: 48, height: 30)
@@ -404,7 +412,7 @@ struct MetricsView: View {
                     }
                     .buttonStyle(.plain)
 
-                    if metric.id != categoryMetrics.last?.id {
+                    if metric.id != snapshot.categories.last?.id {
                         Divider().overlay(PocketLedgerTheme.divider)
                     }
                 }
@@ -419,17 +427,15 @@ struct MetricsView: View {
         .padding(.top, 12)
     }
 
-    private var activityMix: some View {
-        let counts = Dictionary(grouping: filteredTransactions, by: \LedgerTransaction.kind)
-
-        return VStack(alignment: .leading, spacing: 12) {
+    private func activityMix(_ snapshot: MetricsSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Activity mix")
                 .font(.title3.weight(.bold))
 
             HStack(spacing: 10) {
-                mixMetric(title: "Expenses", count: counts[.expense]?.count ?? 0, tint: PocketLedgerTheme.warning)
-                mixMetric(title: "Income", count: counts[.income]?.count ?? 0, tint: PocketLedgerTheme.income)
-                mixMetric(title: "Transfers", count: counts[.transfer]?.count ?? 0, tint: PocketLedgerTheme.positive)
+                mixMetric(title: "Expenses", count: snapshot.activityCounts[.expense] ?? 0, tint: PocketLedgerTheme.warning)
+                mixMetric(title: "Income", count: snapshot.activityCounts[.income] ?? 0, tint: PocketLedgerTheme.income)
+                mixMetric(title: "Transfers", count: snapshot.activityCounts[.transfer] ?? 0, tint: PocketLedgerTheme.positive)
             }
         }
         .pocketCard()
@@ -463,75 +469,17 @@ struct MetricsView: View {
         return colors[index % colors.count]
     }
 
-    private func share(for metric: CategoryMetric) -> Double {
-        guard selectedCurrencyExpense > 0 else { return 0 }
-        return Double(metric.amount) / Double(selectedCurrencyExpense)
+    private func share(for metric: CategoryMetric, total: Int64) -> Double {
+        guard total > 0 else { return 0 }
+        return Double(metric.amount) / Double(total)
     }
 
-    private func percentage(for metric: CategoryMetric) -> Int {
-        Int((share(for: metric) * 100).rounded())
+    private func percentage(for metric: CategoryMetric, total: Int64) -> Int {
+        Int((share(for: metric, total: total) * 100).rounded())
     }
 
     private func categoryIcon(for categoryID: UUID?) -> String {
-        guard let categoryID,
-              let category = store.data.categories.first(where: { $0.id == categoryID }) else {
-            return "tag.fill"
-        }
-        return category.systemImage
-    }
-
-    private func totals(
-        for kind: TransactionKind,
-        movements: KeyPath<LedgerTransaction, [MoneyMovement]>
-    ) -> [LedgerCurrency: Int64] {
-        var totals: [LedgerCurrency: Int64] = [:]
-        for transaction in filteredTransactions where transaction.kind == kind {
-            for movement in transaction[keyPath: movements] {
-                guard store.includesInTotals(accountID: movement.accountID) else { continue }
-                for currency in LedgerCurrency.allCases {
-                    guard let converted = financeConvertedMinorUnits(
-                        movement.money,
-                        to: currency,
-                        using: transaction.exchangeRate
-                    ) else { continue }
-                    totals[currency, default: 0] += converted
-                }
-            }
-        }
-        return totals
-    }
-
-    private func matchesCategory(_ transaction: LedgerTransaction) -> Bool {
-        guard let selectedCategoryID else { return true }
-        guard var currentID = transaction.categoryID else { return false }
-        var visited: Set<UUID> = []
-
-        while !visited.contains(currentID),
-              let category = store.data.categories.first(where: { $0.id == currentID }) {
-            if category.id == selectedCategoryID { return true }
-            visited.insert(currentID)
-            guard let parentID = category.parentID else { return false }
-            currentID = parentID
-        }
-
-        return false
-    }
-
-    private func transactionHasIncludedAccount(_ transaction: LedgerTransaction) -> Bool {
-        switch transaction.kind {
-        case .expense:
-            return transaction.outflows.contains {
-                store.includesInTotals(accountID: $0.accountID)
-            }
-        case .income:
-            return transaction.inflows.contains {
-                store.includesInTotals(accountID: $0.accountID)
-            }
-        case .transfer:
-            return (transaction.outflows + transaction.inflows).contains {
-                store.includesInTotals(accountID: $0.accountID)
-            }
-        }
+        store.ledgerIndex.categorySystemImage(for: categoryID)
     }
 
     private func movePeriod(by value: Int) {
@@ -564,22 +512,37 @@ struct MetricsView: View {
         )
     }
 
+    private func refreshSnapshot() {
+        snapshot = MetricsSnapshot.make(
+            index: store.ledgerIndex,
+            interval: interval,
+            selectedCurrency: selectedCurrency,
+            selectedCategoryID: selectedCategoryID
+        )
+    }
+
     private func generateReport() {
+        let currentSnapshot = MetricsSnapshot.make(
+            index: store.ledgerIndex,
+            interval: interval,
+            selectedCurrency: selectedCurrency,
+            selectedCategoryID: selectedCategoryID
+        )
         let report = MetricsReportData(
             periodTitle: periodTitle,
             dateRange: intervalLabel,
             currency: selectedCurrency,
             categoryScope: selectedCategoryID.map { store.categoryPath(for: $0) } ?? "All categories",
-            income: Money(currency: selectedCurrency, minorUnits: incomeTotals[selectedCurrency] ?? 0),
-            expenses: Money(currency: selectedCurrency, minorUnits: selectedCurrencyExpense),
-            entryCount: filteredTransactions.count,
-            activityCounts: Dictionary(grouping: filteredTransactions, by: \.kind).mapValues { $0.count },
-            categories: categoryMetrics.map {
+            income: Money(currency: selectedCurrency, minorUnits: currentSnapshot.income),
+            expenses: Money(currency: selectedCurrency, minorUnits: currentSnapshot.expenses),
+            entryCount: currentSnapshot.filteredTransactions.count,
+            activityCounts: currentSnapshot.activityCounts,
+            categories: currentSnapshot.categories.map {
                 MetricsReportCategory(
                     title: $0.title,
                     amount: Money(currency: $0.currency, minorUnits: $0.amount),
                     count: $0.count,
-                    percentage: percentage(for: $0)
+                    percentage: percentage(for: $0, total: currentSnapshot.expenses)
                 )
             },
             generatedAt: .now
@@ -603,6 +566,7 @@ private struct CategoryMetricsDetailView: View {
     let currency: LedgerCurrency
 
     @State private var anchorDate: Date
+    @State private var snapshot = CategoryMetricsDetailSnapshot.empty
 
     init(
         store: LedgerStore,
@@ -618,57 +582,14 @@ private struct CategoryMetricsDetailView: View {
         _anchorDate = State(initialValue: anchorDate)
     }
 
-    private var monthInterval: DateInterval {
-        Calendar.current.dateInterval(of: .month, for: anchorDate)
-            ?? DateInterval(start: anchorDate, duration: 31 * 24 * 60 * 60)
-    }
-
-    private var monthlyPoints: [CategoryMonthPoint] {
-        let calendar = Calendar.current
-        let currentMonth = calendar.dateInterval(of: .month, for: anchorDate)?.start ?? anchorDate
-
-        return (0..<7).compactMap { offset in
-            guard let date = calendar.date(byAdding: .month, value: offset - 6, to: currentMonth),
-                  let interval = calendar.dateInterval(of: .month, for: date) else {
-                return nil
-            }
-
-            let amount = expenseTransactions(in: interval).reduce(Int64.zero) { total, transaction in
-                total + transaction.outflows
-                    .filter {
-                        $0.money.currency == currency
-                            && store.includesInTotals(accountID: $0.accountID)
-                    }
-                    .reduce(Int64.zero) { $0 + $1.money.minorUnits }
-            }
-            return CategoryMonthPoint(date: date, amount: amount)
-        }
-    }
-
-    private var selectedMonthTransactions: [LedgerTransaction] {
-        expenseTransactions(in: monthInterval)
-            .sorted { $0.date > $1.date }
-    }
-
-    private var selectedMonthTotal: Int64 {
-        selectedMonthTransactions.reduce(Int64.zero) { total, transaction in
-            total + transaction.outflows
-                .filter {
-                    $0.money.currency == currency
-                        && store.includesInTotals(accountID: $0.accountID)
-                }
-                .reduce(Int64.zero) { $0 + $1.money.minorUnits }
-        }
-    }
-
     var body: some View {
         ScrollView(showsIndicators: false) {
             PocketGlassContainer(spacing: 14) {
                 VStack(alignment: .leading, spacing: 0) {
                     detailHeader
-                    lineChart
-                    detailCategoryRow
-                    transactionRows
+                    lineChart(snapshot)
+                    detailCategoryRow(snapshot)
+                    transactionRows(snapshot)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -679,6 +600,9 @@ private struct CategoryMetricsDetailView: View {
         .navigationTitle(categoryTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
+        .onAppear(perform: refreshSnapshot)
+        .onChange(of: anchorDate) { _, _ in refreshSnapshot() }
+        .onChange(of: store.ledgerRevision) { _, _ in refreshSnapshot() }
     }
 
     private var detailHeader: some View {
@@ -723,10 +647,11 @@ private struct CategoryMetricsDetailView: View {
         .foregroundStyle(PocketLedgerTheme.textPrimary)
     }
 
-    private var lineChart: some View {
-        let maximum = max(monthlyPoints.map(\.amount).max() ?? 1, 1)
+    private func lineChart(_ snapshot: CategoryMetricsDetailSnapshot) -> some View {
+        let maximum = max(snapshot.monthlyPoints.map(\.amount).max() ?? 1, 1)
+        let currentMonth = Calendar.current.dateInterval(of: .month, for: anchorDate)?.start ?? anchorDate
 
-        return Chart(monthlyPoints) { point in
+        return Chart(snapshot.monthlyPoints) { point in
             LineMark(
                 x: .value("Month", point.date, unit: .month),
                 y: .value("Amount", Double(point.amount))
@@ -740,7 +665,7 @@ private struct CategoryMetricsDetailView: View {
                 y: .value("Amount", Double(point.amount))
             )
             .foregroundStyle(PocketLedgerTheme.accent)
-            .symbolSize(point.date == monthInterval.start ? 80 : 42)
+            .symbolSize(point.date == currentMonth ? 80 : 42)
             .annotation(position: .top, spacing: 6) {
                 if point.amount > 0 {
                     Text(Money(currency: currency, minorUnits: point.amount).formatted)
@@ -763,7 +688,7 @@ private struct CategoryMetricsDetailView: View {
         .padding(.top, 8)
     }
 
-    private var detailCategoryRow: some View {
+    private func detailCategoryRow(_ snapshot: CategoryMetricsDetailSnapshot) -> some View {
         HStack(spacing: 10) {
             Image(systemName: categoryIcon)
                 .foregroundStyle(PocketLedgerTheme.accent)
@@ -775,7 +700,7 @@ private struct CategoryMetricsDetailView: View {
 
             Spacer()
 
-            Text(Money(currency: currency, minorUnits: selectedMonthTotal).formatted)
+            Text(Money(currency: currency, minorUnits: snapshot.selectedMonthTotal).formatted)
                 .font(.subheadline.weight(.semibold).monospacedDigit())
         }
         .padding(.vertical, 15)
@@ -788,20 +713,20 @@ private struct CategoryMetricsDetailView: View {
         .padding(.top, 10)
     }
 
-    private var transactionRows: some View {
+    private func transactionRows(_ snapshot: CategoryMetricsDetailSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Transactions")
                 .font(.title3.weight(.bold))
                 .padding(.top, 20)
                 .padding(.bottom, 8)
 
-            if selectedMonthTransactions.isEmpty {
+            if snapshot.selectedMonthTransactions.isEmpty {
                 Text("No transactions in this month.")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
                     .padding(.vertical, 24)
             } else {
-                ForEach(selectedMonthTransactions) { transaction in
+                ForEach(snapshot.selectedMonthTransactions) { transaction in
                     HStack(spacing: 12) {
                         VStack(spacing: 0) {
                             Text(transaction.date.formatted(.dateTime.day()))
@@ -830,7 +755,7 @@ private struct CategoryMetricsDetailView: View {
                     }
                     .padding(.vertical, 12)
 
-                    if transaction.id != selectedMonthTransactions.last?.id {
+                    if transaction.id != snapshot.selectedMonthTransactions.last?.id {
                         Divider().overlay(PocketLedgerTheme.divider)
                     }
                 }
@@ -839,39 +764,28 @@ private struct CategoryMetricsDetailView: View {
     }
 
     private var categoryIcon: String {
-        guard let categoryID,
-              let category = store.data.categories.first(where: { $0.id == categoryID }) else {
-            return "tag.fill"
-        }
-        return category.systemImage
-    }
-
-    private func expenseTransactions(in interval: DateInterval) -> [LedgerTransaction] {
-        store.data.transactions.filter { transaction in
-            interval.contains(transaction.date)
-                && transaction.kind == .expense
-                && matchesCategory(transaction)
-                && transaction.outflows.contains {
-                    $0.money.currency == currency
-                        && store.includesInTotals(accountID: $0.accountID)
-                }
-        }
-    }
-
-    private func matchesCategory(_ transaction: LedgerTransaction) -> Bool {
-        transaction.categoryID == categoryID
+        store.ledgerIndex.categorySystemImage(for: categoryID)
     }
 
     private func transactionAmount(_ transaction: LedgerTransaction) -> Int64 {
-        financeNetExpenseAmount(transaction, currency: currency, in: store.data)
+        store.ledgerIndex.netExpenseAmount(transaction, currency: currency)
     }
 
     private func accountNames(for transaction: LedgerTransaction) -> String {
         let names = transaction.outflows.compactMap { movement -> String? in
-            guard store.includesInTotals(accountID: movement.accountID) else { return nil }
-            return store.data.accounts.first(where: { $0.id == movement.accountID })?.name
+            guard store.ledgerIndex.includesInTotals(accountID: movement.accountID) else { return nil }
+            return store.ledgerIndex.account(with: movement.accountID)?.name
         }
         return names.isEmpty ? "Expense" : names.joined(separator: ", ")
+    }
+
+    private func refreshSnapshot() {
+        snapshot = CategoryMetricsDetailSnapshot.make(
+            index: store.ledgerIndex,
+            categoryID: categoryID,
+            currency: currency,
+            anchorDate: anchorDate
+        )
     }
 
     private func moveMonth(by value: Int) {

@@ -28,11 +28,16 @@ struct FinanceAttentionItem: Identifiable, Equatable {
 final class LedgerStore: ObservableObject {
     @Published private(set) var data: FinanceData
     @Published private(set) var lastActionStatus: String?
+    @Published private(set) var ledgerRevision = 0
 
     private let storage = FinanceStorage(context: "main-app")
+    private(set) var ledgerIndex: LedgerIndex
 
     init() {
-        data = storage.load()
+        let loadedData = storage.load()
+        data = loadedData
+        ledgerIndex = LedgerIndex(data: loadedData)
+        ledgerRevision = 1
     }
 
     var storageAvailable: Bool {
@@ -61,7 +66,7 @@ final class LedgerStore: ObservableObject {
     }
 
     var recentTransactions: [LedgerTransaction] {
-        data.transactions.sorted { $0.date > $1.date }
+        ledgerIndex.sortedTransactions
     }
 
     var attentionItems: [FinanceAttentionItem] {
@@ -163,28 +168,28 @@ final class LedgerStore: ObservableObject {
     }
 
     var rootCategories: [LedgerCategory] {
-        data.categories.filter { $0.parentID == nil && !$0.isArchived }
+        ledgerIndex.rootCategories
     }
 
     var activeAccounts: [Account] {
-        data.accounts.filter { !$0.isArchived }
+        ledgerIndex.activeAccounts
     }
 
     var activeCategories: [LedgerCategory] {
-        data.categories.filter { !$0.isArchived }
+        ledgerIndex.activeCategories
     }
 
     var monthTransactionCount: Int {
-        data.transactions.filter { transaction in
+        ledgerIndex.sortedTransactions.filter { transaction in
             transaction.date >= monthStart && transactionHasIncludedAccount(transaction)
         }.count
     }
 
     var topCategoryThisMonth: String? {
         var counts: [UUID: Int] = [:]
-        for transaction in data.transactions where transaction.kind == .expense
+        for transaction in ledgerIndex.sortedTransactions where transaction.kind == .expense
             && transaction.date >= monthStart
-            && financeCategoryIncludedInTotals(transaction.categoryID, in: data.categories)
+            && ledgerIndex.categoryIncludedInTotals(transaction.categoryID)
             && transaction.outflows.contains(where: { includesInTotals(accountID: $0.accountID) }) {
             guard let categoryID = transaction.categoryID else { continue }
             counts[categoryID, default: 0] += 1
@@ -752,11 +757,11 @@ final class LedgerStore: ObservableObject {
     }
 
     func budgetSpent(_ budget: LedgerBudget, in interval: DateInterval? = nil) -> Money {
-        financeBudgetSpent(budget, in: data, interval: interval)
+        financeBudgetSpent(budget, in: data, interval: interval, using: ledgerIndex)
     }
 
     func budgetAllowance(_ budget: LedgerBudget, for interval: DateInterval? = nil) -> Money {
-        financeBudgetAllowance(budget, in: data, interval: interval)
+        financeBudgetAllowance(budget, in: data, interval: interval, using: ledgerIndex)
     }
 
     func budgetProjection(_ budget: LedgerBudget, on date: Date = .now) -> Money {
@@ -1028,15 +1033,15 @@ final class LedgerStore: ObservableObject {
     }
 
     func reload() {
-        data = storage.load()
+        replaceData(storage.load())
     }
 
     func account(with id: UUID) -> Account? {
-        data.accounts.first { $0.id == id }
+        ledgerIndex.account(with: id)
     }
 
     func includesInTotals(accountID: UUID) -> Bool {
-        account(with: accountID)?.includeInTotals ?? true
+        ledgerIndex.includesInTotals(accountID: accountID)
     }
 
     func transactionHasIncludedAccount(_ transaction: LedgerTransaction) -> Bool {
@@ -1046,20 +1051,7 @@ final class LedgerStore: ObservableObject {
     }
 
     func balance(for account: Account) -> Money {
-        var balance = account.openingBalance.minorUnits
-
-        for transaction in data.transactions {
-            for movement in transaction.outflows where movement.accountID == account.id {
-                guard movement.money.currency == account.currency else { continue }
-                balance -= movement.money.minorUnits
-            }
-            for movement in transaction.inflows where movement.accountID == account.id {
-                guard movement.money.currency == account.currency else { continue }
-                balance += movement.money.minorUnits
-            }
-        }
-
-        return Money(currency: account.currency, minorUnits: balance)
+        ledgerIndex.balance(for: account)
     }
 
     func reconciliation(for accountID: UUID) -> AccountReconciliation? {
@@ -1132,17 +1124,11 @@ final class LedgerStore: ObservableObject {
     }
 
     func availableBalance(for currency: LedgerCurrency) -> Money {
-        let totalMinorUnits = data.accounts
-            .filter { !$0.isArchived && $0.currency == currency && $0.type != .loan && $0.includeInTotals }
-            .reduce(Int64.zero) { $0 + balance(for: $1).minorUnits }
-        return Money(currency: currency, minorUnits: totalMinorUnits)
+        ledgerIndex.availableBalance(for: currency)
     }
 
     func loanBalance(for currency: LedgerCurrency) -> Money {
-        let totalMinorUnits = data.accounts
-            .filter { !$0.isArchived && $0.currency == currency && $0.type == .loan && $0.includeInTotals }
-            .reduce(Int64.zero) { $0 + balance(for: $1).minorUnits }
-        return Money(currency: currency, minorUnits: totalMinorUnits)
+        ledgerIndex.loanBalance(for: currency)
     }
 
     func assetBalance(for currency: LedgerCurrency) -> Money {
@@ -1161,37 +1147,11 @@ final class LedgerStore: ObservableObject {
     }
 
     func monthlyExpenseTotals() -> [LedgerCurrency: Int64] {
-        var totals: [LedgerCurrency: Int64] = [:]
-
-        for transaction in data.transactions where transaction.kind == .expense && transaction.date >= monthStart {
-            for currency in LedgerCurrency.allCases {
-                totals[currency, default: 0] += financeNetExpenseAmount(
-                    transaction,
-                    currency: currency,
-                    in: data
-                )
-            }
-        }
-
-        return totals
+        ledgerIndex.monthlyExpenseTotals(for: .now)
     }
 
     func categoryPath(for categoryID: UUID?) -> String {
-        guard let categoryID else { return "Uncategorized" }
-
-        var names: [String] = []
-        var currentID: UUID? = categoryID
-        var visited: Set<UUID> = []
-
-        while let id = currentID,
-              !visited.contains(id),
-              let category = data.categories.first(where: { $0.id == id }) {
-            visited.insert(id)
-            names.insert(category.name, at: 0)
-            currentID = category.parentID
-        }
-
-        return names.isEmpty ? "Uncategorized" : names.joined(separator: " / ")
+        ledgerIndex.categoryPath(for: categoryID)
     }
 
     private func validate(
@@ -1246,7 +1206,7 @@ final class LedgerStore: ObservableObject {
         )
         guard persisted else {
             if storage.saveConflict {
-                data = storage.load()
+                replaceData(storage.load())
                 lastActionStatus = "\(successMessage) was not saved because the ledger changed in another surface. Reloaded the latest data."
                 return false
             }
@@ -1257,7 +1217,7 @@ final class LedgerStore: ObservableObject {
             return false
         }
 
-        data = updated
+        replaceData(updated)
         WidgetCenter.shared.reloadTimelines(ofKind: "BalanceWidget")
         FinanceDemoShortcuts.updateAppShortcutParameters()
         Task {
@@ -1271,6 +1231,12 @@ final class LedgerStore: ObservableObject {
         }
         lastActionStatus = successMessage
         return true
+    }
+
+    private func replaceData(_ updated: FinanceData) {
+        data = updated
+        ledgerIndex = LedgerIndex(data: updated)
+        ledgerRevision &+= 1
     }
 
     private func validateImportedData(_ imported: FinanceData) -> Bool {

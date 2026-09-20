@@ -46,6 +46,31 @@ final class FinanceDemoUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Expense"].waitForExistence(timeout: 5))
     }
 
+    func testMetricsPeriodSwitchingKeepsPeriodControlsResponsive() {
+        let app = XCUIApplication()
+        app.launch()
+
+        let skipButton = app.buttons["Skip for now"]
+        if skipButton.waitForExistence(timeout: 5) {
+            skipButton.tap()
+        }
+
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.buttons["Metrics"].waitForExistence(timeout: 5))
+        tabBar.buttons["Metrics"].tap()
+
+        XCTAssertTrue(app.staticTexts["metrics-period-title"].waitForExistence(timeout: 5))
+
+        XCTAssertTrue(app.buttons["Year"].waitForExistence(timeout: 5))
+        app.buttons["Year"].tap()
+        XCTAssertTrue(app.staticTexts["metrics-period-title"].waitForExistence(timeout: 5))
+
+        XCTAssertTrue(app.buttons["Month"].waitForExistence(timeout: 5))
+        app.buttons["Month"].tap()
+        XCTAssertTrue(app.buttons["Previous period"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Next period"].waitForExistence(timeout: 5))
+    }
+
     func testTransactionsExposeSelectionAndSavedFilters() {
         let app = XCUIApplication()
         app.launch()

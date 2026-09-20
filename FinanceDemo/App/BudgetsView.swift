@@ -6,6 +6,7 @@ struct BudgetsView: View {
     @State private var editingBudget: LedgerBudget?
     @State private var isPresentingEditor = false
     @State private var budgetToDelete: LedgerBudget?
+    @State private var budgetSummaries: [DashboardBudgetSnapshot] = []
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -34,7 +35,7 @@ struct BudgetsView: View {
                         .accessibilityHint("Creates a new monthly budget")
                     }
 
-                    if store.data.budgets.isEmpty {
+                    if budgetSummaries.isEmpty {
                         VStack(spacing: 10) {
                             Image(systemName: "chart.bar.doc.horizontal")
                                 .font(.title2)
@@ -53,8 +54,8 @@ struct BudgetsView: View {
                         .padding(.horizontal, 20)
                         .pocketGlassSurface(cornerRadius: 20)
                     } else {
-                        ForEach(store.data.budgets) { budget in
-                            budgetCard(budget)
+                        ForEach(budgetSummaries) { summary in
+                            budgetCard(summary)
                         }
                     }
             }
@@ -66,6 +67,8 @@ struct BudgetsView: View {
         .sheet(isPresented: $isPresentingEditor, onDismiss: { editingBudget = nil }) {
             BudgetEditor(store: store, budget: editingBudget)
         }
+        .onAppear(perform: refreshBudgetSummaries)
+        .onChange(of: store.ledgerRevision) { _, _ in refreshBudgetSummaries() }
         .confirmationDialog("Delete budget?", isPresented: Binding(
             get: { budgetToDelete != nil },
             set: { if !$0 { budgetToDelete = nil } }
@@ -78,29 +81,19 @@ struct BudgetsView: View {
         }
     }
 
-    private func budgetCard(_ budget: LedgerBudget) -> some View {
-        let spent = store.budgetSpent(budget)
-        let allowance = store.budgetAllowance(budget)
-        let ratio = min(Double(spent.minorUnits) / Double(max(allowance.minorUnits, 1)), 1)
-        let over = spent.minorUnits > allowance.minorUnits
-        let remaining = allowance.minorUnits - spent.minorUnits
-        let calendar = Calendar.current
-        let dayCount = calendar.range(of: .day, in: .month, for: .now)?.count ?? 30
-        let elapsedDay = calendar.component(.day, from: .now)
-        let monthProgress = min(
-            max(Double(elapsedDay) / Double(max(dayCount, 1)), 0.01),
-            1
-        )
-        let projectedMinorUnits = Int64(
-            (Double(spent.minorUnits) / monthProgress).rounded()
-        )
-        let projectedOver = projectedMinorUnits > allowance.minorUnits
-        let percentUsed = Int((Double(spent.minorUnits) / Double(max(allowance.minorUnits, 1)) * 100).rounded())
+    private func budgetCard(_ summary: DashboardBudgetSnapshot) -> some View {
+        let budget = summary.budget
+        let spent = summary.spent
+        let allowance = summary.allowance
+        let ratio = summary.ratio
+        let over = summary.isOver
+        let remaining = summary.remaining
+        let projectedOver = summary.isProjectedOver
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(store.categoryPath(for: budget.categoryID)).font(.headline)
+                    Text(summary.categoryPath).font(.headline)
                     Text("This month · \(budget.currency.rawValue)")
                         .font(.caption)
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -119,16 +112,16 @@ struct BudgetsView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.positive)
                 Spacer()
-                Text("\(percentUsed)% used")
+                Text("\(summary.percentUsed)% used")
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
             HStack {
-                Text("Projected \(Money(currency: budget.currency, minorUnits: projectedMinorUnits).formatted)")
+                Text("Projected \(summary.projected.formatted)")
                     .font(.caption)
                     .foregroundStyle(projectedOver ? PocketLedgerTheme.warning : PocketLedgerTheme.textSecondary)
                 Spacer()
-                Text("\(max(dayCount - elapsedDay, 0)) days left")
+                Text("\(summary.daysLeft) days left")
                     .font(.caption)
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
@@ -138,7 +131,7 @@ struct BudgetsView: View {
                         store: store,
                         initialFilter: .expense,
                         initialPeriod: .thisMonth,
-                        initialSearch: store.categoryPath(for: budget.categoryID)
+                        initialSearch: summary.categoryPath
                     )
                 } label: {
                     Label("View transactions", systemImage: "list.bullet")
@@ -164,6 +157,13 @@ struct BudgetsView: View {
     private func presentNewBudget() {
         editingBudget = nil
         isPresentingEditor = true
+    }
+
+    private func refreshBudgetSummaries() {
+        budgetSummaries = DashboardSnapshot.makeBudgetSummaries(
+            data: store.data,
+            index: store.ledgerIndex
+        )
     }
 }
 

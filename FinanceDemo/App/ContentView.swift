@@ -639,6 +639,7 @@ private struct DashboardView: View {
     @ObservedObject var store: LedgerStore
     let onAddExpense: () -> Void
     @State private var editingTransaction: LedgerTransaction?
+    @State private var snapshot = DashboardSnapshot.empty
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
@@ -679,6 +680,8 @@ private struct DashboardView: View {
             .sheet(item: $editingTransaction) { transaction in
                 TransactionEditor(store: store, transaction: transaction)
             }
+            .onAppear(perform: refreshSnapshot)
+            .onChange(of: store.ledgerRevision) { _, _ in refreshSnapshot() }
         }
     }
 
@@ -742,7 +745,7 @@ private struct DashboardView: View {
 
             Spacer(minLength: 12)
 
-            Text(store.availableBalance(for: currency).formatted)
+            Text((snapshot.availableBalances[currency] ?? Money(currency: currency, minorUnits: 0)).formatted)
                 .font(.title3.weight(.bold).monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
@@ -753,7 +756,7 @@ private struct DashboardView: View {
 
     @ViewBuilder
     private var attentionSnapshot: some View {
-        if !store.attentionItems.isEmpty {
+        if !snapshot.attentionItems.isEmpty {
             NavigationLink {
                 AttentionInboxView(store: store, onAddExpense: onAddExpense)
             } label: {
@@ -768,7 +771,7 @@ private struct DashboardView: View {
                         Text("Needs attention")
                             .font(.headline)
                             .foregroundStyle(PocketLedgerTheme.textPrimary)
-                        Text("\(store.attentionItems.count) area\(store.attentionItems.count == 1 ? "" : "s") to review")
+                        Text("\(snapshot.attentionItems.count) area\(snapshot.attentionItems.count == 1 ? "" : "s") to review")
                             .font(.subheadline)
                             .foregroundStyle(PocketLedgerTheme.textSecondary)
                     }
@@ -786,15 +789,15 @@ private struct DashboardView: View {
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Needs attention, \(store.attentionItems.count) areas to review")
+            .accessibilityLabel("Needs attention, \(snapshot.attentionItems.count) areas to review")
             .accessibilityIdentifier("dashboard-needs-attention")
         }
     }
 
     private var accountBreakdown: some View {
-        let activeAccounts = store.activeAccounts
-        let includedCount = activeAccounts.filter(\.includeInTotals).count
-        let excludedCount = activeAccounts.count - includedCount
+        let activeAccounts = snapshot.activeAccounts
+        let includedCount = snapshot.includedAccountCount
+        let excludedCount = snapshot.excludedAccountCount
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
@@ -849,7 +852,7 @@ private struct DashboardView: View {
                                         .font(.subheadline)
                                         .lineLimit(1)
                                     Spacer()
-                                    Text(store.balance(for: account).formatted)
+                                    Text(store.ledgerIndex.balance(for: account).formatted)
                                         .font(.subheadline.weight(.semibold).monospacedDigit())
                                         .foregroundStyle(account.includeInTotals ? PocketLedgerTheme.textPrimary : PocketLedgerTheme.textTertiary)
                                 }
@@ -888,7 +891,7 @@ private struct DashboardView: View {
     }
 
     private var monthSnapshot: some View {
-        let expenses = store.monthlyExpenseTotals()
+        let expenses = snapshot.monthExpenses
 
         return VStack(alignment: .leading, spacing: 12) {
             sectionHeader(title: "This month", detail: Date.now.formatted(.dateTime.month(.wide).year()))
@@ -904,7 +907,7 @@ private struct DashboardView: View {
                 } label: {
                     snapshotMetric(
                         title: "Transactions",
-                        value: "\(store.monthTransactionCount)",
+                        value: "\(snapshot.monthTransactionCount)",
                         systemImage: "arrow.left.arrow.right",
                         tint: PocketLedgerTheme.income
                     )
@@ -917,12 +920,12 @@ private struct DashboardView: View {
                         onAddExpense: onAddExpense,
                         initialFilter: .expense,
                         initialPeriod: .thisMonth,
-                        initialSearch: store.topCategoryThisMonth ?? ""
+                        initialSearch: snapshot.topCategory ?? ""
                     )
                 } label: {
                     snapshotMetric(
                         title: "Top category",
-                        value: store.topCategoryThisMonth ?? "No activity",
+                        value: snapshot.topCategory ?? "No activity",
                         systemImage: "tag.fill",
                         tint: PocketLedgerTheme.accent
                     )
@@ -946,14 +949,7 @@ private struct DashboardView: View {
 
     @ViewBuilder
     private var upcomingSchedules: some View {
-        let schedules = store.data.scheduledTransactions
-            .filter(\.isEnabled)
-            .sorted { lhs, rhs in
-                if lhs.nextRunDate != rhs.nextRunDate {
-                    return lhs.nextRunDate < rhs.nextRunDate
-                }
-                return lhs.note.localizedCaseInsensitiveCompare(rhs.note) == .orderedAscending
-            }
+        let schedules = snapshot.upcomingSchedules
 
         if !schedules.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
@@ -1048,11 +1044,7 @@ private struct DashboardView: View {
 
     @ViewBuilder
     private var cashFlowSnapshot: some View {
-        let calendar = Calendar.current
-        let horizon = calendar.date(byAdding: .day, value: 30, to: .now) ?? .now
-        let schedules = store.data.scheduledTransactions.filter {
-            $0.isEnabled && $0.nextRunDate <= horizon
-        }
+        let schedules = snapshot.cashFlowSchedules
 
         if !schedules.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
@@ -1074,8 +1066,9 @@ private struct DashboardView: View {
 
                 VStack(spacing: 0) {
                     ForEach(LedgerCurrency.allCases) { currency in
-                        let current = store.availableBalance(for: currency)
-                        let change = scheduledChange(for: currency, schedules: schedules)
+                        let current = snapshot.availableBalances[currency]
+                            ?? Money(currency: currency, minorUnits: 0)
+                        let change = snapshot.scheduledChanges[currency] ?? 0
                         let projected = Money(currency: currency, minorUnits: current.minorUnits + change)
 
                         if currency != LedgerCurrency.allCases[0] {
@@ -1111,7 +1104,7 @@ private struct DashboardView: View {
                 .pocketGlassSurface(cornerRadius: 17)
 
                 if LedgerCurrency.allCases.contains(where: {
-                    scheduledChange(for: $0, schedules: schedules) < 0
+                    (snapshot.scheduledChanges[$0] ?? 0) < 0
                 }) {
                     Label("Review upcoming outflows before they affect your available balance.", systemImage: "info.circle")
                         .font(.caption)
@@ -1119,32 +1112,6 @@ private struct DashboardView: View {
                 }
             }
         }
-    }
-
-    private func scheduledChange(
-        for currency: LedgerCurrency,
-        schedules: [ScheduledTransaction]
-    ) -> Int64 {
-        schedules.reduce(Int64.zero) { total, schedule in
-            total + scheduledChange(for: schedule, currency: currency)
-        }
-    }
-
-    private func scheduledChange(
-        for schedule: ScheduledTransaction,
-        currency: LedgerCurrency
-    ) -> Int64 {
-        let inflow = schedule.inflows
-            .filter {
-                $0.money.currency == currency && store.includesInTotals(accountID: $0.accountID)
-            }
-            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
-        let outflow = schedule.outflows
-            .filter {
-                $0.money.currency == currency && store.includesInTotals(accountID: $0.accountID)
-            }
-            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
-        return inflow - outflow
     }
 
     private func snapshotMetric(title: String, value: String, systemImage: String, tint: Color) -> some View {
@@ -1197,7 +1164,7 @@ private struct DashboardView: View {
                 .font(.caption.weight(.semibold))
             }
 
-            if store.recentTransactions.isEmpty {
+            if snapshot.recentTransactions.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "tray")
                         .font(.title2)
@@ -1216,7 +1183,7 @@ private struct DashboardView: View {
                 .pocketCard()
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(store.recentTransactions.prefix(5))) { transaction in
+                    ForEach(Array(snapshot.recentTransactions.prefix(5))) { transaction in
                         TransactionRow(
                             transaction: transaction,
                             store: store,
@@ -1241,7 +1208,7 @@ private struct DashboardView: View {
 
     @ViewBuilder
     private var budgetSnapshot: some View {
-        if !store.data.budgets.isEmpty {
+        if !snapshot.budgetSummaries.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     sectionHeader(title: "Budget pulse", detail: "This month")
@@ -1256,30 +1223,18 @@ private struct DashboardView: View {
                 }
 
                 VStack(spacing: 12) {
-                    ForEach(Array(store.data.budgets.prefix(3))) { budget in
-                        let spent = store.budgetSpent(budget)
-                        let allowance = store.budgetAllowance(budget)
-                        let over = spent.minorUnits > allowance.minorUnits
-                        let calendar = Calendar.current
-                        let dayCount = calendar.range(of: .day, in: .month, for: .now)?.count ?? 30
-                        let elapsedDay = calendar.component(.day, from: .now)
-                        let progressThroughMonth = min(
-                            max(Double(elapsedDay) / Double(max(dayCount, 1)), 0.01),
-                            1
-                        )
-                        let projected = Int64(
-                            (Double(spent.minorUnits) / progressThroughMonth).rounded()
-                        )
-                        let remaining = allowance.minorUnits - spent.minorUnits
-                        let projectedOver = projected > allowance.minorUnits
-                        let ratio = min(
-                            Double(spent.minorUnits) / Double(max(allowance.minorUnits, 1)),
-                            1
-                        )
+                    ForEach(Array(snapshot.budgetSummaries.prefix(3))) { summary in
+                        let budget = summary.budget
+                        let spent = summary.spent
+                        let allowance = summary.allowance
+                        let over = summary.isOver
+                        let remaining = summary.remaining
+                        let projectedOver = summary.isProjectedOver
+                        let ratio = summary.ratio
 
                         VStack(alignment: .leading, spacing: 7) {
                             HStack {
-                                Text(store.categoryPath(for: budget.categoryID))
+                                Text(summary.categoryPath)
                                     .font(.subheadline.weight(.semibold))
                                     .lineLimit(1)
                                 Spacer()
@@ -1295,7 +1250,7 @@ private struct DashboardView: View {
                                      : "Remaining \(Money(currency: budget.currency, minorUnits: remaining).formatted)")
                                     .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.positive)
                                 Spacer()
-                                Text("Projected \(Money(currency: budget.currency, minorUnits: projected).formatted)")
+                                Text("Projected \(summary.projected.formatted)")
                                     .foregroundStyle(projectedOver ? PocketLedgerTheme.warning : PocketLedgerTheme.textTertiary)
                             }
                             .font(.caption.weight(.semibold).monospacedDigit())
@@ -1327,6 +1282,14 @@ private struct DashboardView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .pocketGlassCapsule(tint: PocketLedgerTheme.accent.opacity(0.08))
+    }
+
+    private func refreshSnapshot() {
+        snapshot = DashboardSnapshot.make(
+            data: store.data,
+            index: store.ledgerIndex,
+            attentionItems: store.attentionItems
+        )
     }
 
     private func sectionHeader(title: String, detail: String) -> some View {
@@ -1556,6 +1519,118 @@ private struct TransactionDay: Identifiable {
     var id: Date { date }
 }
 
+private struct TransactionListSnapshot {
+    let filteredTransactions: [LedgerTransaction]
+    let pageTransactions: [LedgerTransaction]
+    let groupedTransactions: [TransactionDay]
+    let pageCount: Int
+    let displayedPage: Int
+    let expenseTotals: [LedgerCurrency: Int64]
+
+    static var empty: TransactionListSnapshot {
+        TransactionListSnapshot(
+            filteredTransactions: [],
+            pageTransactions: [],
+            groupedTransactions: [],
+            pageCount: 1,
+            displayedPage: 0,
+            expenseTotals: [:]
+        )
+    }
+
+    static func make(
+        index: LedgerIndex,
+        filter: TransactionFilter,
+        period: TransactionPeriod,
+        quickFilter: TransactionQuickFilter,
+        searchText: String,
+        customStartDate: Date,
+        customEndDate: Date,
+        page: Int,
+        pageSize: Int,
+        calendar: Calendar = .current
+    ) -> TransactionListSnapshot {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filteredTransactions = index.sortedTransactions.filter { transaction in
+            let matchesKind: Bool
+            if filter == .uncategorized {
+                matchesKind = transaction.kind == .expense && transaction.categoryID == nil
+            } else {
+                matchesKind = filter.kind.map { transaction.kind == $0 } ?? true
+            }
+            guard matchesKind else { return false }
+
+            let matchesPeriod: Bool
+            if period == .custom {
+                let start = calendar.startOfDay(for: customStartDate)
+                let end = calendar.date(
+                    byAdding: DateComponents(day: 1),
+                    to: calendar.startOfDay(for: customEndDate)
+                ) ?? customEndDate
+                matchesPeriod = transaction.date >= start && transaction.date < end
+            } else {
+                matchesPeriod = period.includes(transaction.date, calendar: calendar)
+            }
+            guard matchesPeriod else { return false }
+
+            switch quickFilter {
+            case .none, .thisMonth, .uncategorized:
+                break
+            case .needsReceipt:
+                guard transaction.attachmentIDs.isEmpty else { return false }
+            case .cash:
+                guard (transaction.outflows + transaction.inflows).contains(where: {
+                    index.account(with: $0.accountID)?.type == .cash
+                }) else { return false }
+            }
+
+            guard !query.isEmpty else { return true }
+            let accountNames = (transaction.outflows + transaction.inflows)
+                .compactMap { index.account(with: $0.accountID)?.name }
+                .joined(separator: " ")
+            let searchable = [
+                transaction.note,
+                index.categoryPath(for: transaction.categoryID),
+                accountNames,
+                transaction.kind.displayName
+            ].joined(separator: " ")
+            return searchable.localizedCaseInsensitiveContains(query)
+        }
+
+        let pageCount = max(1, (filteredTransactions.count + pageSize - 1) / pageSize)
+        let displayedPage = min(page, pageCount - 1)
+        let pageStart = displayedPage * pageSize
+        let pageTransactions = Array(
+            filteredTransactions.dropFirst(pageStart).prefix(pageSize)
+        )
+        let grouped = Dictionary(grouping: pageTransactions) {
+            calendar.startOfDay(for: $0.date)
+        }
+        let groupedTransactions = grouped.keys.sorted(by: >).map { date in
+            TransactionDay(date: date, transactions: grouped[date] ?? [])
+        }
+
+        var expenseTotals: [LedgerCurrency: Int64] = [:]
+        for transaction in filteredTransactions where transaction.kind == .expense {
+            for currency in LedgerCurrency.allCases {
+                expenseTotals[currency, default: 0] += index.netExpenseAmount(
+                    transaction,
+                    currency: currency
+                )
+            }
+        }
+
+        return TransactionListSnapshot(
+            filteredTransactions: filteredTransactions,
+            pageTransactions: pageTransactions,
+            groupedTransactions: groupedTransactions,
+            pageCount: pageCount,
+            displayedPage: displayedPage,
+            expenseTotals: expenseTotals
+        )
+    }
+}
+
 @MainActor
 struct TransactionsView: View {
     private static let lastQuickFilterKey = "pocketLedger.lastTransactionQuickFilter"
@@ -1577,6 +1652,7 @@ struct TransactionsView: View {
     @State private var selectedTransactionIDs: Set<UUID> = []
     @State private var isShowingBulkDeleteConfirmation = false
     @State private var deletedTransactionsForUndo: [LedgerTransaction] = []
+    @State private var listSnapshot = TransactionListSnapshot.empty
 
     private let transactionsPerPage = 25
 
@@ -1666,7 +1742,7 @@ struct TransactionsView: View {
 
                     transactionsSummary
 
-                    if filteredTransactions.isEmpty {
+                    if listSnapshot.filteredTransactions.isEmpty {
                         VStack(spacing: 8) {
                             Image(systemName: "list.bullet.rectangle.portrait")
                                 .font(.title2)
@@ -1683,7 +1759,7 @@ struct TransactionsView: View {
                         Button("Add expense", systemImage: "plus", action: onAddExpense)
                             .buttonStyle(.glassProminent)
                     } else {
-                        ForEach(groupedTransactions) { day in
+                        ForEach(listSnapshot.groupedTransactions) { day in
                             VStack(alignment: .leading, spacing: 0) {
                                 dayHeader(day)
 
@@ -1718,29 +1794,42 @@ struct TransactionsView: View {
                     .padding(.bottom, 12)
             }
         }
+        .onAppear(perform: refreshListSnapshot)
         .onChange(of: selectedFilter) { _, _ in
             transactionPage = 0
+            refreshListSnapshot()
         }
         .onChange(of: selectedPeriod) { _, _ in
             transactionPage = 0
+            refreshListSnapshot()
         }
         .onChange(of: customStartDate) { _, _ in
             if customStartDate > customEndDate {
                 customEndDate = customStartDate
             }
             transactionPage = 0
+            refreshListSnapshot()
         }
         .onChange(of: customEndDate) { _, _ in
             if customEndDate < customStartDate {
                 customStartDate = customEndDate
             }
             transactionPage = 0
+            refreshListSnapshot()
         }
         .onChange(of: searchText) { _, _ in
             transactionPage = 0
+            refreshListSnapshot()
         }
         .onChange(of: selectedQuickFilter) { _, newValue in
             UserDefaults.standard.set(newValue.rawValue, forKey: Self.lastQuickFilterKey)
+            transactionPage = 0
+            refreshListSnapshot()
+        }
+        .onChange(of: transactionPage) { _, _ in refreshListSnapshot() }
+        .onChange(of: store.ledgerRevision) { _, _ in
+            transactionPage = 0
+            refreshListSnapshot()
         }
         .sheet(isPresented: $isPresentingBillScanner) {
             BillScannerView(store: store)
@@ -1974,53 +2063,6 @@ struct TransactionsView: View {
         }
     }
 
-    private var filteredTransactions: [LedgerTransaction] {
-        store.recentTransactions.filter { transaction in
-            let matchesKind: Bool
-            if selectedFilter == .uncategorized {
-                matchesKind = transaction.kind == .expense && transaction.categoryID == nil
-            } else {
-                matchesKind = selectedFilter.kind.map { transaction.kind == $0 } ?? true
-            }
-            guard matchesKind else { return false }
-            guard periodIncludes(transaction.date) else { return false }
-            switch selectedQuickFilter {
-            case .none, .thisMonth, .uncategorized:
-                break
-            case .needsReceipt:
-                guard transaction.attachmentIDs.isEmpty else { return false }
-            case .cash:
-                guard (transaction.outflows + transaction.inflows).contains(where: {
-                    store.account(with: $0.accountID)?.type == .cash
-                }) else { return false }
-            }
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !query.isEmpty else { return true }
-            let accountNames = (transaction.outflows + transaction.inflows)
-                .compactMap { store.account(with: $0.accountID)?.name }
-                .joined(separator: " ")
-            let searchable = [
-                transaction.note,
-                store.categoryPath(for: transaction.categoryID),
-                accountNames,
-                transaction.kind.displayName
-            ].joined(separator: " ")
-            return searchable.localizedCaseInsensitiveContains(query)
-        }
-    }
-
-    private func periodIncludes(_ date: Date) -> Bool {
-        if selectedPeriod == .custom {
-            let start = Calendar.current.startOfDay(for: customStartDate)
-            let end = Calendar.current.date(
-                byAdding: DateComponents(day: 1),
-                to: Calendar.current.startOfDay(for: customEndDate)
-            ) ?? customEndDate
-            return date >= start && date < end
-        }
-        return selectedPeriod.includes(date)
-    }
-
     private func applyQuickFilter(_ filter: TransactionQuickFilter) {
         selectedQuickFilter = filter
         switch filter {
@@ -2037,51 +2079,42 @@ struct TransactionsView: View {
         transactionPage = 0
     }
 
-    private var groupedTransactions: [TransactionDay] {
-        let grouped = Dictionary(grouping: pageTransactions) {
-            Calendar.current.startOfDay(for: $0.date)
-        }
-
-        return grouped.keys.sorted(by: >).map { date in
-            TransactionDay(date: date, transactions: grouped[date] ?? [])
-        }
-    }
-
-    private var pageCount: Int {
-        max(1, (filteredTransactions.count + transactionsPerPage - 1) / transactionsPerPage)
-    }
-
-    private var displayedPage: Int {
-        min(transactionPage, pageCount - 1)
-    }
-
-    private var pageTransactions: [LedgerTransaction] {
-        let pageStart = displayedPage * transactionsPerPage
-        return Array(filteredTransactions.dropFirst(pageStart).prefix(transactionsPerPage))
+    private func refreshListSnapshot() {
+        listSnapshot = TransactionListSnapshot.make(
+            index: store.ledgerIndex,
+            filter: selectedFilter,
+            period: selectedPeriod,
+            quickFilter: selectedQuickFilter,
+            searchText: searchText,
+            customStartDate: customStartDate,
+            customEndDate: customEndDate,
+            page: transactionPage,
+            pageSize: transactionsPerPage
+        )
     }
 
     @ViewBuilder
     private var transactionPagination: some View {
-        if pageCount > 1 {
+        if listSnapshot.pageCount > 1 {
             HStack(spacing: 16) {
                 Button {
-                    transactionPage = max(0, displayedPage - 1)
+                    transactionPage = max(0, listSnapshot.displayedPage - 1)
                 } label: {
                     Label("Previous", systemImage: "chevron.left")
                 }
-                .disabled(displayedPage == 0)
+                .disabled(listSnapshot.displayedPage == 0)
 
-                Text("Page \(displayedPage + 1) of \(pageCount)")
+                Text("Page \(listSnapshot.displayedPage + 1) of \(listSnapshot.pageCount)")
                     .font(.caption.weight(.semibold).monospacedDigit())
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
 
                 Button {
-                    transactionPage = min(pageCount - 1, displayedPage + 1)
+                    transactionPage = min(listSnapshot.pageCount - 1, listSnapshot.displayedPage + 1)
                 } label: {
                     Label("Next", systemImage: "chevron.right")
                         .labelStyle(.titleAndIcon)
                 }
-                .disabled(displayedPage == pageCount - 1)
+                .disabled(listSnapshot.displayedPage == listSnapshot.pageCount - 1)
             }
             .font(.caption.weight(.semibold))
             .frame(maxWidth: .infinity)
@@ -2090,7 +2123,7 @@ struct TransactionsView: View {
     }
 
     private var transactionsSummary: some View {
-        let expenses = filteredExpenseTotals
+        let expenses = listSnapshot.expenseTotals
 
         return VStack(alignment: .leading, spacing: 13) {
             HStack {
@@ -2104,7 +2137,7 @@ struct TransactionsView: View {
 
                 Spacer()
 
-                Text("\(filteredTransactions.count) shown")
+                Text("\(listSnapshot.filteredTransactions.count) shown")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
@@ -2122,20 +2155,6 @@ struct TransactionsView: View {
             }
         }
         .pocketCard()
-    }
-
-    private var filteredExpenseTotals: [LedgerCurrency: Int64] {
-        var totals: [LedgerCurrency: Int64] = [:]
-        for transaction in filteredTransactions where transaction.kind == .expense {
-            for currency in LedgerCurrency.allCases {
-                totals[currency, default: 0] += financeNetExpenseAmount(
-                    transaction,
-                    currency: currency,
-                    in: store.data
-                )
-            }
-        }
-        return totals
     }
 
     private func transactionSummaryMetric(title: String, value: String) -> some View {
@@ -2309,9 +2328,8 @@ private struct TransactionRow: View {
     }
 
     private var iconName: String {
-        if let categoryID = transaction.categoryID,
-           let category = store.data.categories.first(where: { $0.id == categoryID }) {
-            return category.systemImage
+        if transaction.categoryID != nil {
+            return store.ledgerIndex.categorySystemImage(for: transaction.categoryID)
         }
 
         switch transaction.kind {
@@ -3754,7 +3772,7 @@ struct TransactionEditor: View {
     private var selectableCategories: [LedgerCategory] {
         var categories = store.activeCategories
         if let categoryID,
-           let category = store.data.categories.first(where: { $0.id == categoryID }),
+           let category = store.ledgerIndex.categoriesByID[categoryID],
            !categories.contains(where: { $0.id == category.id }) {
             categories.append(category)
         }

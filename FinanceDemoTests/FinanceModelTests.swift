@@ -2,6 +2,217 @@ import XCTest
 @testable import FinanceDemo
 
 final class FinanceModelTests: XCTestCase {
+    func testLedgerIndexAndMetricsSnapshotPreserveFilteredTotals() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let january = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 1, day: 15)))
+        let february = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 2, day: 15)))
+        let march = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 15)))
+        let yearInterval = try XCTUnwrap(calendar.dateInterval(of: .year, for: january))
+        let januaryInterval = try XCTUnwrap(calendar.dateInterval(of: .month, for: january))
+        let februaryInterval = try XCTUnwrap(calendar.dateInterval(of: .month, for: february))
+
+        let cash = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 10_000)
+        )
+        let excludedCash = Account(
+            name: "Excluded cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 20_000),
+            includeInTotals: false
+        )
+        let living = LedgerCategory(name: "Living")
+        let food = LedgerCategory(name: "Food", parentID: living.id)
+        let excludedRoot = LedgerCategory(name: "Modified Bal.", includeInTotals: true)
+        let excludedChild = LedgerCategory(name: "Adjustments", parentID: excludedRoot.id)
+
+        func expense(
+            _ date: Date,
+            _ amount: Int64,
+            categoryID: UUID?,
+            accountID: UUID? = nil,
+            returned: Int64 = 0
+        ) -> LedgerTransaction {
+            LedgerTransaction(
+                date: date,
+                note: "Expense",
+                kind: .expense,
+                categoryID: categoryID,
+                outflows: [
+                    MoneyMovement(
+                        accountID: accountID ?? cash.id,
+                        money: Money(currency: .usd, minorUnits: amount)
+                    )
+                ],
+                inflows: returned == 0
+                    ? []
+                    : [
+                        MoneyMovement(
+                            accountID: accountID,
+                            money: Money(currency: .usd, minorUnits: returned)
+                        )
+                    ]
+            )
+        }
+
+        let transactions = [
+            expense(january, 1_000, categoryID: food.id),
+            expense(february, 2_000, categoryID: food.id, returned: 500),
+            expense(february, 4_000, categoryID: excludedChild.id),
+            expense(february, 7_000, categoryID: food.id, accountID: excludedCash.id),
+            LedgerTransaction(
+                date: march,
+                note: "Salary",
+                kind: .income,
+                categoryID: nil,
+                outflows: [],
+                inflows: [
+                    MoneyMovement(
+                        accountID: cash.id,
+                        money: Money(currency: .usd, minorUnits: 3_000)
+                    )
+                ]
+            )
+        ]
+        let data = FinanceData(
+            accounts: [cash, excludedCash],
+            categories: [living, food, excludedRoot, excludedChild],
+            transactions: transactions
+        )
+        let index = LedgerIndex(data: data, calendar: calendar)
+
+        XCTAssertEqual(index.categoryPath(for: food.id), "Living / Food")
+        XCTAssertFalse(index.categoryIncludedInTotals(excludedChild.id))
+        XCTAssertEqual(index.sortedTransactions.first?.date, march)
+        XCTAssertEqual(index.balance(for: cash).minorUnits, 6_500)
+        XCTAssertEqual(index.availableBalance(for: .usd).minorUnits, 6_500)
+        XCTAssertEqual(index.monthlyExpenseTotals(for: february, calendar: calendar)[.usd], 1_500)
+
+        let month = MetricsSnapshot.make(
+            index: index,
+            interval: februaryInterval,
+            selectedCurrency: .usd,
+            selectedCategoryID: living.id
+        )
+        XCTAssertEqual(month.expenses, 1_500)
+        XCTAssertEqual(month.income, 0)
+        XCTAssertEqual(month.filteredTransactions.count, 1)
+        XCTAssertEqual(month.categories.first?.amount, 1_500)
+        XCTAssertEqual(month.activityCounts[.expense], 1)
+
+        let year = MetricsSnapshot.make(
+            index: index,
+            interval: yearInterval,
+            selectedCurrency: .usd,
+            selectedCategoryID: nil
+        )
+        XCTAssertEqual(year.expenses, 2_500)
+        XCTAssertEqual(year.income, 3_000)
+        XCTAssertEqual(year.activityCounts[.expense], 2)
+        XCTAssertEqual(year.activityCounts[.income], 1)
+
+        let exchangeRate = ExchangeRate(
+            baseCurrency: .usd,
+            quoteCurrency: .eur,
+            quoteUnitsPerBaseUnit: try XCTUnwrap(Decimal(string: "0.9"))
+        )
+        let convertedTransaction = LedgerTransaction(
+            date: january,
+            note: "Converted expense",
+            kind: .expense,
+            categoryID: food.id,
+            outflows: [
+                MoneyMovement(
+                    accountID: cash.id,
+                    money: Money(currency: .usd, minorUnits: 1_000)
+                )
+            ],
+            inflows: [],
+            exchangeRate: exchangeRate
+        )
+        let currencyIndex = LedgerIndex(
+            data: FinanceData(
+                accounts: [cash],
+                categories: [living, food],
+                transactions: [convertedTransaction]
+            ),
+            calendar: calendar
+        )
+        let euroMetrics = MetricsSnapshot.make(
+            index: currencyIndex,
+            interval: januaryInterval,
+            selectedCurrency: .eur,
+            selectedCategoryID: living.id
+        )
+        XCTAssertEqual(euroMetrics.expenses, 900)
+
+        let budget = LedgerBudget(
+            categoryID: food.id,
+            currency: .usd,
+            monthlyLimit: Money(currency: .usd, minorUnits: 5_000),
+            rollover: true,
+            startedAt: january
+        )
+        XCTAssertEqual(index.budgetSpent(budget, interval: februaryInterval, calendar: calendar).minorUnits, 1_500)
+        XCTAssertEqual(
+            financeBudgetAllowance(
+                budget,
+                in: data,
+                interval: februaryInterval,
+                using: index,
+                calendar: calendar
+            ).minorUnits,
+            9_000
+        )
+        XCTAssertEqual(index.budgetSpent(budget, interval: januaryInterval, calendar: calendar).minorUnits, 1_000)
+    }
+
+    func testMetricsSnapshotBenchmarkUsesOneAggregatedPass() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 1, day: 15)))
+        let account = Account(
+            name: "Benchmark cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let category = LedgerCategory(name: "Benchmark")
+        let transactions = (0..<2_000).map { index in
+            LedgerTransaction(
+                date: calendar.date(byAdding: .day, value: index % 365, to: date) ?? date,
+                note: "Benchmark \(index)",
+                kind: .expense,
+                categoryID: category.id,
+                outflows: [
+                    MoneyMovement(
+                        accountID: account.id,
+                        money: Money(currency: .usd, minorUnits: Int64(index + 1))
+                    )
+                ],
+                inflows: []
+            )
+        }
+        let index = LedgerIndex(
+            data: FinanceData(accounts: [account], categories: [category], transactions: transactions),
+            calendar: calendar
+        )
+        let interval = try XCTUnwrap(calendar.dateInterval(of: .year, for: date))
+
+        measure {
+            _ = MetricsSnapshot.make(
+                index: index,
+                interval: interval,
+                selectedCurrency: .usd,
+                selectedCategoryID: nil
+            )
+        }
+    }
+
     func testMetricsReportWritesExistingShareablePDF() throws {
         let report = MetricsReportData(
             periodTitle: "September 2026",
