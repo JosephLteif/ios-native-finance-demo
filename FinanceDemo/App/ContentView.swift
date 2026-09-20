@@ -309,8 +309,8 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         button.menu = makeAddMenu(coordinator: context.coordinator)
         button.showsMenuAsPrimaryAction = false
         button.accessibilityIdentifier = "add-transaction-button"
-        button.accessibilityLabel = "Add expense"
-        button.accessibilityHint = "Tap to add an expense. Press and hold for more options."
+        button.accessibilityLabel = "Add"
+        button.accessibilityHint = "Choose what to add"
         return button
     }
 

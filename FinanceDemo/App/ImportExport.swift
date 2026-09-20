@@ -469,14 +469,30 @@ enum FinanceImportParser {
         ]
 
         var used: Set<String> = []
+        var assigned: Set<ImportField> = []
         var result: [ImportField: String?] = [:]
 
         for field in ImportField.allCases {
             let candidate = columns.first { column in
-                let normalizedColumn = normalize(column)
                 guard !used.contains(column) else { return false }
+                let normalizedColumn = normalize(column)
                 return aliases[field, default: []].contains { alias in
-                    normalizedColumn == normalize(alias) || normalizedColumn.contains(normalize(alias))
+                    normalizedColumn == normalize(alias)
+                }
+            }
+            result[field] = candidate
+            if let candidate {
+                used.insert(candidate)
+                assigned.insert(field)
+            }
+        }
+
+        for field in ImportField.allCases where !assigned.contains(field) {
+            let candidate = columns.first { column in
+                guard !used.contains(column) else { return false }
+                let normalizedColumn = normalize(column)
+                return aliases[field, default: []].contains { alias in
+                    normalizedColumn.contains(normalize(alias))
                 }
             }
             result[field] = candidate
