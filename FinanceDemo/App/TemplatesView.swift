@@ -11,7 +11,7 @@ struct TemplatesView: View {
             VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                             Text("Templates")
-                                .font(.largeTitle.weight(.bold))
+                                .font(.largeTitle.weight(.semibold))
                         Text("Reuse repeat expenses, income, and transfers")
                             .font(.subheadline)
                             .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -32,7 +32,7 @@ struct TemplatesView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 42)
                         .padding(.horizontal, 20)
-                        .pocketGlassSurface(cornerRadius: 20)
+                        .pocketGroupedSurface(cornerRadius: 20)
                     } else {
                         ForEach(store.data.templates) { template in
                             templateCard(template)
@@ -92,7 +92,7 @@ struct TemplatesView: View {
             }
         }
         .padding(16)
-        .pocketGlassSurface(cornerRadius: 20)
+        .pocketGroupedSurface(cornerRadius: 20)
         .overlay {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)

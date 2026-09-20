@@ -103,7 +103,7 @@ struct ScheduledTransactionsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Scheduled")
-                    .font(.largeTitle.weight(.bold))
+                    .font(.largeTitle.weight(.semibold))
                 Text("Plan bills, income, and recurring transfers")
                     .font(.subheadline)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -145,7 +145,7 @@ struct ScheduledTransactionsView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 44)
         .padding(.horizontal, 20)
-        .pocketGlassSurface(cornerRadius: 20)
+        .pocketGroupedSurface(cornerRadius: 20)
     }
 
     private func scheduleCard(_ schedule: ScheduledTransaction) -> some View {
@@ -220,7 +220,7 @@ struct ScheduledTransactionsView: View {
             }
         }
         .padding(16)
-        .pocketGlassSurface(cornerRadius: 20)
+        .pocketGroupedSurface(cornerRadius: 20)
         .overlay {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)

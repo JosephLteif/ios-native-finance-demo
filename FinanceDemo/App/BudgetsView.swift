@@ -14,7 +14,7 @@ struct BudgetsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Budgets")
-                                .font(.largeTitle.weight(.bold))
+                                .font(.largeTitle.weight(.semibold))
                             Text("Keep monthly spending intentional")
                                 .font(.subheadline)
                                 .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -52,7 +52,7 @@ struct BudgetsView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 42)
                         .padding(.horizontal, 20)
-                        .pocketGlassSurface(cornerRadius: 20)
+                        .pocketGroupedSurface(cornerRadius: 20)
                     } else {
                         ForEach(budgetSummaries) { summary in
                             budgetCard(summary)
@@ -150,7 +150,7 @@ struct BudgetsView: View {
             }
         }
         .padding(16)
-        .pocketGlassSurface(cornerRadius: 20)
+        .pocketGroupedSurface(cornerRadius: 20)
         .overlay { RoundedRectangle(cornerRadius: 20).stroke(PocketLedgerTheme.divider, lineWidth: 1) }
     }
 
