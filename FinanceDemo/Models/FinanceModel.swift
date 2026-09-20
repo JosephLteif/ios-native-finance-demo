@@ -361,10 +361,24 @@ enum FinanceAccountCurrencyMigration {
         kind: TransactionKind
     ) {
         var didMigrateMovement = false
+        let originalExchangeRate = exchangeRate
+
+        func migratedMoney(_ money: Money) -> Money {
+            if let convertedMinorUnits = originalExchangeRate.flatMap({
+                financeConvertedMinorUnits(
+                    money,
+                    to: newCurrency,
+                    using: $0
+                )
+            }) {
+                return Money(currency: newCurrency, minorUnits: convertedMinorUnits)
+            }
+            return money.recast(to: newCurrency)
+        }
 
         func migrateMovements(_ movements: inout [MoneyMovement]) {
             for index in movements.indices where movements[index].accountID == accountID {
-                movements[index].money = movements[index].money.recast(to: newCurrency)
+                movements[index].money = migratedMoney(movements[index].money)
                 didMigrateMovement = true
             }
         }
@@ -374,16 +388,16 @@ enum FinanceAccountCurrencyMigration {
         guard didMigrateMovement else { return }
 
         if let value = amountDue, value.currency == oldCurrency {
-            amountDue = value.recast(to: newCurrency)
+            amountDue = migratedMoney(value)
         }
 
         if let change = changeAdjustment {
             changeAdjustment = ChangeAdjustment(
                 requested: change.requested.currency == oldCurrency
-                    ? change.requested.recast(to: newCurrency)
+                    ? migratedMoney(change.requested)
                     : change.requested,
                 actual: change.actual.currency == oldCurrency
-                    ? change.actual.recast(to: newCurrency)
+                    ? migratedMoney(change.actual)
                     : change.actual
             )
         }
