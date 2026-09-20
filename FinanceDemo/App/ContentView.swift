@@ -2525,7 +2525,7 @@ struct TransactionEditor: View {
                                     accountCreationLineID = $line.wrappedValue.id
                                     isShowingNewAccount = true
                                 },
-                                allowsArchivedAccount: editingTransactionID != nil || editingScheduleID != nil
+                                allowsArchivedAccount: allowsArchivedMovementAccounts
                             )
                         }
                         .onDelete { outflows.remove(atOffsets: $0) }
@@ -2564,7 +2564,7 @@ struct TransactionEditor: View {
                                     accountCreationLineID = $line.wrappedValue.id
                                     isShowingNewAccount = true
                                 },
-                                allowsArchivedAccount: editingTransactionID != nil || editingScheduleID != nil
+                                allowsArchivedAccount: allowsArchivedMovementAccounts
                             )
                         }
                         .onDelete { inflows.remove(atOffsets: $0) }
@@ -2747,6 +2747,10 @@ struct TransactionEditor: View {
 
     private var isEditingScheduledTransaction: Bool {
         editingScheduleID != nil
+    }
+
+    private var allowsArchivedMovementAccounts: Bool {
+        editingTransactionID != nil || editingScheduleID != nil
     }
 
     private var completedOneTimeSchedule: Bool {
