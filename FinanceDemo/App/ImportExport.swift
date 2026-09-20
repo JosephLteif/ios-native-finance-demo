@@ -1649,11 +1649,16 @@ enum FinanceImportBuilder {
                             )
                         }
                         destinationAmount = importedAmount
-                        amount = try convertedAmount(
+                        guard let convertedSourceAmount = convertedAmount(
                             destinationAmount,
                             to: currency,
                             using: rate
-                        )
+                        ) else {
+                            throw FinanceImportError.row(
+                                "The exchange rate could not convert \(destinationMoneyCurrency.rawValue) to \(currency.rawValue)."
+                            )
+                        }
+                        amount = convertedSourceAmount
                         exchangeRate = rate
                     } else {
                         guard let rate = storedExchangeRate(
@@ -1670,11 +1675,16 @@ enum FinanceImportBuilder {
                             to: currency,
                             using: availableRates
                         )
-                        destinationAmount = try convertedAmount(
+                        guard let convertedDestinationAmount = convertedAmount(
                             amount,
                             to: destinationMoneyCurrency,
                             using: rate
-                        )
+                        ) else {
+                            throw FinanceImportError.row(
+                                "The exchange rate could not convert \(currency.rawValue) to \(destinationMoneyCurrency.rawValue)."
+                            )
+                        }
+                        destinationAmount = convertedDestinationAmount
                         exchangeRate = rate
                     }
 
