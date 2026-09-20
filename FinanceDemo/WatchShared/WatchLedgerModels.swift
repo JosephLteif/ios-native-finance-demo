@@ -47,8 +47,8 @@ struct WatchLedgerSnapshot: Codable, Equatable, Sendable {
     let accounts: [WatchAccountSummary]
     let categories: [WatchCategorySummary]
     let recentTransactions: [WatchTransactionSummary]
-    let attentionCount: Int = 0
-    let upcomingScheduledCount: Int = 0
+    let attentionCount: Int
+    let upcomingScheduledCount: Int
 
     private enum CodingKeys: String, CodingKey {
         case version
