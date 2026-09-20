@@ -107,6 +107,30 @@ enum ImportTransactionReviewFilter: String, CaseIterable, Identifiable {
 struct ImportColumnMappingRule: Codable, Equatable {
     let signature: String
     let mappings: [String: String]
+    let unmappedFields: [String]
+
+    init(
+        signature: String,
+        mappings: [String: String],
+        unmappedFields: [String] = []
+    ) {
+        self.signature = signature
+        self.mappings = mappings
+        self.unmappedFields = unmappedFields
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case signature
+        case mappings
+        case unmappedFields
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        signature = try container.decode(String.self, forKey: .signature)
+        mappings = try container.decode([String: String].self, forKey: .mappings)
+        unmappedFields = try container.decodeIfPresent([String].self, forKey: .unmappedFields) ?? []
+    }
 }
 
 struct ImportAccountRule: Codable, Equatable {
@@ -188,6 +212,10 @@ enum ImportRuleStore {
             guard let field = ImportField(rawValue: rawField), columns.contains(column) else { continue }
             mapping[field] = column
         }
+        for rawField in rule.unmappedFields {
+            guard let field = ImportField(rawValue: rawField) else { continue }
+            mapping[field] = nil
+        }
         return mapping
     }
 
@@ -224,14 +252,24 @@ enum ImportRuleStore {
                    explicitFields == nil || explicitFields?.contains(pair.key) == true {
                     result[pair.key.rawValue] = column
                 }
-            }
+            },
+            unmappedFields: mapping.compactMap { pair in
+                guard pair.value == nil,
+                      explicitFields == nil || explicitFields?.contains(pair.key) == true else {
+                    return nil
+                }
+                return pair.key.rawValue
+            }.sorted()
         )
 
         var updated = ImportStoredRules(
-            columnMappings: rules.columnMappings.filter { $0.signature != signature },
+            columnMappings: rules.columnMappings,
             accountRules: rules.accountRules
         )
-        updated.columnMappings.append(storedMapping)
+        if explicitFields == nil || !storedMapping.mappings.isEmpty {
+            updated.columnMappings.removeAll { $0.signature == signature }
+            updated.columnMappings.append(storedMapping)
+        }
 
         for rule in accountRules {
             updated.accountRules.removeAll { $0.key == rule.key }
@@ -418,7 +456,9 @@ struct ImportDraft {
         archive: Bool = false
     ) {
         let key = ImportAccountCandidate.key(for: account.name)
-        explicitAccountRuleKeys.insert(key)
+        if typeOrCurrency || archive {
+            explicitAccountRuleKeys.insert(key)
+        }
         if typeOrCurrency {
             explicitTypeCurrencyRuleKeys.insert(key)
         }
@@ -615,5 +655,5 @@ struct ImportDraft {
 }
 
 extension ImportField {
-    static let required: [ImportField] = [.date, .amount]
+    static var required: [ImportField] { [.date, .amount] }
 }

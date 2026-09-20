@@ -689,6 +689,7 @@ final class FinanceModelTests: XCTestCase {
         let transaction = LedgerTransaction(
             note: "Gold purchase",
             kind: .expense,
+            categoryID: nil,
             outflows: [
                 MoneyMovement(
                     accountID: imported.id,
@@ -738,6 +739,7 @@ final class FinanceModelTests: XCTestCase {
                 LedgerTransaction(
                     note: "Mapped",
                     kind: .expense,
+                    categoryID: nil,
                     outflows: [MoneyMovement(accountID: imported.id, money: Money(currency: .usd, minorUnits: 500))],
                     inflows: []
                 )
@@ -825,6 +827,7 @@ final class FinanceModelTests: XCTestCase {
             LedgerTransaction(
                 note: "Active account",
                 kind: .expense,
+                categoryID: nil,
                 outflows: [MoneyMovement(accountID: active.id, money: Money(currency: .usd, minorUnits: 100))],
                 inflows: []
             )
