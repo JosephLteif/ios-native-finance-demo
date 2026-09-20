@@ -126,7 +126,9 @@ struct ImportWizardView: View {
         }
         .accessibilityIdentifier("importWizard")
         .sheet(item: $presentedSheet) { sheet in
-            sheetContent(for: sheet)
+            NavigationStack {
+                sheetContent(for: sheet)
+            }
                 .presentationDetents([.medium, .large])
         }
     }
@@ -637,29 +639,32 @@ private struct ImportWizardOrganizeStep: View {
     @State private var isSelectingCategories = false
 
     var body: some View {
-        if let data = draft.importedData {
-            List {
-                Section {
-                    HStack {
-                        Label("\(data.accounts.count) accounts", systemImage: "person.crop.circle")
-                        Spacer()
-                        Text("\(data.categories.count) categories")
+        ZStack {
+            if let data = draft.importedData {
+                List {
+                    Section {
+                        HStack {
+                            Label("\(data.accounts.count) accounts", systemImage: "person.crop.circle")
+                            Spacer()
+                            Text("\(data.categories.count) categories")
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("Review provisional records here before any data is written. Tap a row for detailed edits, or select several rows for a bulk action.")
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    Text("Review provisional records here before any data is written. Tap a row for detailed edits, or select several rows for a bulk action.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
 
-                accountsSection(data: data)
-                categoriesSection(data: data)
+                    accountsSection(data: data)
+                    categoriesSection(data: data)
+                }
+                .listStyle(.insetGrouped)
+                .searchable(text: $searchText, prompt: "Search accounts and categories")
+            } else {
+                ContentUnavailableView("Preparing import", systemImage: "arrow.triangle.2.circlepath")
             }
-            .listStyle(.insetGrouped)
-            .searchable(text: $searchText, prompt: "Search accounts and categories")
-            .accessibilityIdentifier("importWizard.organize")
-        } else {
-            ContentUnavailableView("Preparing import", systemImage: "arrow.triangle.2.circlepath")
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("importWizard.organize")
     }
 
     @ViewBuilder
