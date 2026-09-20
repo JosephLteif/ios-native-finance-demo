@@ -8,6 +8,7 @@ struct AccountDetailView: View {
 
     @State private var isPresentingAccountEditor = false
     @State private var isPresentingBalanceEditor = false
+    @State private var editingTransaction: LedgerTransaction?
     @State private var transactionPage = 0
 
     private let transactionsPerPage = 25
@@ -41,6 +42,9 @@ struct AccountDetailView: View {
                 if let account {
                     AccountBalanceEditor(store: store, account: account)
                 }
+            }
+            .sheet(item: $editingTransaction) { transaction in
+                TransactionEditor(store: store, transaction: transaction)
             }
             .pocketScreen()
     }
@@ -133,7 +137,8 @@ struct AccountDetailView: View {
                                     AccountTransactionRow(
                                         transaction: transaction,
                                         account: account,
-                                        store: store
+                                        store: store,
+                                        onEdit: { editingTransaction = transaction }
                                     )
                                     Divider().overlay(PocketLedgerTheme.divider)
                                 }
@@ -265,6 +270,7 @@ private struct AccountTransactionRow: View {
     let transaction: LedgerTransaction
     let account: Account
     @ObservedObject var store: LedgerStore
+    let onEdit: () -> Void
 
     private var outgoing: Int64 {
         transaction.outflows
@@ -279,41 +285,48 @@ private struct AccountTransactionRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: iconName)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 36, height: 36)
-                .pocketGlassSurface(cornerRadius: 18, tint: tint.opacity(0.12))
+        Button(action: onEdit) {
+            HStack(spacing: 12) {
+                Image(systemName: iconName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 36, height: 36)
+                    .pocketGlassSurface(cornerRadius: 18, tint: tint.opacity(0.12))
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(transaction.note)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text(detailText)
-                    .font(.caption)
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-                    .lineLimit(1)
-                Text(transaction.date.formatted(.dateTime.month(.abbreviated).day().year()))
-                    .font(.caption2)
-                    .foregroundStyle(PocketLedgerTheme.textTertiary)
-            }
-
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 3) {
-                if outgoing > 0 {
-                    Text("− " + Money(currency: account.currency, minorUnits: outgoing).formatted)
-                        .foregroundStyle(PocketLedgerTheme.warning)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(transaction.note)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(detailText)
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .lineLimit(1)
+                    Text(transaction.date.formatted(.dateTime.month(.abbreviated).day().year()))
+                        .font(.caption2)
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
                 }
-                if incoming > 0 {
-                    Text("+ " + Money(currency: account.currency, minorUnits: incoming).formatted)
-                        .foregroundStyle(PocketLedgerTheme.income)
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    if outgoing > 0 {
+                        Text("− " + Money(currency: account.currency, minorUnits: outgoing).formatted)
+                            .foregroundStyle(PocketLedgerTheme.warning)
+                    }
+                    if incoming > 0 {
+                        Text("+ " + Money(currency: account.currency, minorUnits: incoming).formatted)
+                            .foregroundStyle(PocketLedgerTheme.income)
+                    }
                 }
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .multilineTextAlignment(.trailing)
             }
-            .font(.caption.weight(.semibold).monospacedDigit())
-            .multilineTextAlignment(.trailing)
         }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(transaction.note), \(detailText)")
+        .accessibilityHint("Opens transaction details")
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 11)
     }
 

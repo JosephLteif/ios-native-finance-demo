@@ -1095,10 +1095,13 @@ private struct TransactionsView: View {
     @State private var selectedFilter: TransactionFilter = .all
     @State private var selectedPeriod: TransactionPeriod = .all
     @State private var searchText = ""
+    @State private var transactionPage = 0
     @State private var editingTransaction: LedgerTransaction?
     @State private var transactionToDelete: LedgerTransaction?
     @State private var transactionToTemplate: LedgerTransaction?
     @State private var isPresentingBillScanner = false
+
+    private let transactionsPerPage = 25
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -1127,7 +1130,7 @@ private struct TransactionsView: View {
 
                     transactionsSummary
 
-                    if groupedTransactions.isEmpty {
+                    if filteredTransactions.isEmpty {
                         VStack(spacing: 8) {
                             Image(systemName: "list.bullet.rectangle.portrait")
                                 .font(.title2)
@@ -1170,6 +1173,8 @@ private struct TransactionsView: View {
                                 }
                             }
                         }
+
+                        transactionPagination
                     }
                 }
                 .padding(.horizontal, 16)
@@ -1178,6 +1183,15 @@ private struct TransactionsView: View {
             }
         }
         .pocketScreen()
+        .onChange(of: selectedFilter) { _, _ in
+            transactionPage = 0
+        }
+        .onChange(of: selectedPeriod) { _, _ in
+            transactionPage = 0
+        }
+        .onChange(of: searchText) { _, _ in
+            transactionPage = 0
+        }
         .sheet(isPresented: $isPresentingBillScanner) {
             BillScannerView(store: store)
         }
@@ -1258,12 +1272,54 @@ private struct TransactionsView: View {
     }
 
     private var groupedTransactions: [TransactionDay] {
-        let grouped = Dictionary(grouping: filteredTransactions) {
+        let grouped = Dictionary(grouping: pageTransactions) {
             Calendar.current.startOfDay(for: $0.date)
         }
 
         return grouped.keys.sorted(by: >).map { date in
             TransactionDay(date: date, transactions: grouped[date] ?? [])
+        }
+    }
+
+    private var pageCount: Int {
+        max(1, (filteredTransactions.count + transactionsPerPage - 1) / transactionsPerPage)
+    }
+
+    private var displayedPage: Int {
+        min(transactionPage, pageCount - 1)
+    }
+
+    private var pageTransactions: [LedgerTransaction] {
+        let pageStart = displayedPage * transactionsPerPage
+        return Array(filteredTransactions.dropFirst(pageStart).prefix(transactionsPerPage))
+    }
+
+    @ViewBuilder
+    private var transactionPagination: some View {
+        if pageCount > 1 {
+            HStack(spacing: 16) {
+                Button {
+                    transactionPage = max(0, displayedPage - 1)
+                } label: {
+                    Label("Previous", systemImage: "chevron.left")
+                }
+                .disabled(displayedPage == 0)
+
+                Text("Page \(displayedPage + 1) of \(pageCount)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                Button {
+                    transactionPage = min(pageCount - 1, displayedPage + 1)
+                } label: {
+                    Label("Next", systemImage: "chevron.right")
+                        .labelStyle(.titleAndIcon)
+                }
+                .disabled(displayedPage == pageCount - 1)
+            }
+            .font(.caption.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
         }
     }
 
