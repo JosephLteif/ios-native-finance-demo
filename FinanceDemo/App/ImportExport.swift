@@ -186,6 +186,8 @@ enum ImportField: String, CaseIterable, Identifiable, Hashable {
     case kind
     case amount
     case currency
+    case baseAmount
+    case baseCurrency
     case accountType
     case account
     case destinationAccountType
@@ -207,6 +209,10 @@ enum ImportField: String, CaseIterable, Identifiable, Hashable {
             return "Amount"
         case .currency:
             return "Currency"
+        case .baseAmount:
+            return "Reporting amount"
+        case .baseCurrency:
+            return "Reporting currency"
         case .account:
             return "Account"
         case .accountType:
@@ -236,6 +242,10 @@ enum ImportField: String, CaseIterable, Identifiable, Hashable {
             return "The transaction amount"
         case .currency:
             return "USD, LBP, EUR, or another currency label"
+        case .baseAmount:
+            return "Equivalent amount in the reporting currency"
+        case .baseCurrency:
+            return "Currency used for the reporting amount"
         case .account:
             return "The account money leaves or enters"
         case .accountType:
@@ -460,6 +470,8 @@ enum FinanceImportParser {
             .kind: ["type", "kind", "transactiontype", "recordtype", "incomeexpense", "dotype"],
             .amount: ["amount", "money", "value", "total", "price", "sum", "zamoun"],
             .currency: ["currency", "currencycode", "currencyname", "iso", "symbol"],
+            .baseAmount: ["baseamount", "reportingamount", "usdequivalent", "usdamount", "amountusd", "usd"],
+            .baseCurrency: ["basecurrency", "reportingcurrency", "usdcurrency"],
             .account: ["account", "asset", "assets", "fromaccount", "sourceaccount", "assetname", "zasset"],
             .accountType: ["accounttype", "assettype", "fromaccounttype", "sourceaccounttype"],
             .destinationAccount: ["toaccount", "destination", "destinationaccount", "transferaccount", "toasset"],
@@ -705,6 +717,8 @@ enum FinanceImportParser {
             "Type",
             "Amount",
             "Currency",
+            "Reporting amount",
+            "Reporting currency",
             "Account",
             "Destination Account",
             "Destination Amount",
@@ -778,6 +792,8 @@ enum FinanceImportParser {
                     TransactionKind.transfer.displayName,
                     sourceAmount,
                     sourceCurrency.rawValue,
+                    "",
+                    "",
                     source,
                     destination,
                     destinationAmount,
@@ -797,11 +813,14 @@ enum FinanceImportParser {
             let categoryPath = [category, subcategory]
                 .filter { !$0.isEmpty }
                 .joined(separator: " / ")
+            let reportingAmount = usdIndex.map { cell(row, $0) } ?? ""
             rows.append([
                 cell(row, dateIndex),
                 kind.displayName,
                 cell(row, amountIndex),
                 cell(row, currencyIndex),
+                reportingAmount,
+                reportingAmount.isEmpty ? "" : "USD",
                 cell(row, accountIndex),
                 "",
                 "",
@@ -1526,6 +1545,29 @@ enum FinanceImportBuilder {
                     currency: inputCurrency,
                     minorUnits: Swift.abs(signedAmount.minorUnits)
                 )
+                let rawReportingAmount = value(for: .baseAmount, in: row, table: table, mapping: mapping)
+                let reportingAmount: Money?
+                if rawReportingAmount.isEmpty {
+                    reportingAmount = nil
+                } else {
+                    let rawReportingCurrency = value(
+                        for: .baseCurrency,
+                        in: row,
+                        table: table,
+                        mapping: mapping
+                    )
+                    let reportingCurrency = rawReportingCurrency.isEmpty
+                        ? options.defaultCurrency
+                        : parseCurrency(rawReportingCurrency, default: options.defaultCurrency)
+                    let parsedReportingAmount = try parseAmount(
+                        rawReportingAmount,
+                        currency: reportingCurrency
+                    )
+                    reportingAmount = Money(
+                        currency: reportingCurrency,
+                        minorUnits: Swift.abs(parsedReportingAmount.minorUnits)
+                    )
+                }
                 let categoryID = try resolveCategory(
                     value(for: .category, in: row, table: table, mapping: mapping),
                     kind: kind,
@@ -1698,6 +1740,12 @@ enum FinanceImportBuilder {
                     }
                     outflows = [MoneyMovement(accountID: account.id, money: amount)]
                     inflows = [MoneyMovement(accountID: destination.id, money: destinationAmount)]
+                }
+
+                if kind != .transfer,
+                   let reportingAmount,
+                   amount.currency != reportingAmount.currency {
+                    exchangeRate = inferredExchangeRate(from: amount, to: reportingAmount)
                 }
 
                 if let exchangeRate,
@@ -1971,7 +2019,13 @@ enum FinanceImportBuilder {
                 throw FinanceImportError.row("Category \(part) does not exist and creating categories is disabled.")
             }
 
-            let category = LedgerCategory(name: part, parentID: parentID)
+            let includeInTotals = !(parentID == nil
+                && part.caseInsensitiveCompare("Modified Bal.") == .orderedSame)
+            let category = LedgerCategory(
+                name: part,
+                parentID: parentID,
+                includeInTotals: includeInTotals
+            )
             imported.append(category)
             parentID = category.id
         }

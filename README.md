@@ -40,7 +40,7 @@ The main app now contains the first local finance workflow for the Lebanese mark
 - A native Control Center/Lock Screen control records the existing quick USD expense action after device authentication.
 - The Control Center action can be configured with a USD amount; the widget keeps a separate fixed quick-expense preset.
 
-The current slice is local-only and intentionally keeps currency totals separate. It records the exchange rate for each mixed-currency transaction but does not yet convert all historical balances into one net-worth number.
+The current slice is local-only and intentionally keeps account balances separate by currency. Metrics can convert a transaction into the selected reporting currency when that transaction has a recorded exchange rate; this does not collapse historical account balances into one net-worth number.
 
 ## Data import and backup
 
@@ -49,7 +49,7 @@ Settings → Import & Backup supports several migration paths:
 - Full `.pocketledger` backups are versioned and include local receipt photos/PDFs plus extracted receipt line items and totals. They can be merged into the current ledger or used to replace it.
 - JSON backups remain available as a compatibility format; they preserve ledger metadata but cannot carry local attachment bytes.
 - CSV, TSV, and JSON row exports open a field-mapping screen. Date and amount are required; type, currency, account, destination account, category, and note can be mapped or supplied with defaults.
-- `.xlsx` workbooks are read on-device, including multiple sheets. The importer also recognizes the Money Manager-style export used by `2026-09-01 ~ 09-30.xlsx`, combines category/subcategory and note/description fields, and reconstructs paired same-time transfers, including USD-to-LBP amounts when the account names identify the currencies.
+- `.xlsx` workbooks are read on-device, including multiple sheets. The importer also recognizes the Money Manager-style export used by `2026-09-01 ~ 09-30.xlsx`, combines category/subcategory and note/description fields, preserves the source account amount/currency, and uses the workbook's USD equivalent as a per-transaction reporting conversion. It reconstructs paired same-time transfers, including USD-to-LBP amounts when the account names identify the currencies, and excludes `Modified Bal.` balance adjustments from spending metrics.
 - SQLite backups such as Money Manager `.mmbak`, `.sqlite`, `.sqlite3`, and `.db` files expose their tables for mapping and include a normalized Realbyte table when the known transaction tables are present.
 
 Legacy binary `.xls` files should be saved as `.xlsx`, CSV, or TSV before importing. External files are parsed locally and are not sent to a server. Imported rows are added with new IDs, while Pocket Ledger backup restore preserves its original IDs.

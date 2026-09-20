@@ -896,6 +896,32 @@ struct LedgerBudget: Identifiable, Codable, Equatable {
     }
 }
 
+func financeConvertedMinorUnits(
+    _ money: Money,
+    to currency: LedgerCurrency,
+    using exchangeRate: ExchangeRate?
+) -> Int64? {
+    guard money.currency != currency else { return money.minorUnits }
+    guard let exchangeRate, exchangeRate.quoteUnitsPerBaseUnit > 0 else { return nil }
+
+    let sourceUnits = Decimal(money.minorUnits) / Decimal(money.currency.minorUnitScale)
+    let targetUnits: Decimal
+    if money.currency == exchangeRate.baseCurrency,
+       currency == exchangeRate.quoteCurrency {
+        targetUnits = sourceUnits * exchangeRate.quoteUnitsPerBaseUnit
+    } else if money.currency == exchangeRate.quoteCurrency,
+              currency == exchangeRate.baseCurrency {
+        targetUnits = sourceUnits / exchangeRate.quoteUnitsPerBaseUnit
+    } else {
+        return nil
+    }
+
+    var rounded = Decimal()
+    var scaled = targetUnits * Decimal(currency.minorUnitScale)
+    NSDecimalRound(&rounded, &scaled, 0, .plain)
+    return NSDecimalNumber(decimal: rounded).int64Value
+}
+
 func financeNetExpenseAmount(
     _ transaction: LedgerTransaction,
     currency: LedgerCurrency,
@@ -907,10 +933,16 @@ func financeNetExpenseAmount(
     func includedAmount(_ movements: [MoneyMovement]) -> Int64 {
         movements
             .filter { movement in
-                movement.money.currency == currency
-                    && data.accounts.first(where: { $0.id == movement.accountID })?.includeInTotals == true
+                data.accounts.first(where: { $0.id == movement.accountID })?.includeInTotals == true
             }
-            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+            .compactMap { movement in
+                financeConvertedMinorUnits(
+                    movement.money,
+                    to: currency,
+                    using: transaction.exchangeRate
+                )
+            }
+            .reduce(Int64.zero, +)
     }
 
     return max(includedAmount(transaction.outflows) - includedAmount(transaction.inflows), 0)
@@ -923,6 +955,11 @@ func financeCategoryIncludedInTotals(_ categoryID: UUID?, in categories: [Ledger
     while !visited.contains(currentID),
           let category = categories.first(where: { $0.id == currentID }) {
         visited.insert(currentID)
+        let categoryName = category.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if category.parentID == nil,
+           categoryName.caseInsensitiveCompare("Modified Bal.") == .orderedSame {
+            return false
+        }
         guard category.includeInTotals else { return false }
         guard let parentID = category.parentID else { return true }
         currentID = parentID

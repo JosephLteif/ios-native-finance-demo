@@ -475,6 +475,7 @@ private struct ImportWizardSourceStep: View {
 
     private let requiredFields: [ImportField] = [.date, .amount]
     private let recommendedFields: [ImportField] = [.kind, .currency, .account, .category, .note]
+    private let reportingFields: [ImportField] = [.baseAmount, .baseCurrency]
     private let advancedFields: [ImportField] = [
         .accountType,
         .destinationAccount,
@@ -505,6 +506,7 @@ private struct ImportWizardSourceStep: View {
 
             mappingSection("Required", fields: requiredFields)
             mappingSection("Recommended", fields: recommendedFields)
+            mappingSection("Reporting conversion", fields: reportingFields)
             mappingSection("Advanced transfers", fields: advancedFields)
 
             Section("Samples") {

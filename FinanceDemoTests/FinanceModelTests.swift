@@ -984,6 +984,89 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(transaction.categoryID, category.id)
     }
 
+    func testImportUsesReportingAmountToConvertLocalCurrencyMetrics() throws {
+        let account = Account(
+            name: "LBP Cash",
+            type: .cash,
+            currency: .lbp,
+            openingBalance: Money(currency: .lbp, minorUnits: 0)
+        )
+        let table = ImportedTable(
+            id: "money-manager-expense",
+            name: "Money Manager",
+            columns: [
+                "Date", "Type", "Amount", "Currency", "Reporting amount",
+                "Reporting currency", "Account", "Category"
+            ],
+            rows: [[
+                "2026-09-01", "Expense", "200000", "LBP", "2.24", "USD",
+                "LBP Cash", "Food"
+            ]]
+        )
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: account.id,
+                defaultDestinationAccountID: nil,
+                createMissingAccounts: true,
+                createMissingCategories: true
+            ),
+            existing: FinanceData(accounts: [account], categories: [], transactions: [])
+        )
+
+        let transaction = try XCTUnwrap(result.data.transactions.first)
+        let rate = try XCTUnwrap(transaction.exchangeRate)
+        XCTAssertEqual(transaction.outflows.first?.money, Money(currency: .lbp, minorUnits: 200_000))
+        XCTAssertEqual(rate.baseCurrency, .lbp)
+        XCTAssertEqual(rate.quoteCurrency, .usd)
+        XCTAssertEqual(
+            rate.quoteUnitsPerBaseUnit,
+            try XCTUnwrap(Decimal(string: "0.0000112"))
+        )
+        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .lbp, in: result.data), 200_000)
+        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .usd, in: result.data), 224)
+    }
+
+    func testImportExcludesModifiedBalanceFromMetrics() throws {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let table = ImportedTable(
+            id: "money-manager-balance",
+            name: "Money Manager",
+            columns: ["Date", "Type", "Amount", "Currency", "Account", "Category"],
+            rows: [["2026-09-03", "Expense Balance", "658.83", "USD", "Cash", "Modified Bal."]]
+        )
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: account.id,
+                defaultDestinationAccountID: nil,
+                createMissingAccounts: true,
+                createMissingCategories: true
+            ),
+            existing: FinanceData(accounts: [account], categories: [], transactions: [])
+        )
+
+        let transaction = try XCTUnwrap(result.data.transactions.first)
+        let category = try XCTUnwrap(result.data.categories.first)
+        XCTAssertFalse(category.includeInTotals)
+        let legacyCategory = LedgerCategory(name: "Modified Bal.")
+        XCTAssertFalse(financeCategoryIncludedInTotals(legacyCategory.id, in: [legacyCategory]))
+        XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .usd, in: result.data), 0)
+    }
+
     func testImportAddsRateToCrossCurrencyTransfer() throws {
         let source = Account(
             name: "Cash",

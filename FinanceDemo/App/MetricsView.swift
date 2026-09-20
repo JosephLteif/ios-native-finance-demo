@@ -488,7 +488,14 @@ struct MetricsView: View {
         for transaction in filteredTransactions where transaction.kind == kind {
             for movement in transaction[keyPath: movements] {
                 guard store.includesInTotals(accountID: movement.accountID) else { continue }
-                totals[movement.money.currency, default: 0] += movement.money.minorUnits
+                for currency in LedgerCurrency.allCases {
+                    guard let converted = financeConvertedMinorUnits(
+                        movement.money,
+                        to: currency,
+                        using: transaction.exchangeRate
+                    ) else { continue }
+                    totals[currency, default: 0] += converted
+                }
             }
         }
         return totals
