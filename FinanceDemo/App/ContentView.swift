@@ -2187,9 +2187,33 @@ private struct TransactionRow: View {
     let onDelete: () -> Void
     let onSaveTemplate: () -> Void
     let allowsActions: Bool
-    let isSelectionMode: Bool = false
-    let isSelected: Bool = false
-    let onToggleSelection: () -> Void = {}
+    let isSelectionMode: Bool
+    let isSelected: Bool
+    let onToggleSelection: () -> Void
+
+    init(
+        transaction: LedgerTransaction,
+        store: LedgerStore,
+        onEdit: @escaping () -> Void,
+        onDuplicate: @escaping () -> Void,
+        onDelete: @escaping () -> Void,
+        onSaveTemplate: @escaping () -> Void,
+        allowsActions: Bool,
+        isSelectionMode: Bool = false,
+        isSelected: Bool = false,
+        onToggleSelection: @escaping () -> Void = {}
+    ) {
+        self.transaction = transaction
+        self.store = store
+        self.onEdit = onEdit
+        self.onDuplicate = onDuplicate
+        self.onDelete = onDelete
+        self.onSaveTemplate = onSaveTemplate
+        self.allowsActions = allowsActions
+        self.isSelectionMode = isSelectionMode
+        self.isSelected = isSelected
+        self.onToggleSelection = onToggleSelection
+    }
 
     var body: some View {
         Button(action: isSelectionMode ? onToggleSelection : onEdit) {
