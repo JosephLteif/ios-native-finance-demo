@@ -2541,9 +2541,8 @@ struct TransactionEditor: View {
 
                                 Spacer()
 
-                                Button("Replace") {
-                                    replacingAttachmentID = attachment.id
-                                    isShowingAttachmentImporter = true
+                                Button(action: { beginReplacingAttachment(attachment) }) {
+                                    Text("Replace")
                                 }
                                 .font(.footnote.weight(.semibold))
                             }
@@ -2849,6 +2848,11 @@ struct TransactionEditor: View {
         attachmentIDs.compactMap { id in
             store.data.attachments.first(where: { $0.id == id })
         }
+    }
+
+    private func beginReplacingAttachment(_ attachment: LedgerAttachment) {
+        replacingAttachmentID = attachment.id
+        isShowingAttachmentImporter = true
     }
 
     private var selectableCategories: [LedgerCategory] {
