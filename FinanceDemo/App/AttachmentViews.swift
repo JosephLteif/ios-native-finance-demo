@@ -29,7 +29,7 @@ struct AttachmentPreviewView: View {
                 )
             }
         }
-        .background(PocketLedgerTheme.background.ignoresSafeArea())
+        .pocketScreen()
         .navigationTitle(attachment.fileName)
         .navigationBarTitleDisplayMode(.inline)
     }

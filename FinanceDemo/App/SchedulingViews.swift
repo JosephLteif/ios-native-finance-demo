@@ -30,7 +30,7 @@ struct ScheduledTransactionsView: View {
                         } label: {
                             Label("Enable due reminders", systemImage: "bell.badge")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                         .tint(PocketLedgerTheme.accent)
                         .padding(.horizontal, 4)
                     }
@@ -114,9 +114,13 @@ struct ScheduledTransactionsView: View {
             Button(action: presentNewSchedule) {
                 Image(systemName: "plus")
                     .font(.body.weight(.bold))
-                    .foregroundStyle(PocketLedgerTheme.background)
+                    .foregroundStyle(PocketLedgerTheme.accent)
                     .frame(minWidth: 44, minHeight: 44)
-                    .background(PocketLedgerTheme.accent, in: Circle())
+                    .pocketGlassSurface(
+                        cornerRadius: 22,
+                        tint: PocketLedgerTheme.accent.opacity(0.18),
+                        interactive: true
+                    )
             }
             .accessibilityLabel("Add scheduled transaction")
         }
@@ -134,14 +138,14 @@ struct ScheduledTransactionsView: View {
                 .foregroundStyle(PocketLedgerTheme.textSecondary)
                 .multilineTextAlignment(.center)
             Button("Create schedule", action: presentNewSchedule)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .tint(PocketLedgerTheme.accent)
                 .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 44)
         .padding(.horizontal, 20)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 20))
+        .pocketGlassSurface(cornerRadius: 20)
     }
 
     private func scheduleCard(_ schedule: ScheduledTransaction) -> some View {
@@ -187,7 +191,7 @@ struct ScheduledTransactionsView: View {
                     editingSchedule = schedule
                     isPresentingEditor = true
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .tint(PocketLedgerTheme.accent)
 
                 Spacer()
@@ -201,7 +205,7 @@ struct ScheduledTransactionsView: View {
             }
         }
         .padding(16)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 20))
+        .pocketGlassSurface(cornerRadius: 20)
         .overlay {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)

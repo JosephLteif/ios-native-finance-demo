@@ -139,18 +139,20 @@ struct MetricsView: View {
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    screenHeader
-                    periodControls
-                    periodNavigator
-                    totalsHeader
-                    spendingChart
-                    categoryRows
-                    activityMix
+                PocketGlassContainer(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        screenHeader
+                        periodControls
+                        periodNavigator
+                        totalsHeader
+                        spendingChart
+                        categoryRows
+                        activityMix
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
             }
             .pocketScreen()
             .toolbar(.hidden, for: .navigationBar)
@@ -181,7 +183,7 @@ struct MetricsView: View {
                 Image(systemName: "square.and.arrow.up")
                     .font(.headline.weight(.semibold))
                     .frame(minWidth: 44, minHeight: 44)
-                    .background(PocketLedgerTheme.surfaceElevated, in: Circle())
+                    .pocketGlassSurface(cornerRadius: 22, tint: PocketLedgerTheme.accent.opacity(0.14), interactive: true)
                     .overlay {
                         Circle().stroke(PocketLedgerTheme.divider, lineWidth: 1)
                     }
@@ -212,7 +214,7 @@ struct MetricsView: View {
                 .pickerStyle(.menu)
                 .tint(PocketLedgerTheme.textPrimary)
                 .padding(.horizontal, 8)
-                .background(PocketLedgerTheme.surfaceElevated, in: RoundedRectangle(cornerRadius: 10))
+                .pocketGlassSurface(cornerRadius: 10, tint: PocketLedgerTheme.surfaceElevated.opacity(0.22))
             }
 
             Picker("Category", selection: $selectedCategoryID) {
@@ -227,7 +229,7 @@ struct MetricsView: View {
             .tint(PocketLedgerTheme.textPrimary)
         }
         .padding(4)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 13))
+        .pocketGlassSurface(cornerRadius: 13)
         .overlay {
             RoundedRectangle(cornerRadius: 13)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -409,7 +411,7 @@ struct MetricsView: View {
             }
         }
         .padding(.horizontal, 14)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+        .pocketGlassSurface(cornerRadius: 18)
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -654,15 +656,17 @@ private struct CategoryMetricsDetailView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                detailHeader
-                lineChart
-                detailCategoryRow
-                transactionRows
+            PocketGlassContainer(spacing: 14) {
+                VStack(alignment: .leading, spacing: 0) {
+                    detailHeader
+                    lineChart
+                    detailCategoryRow
+                    transactionRows
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 24)
         }
         .pocketScreen()
         .navigationTitle(categoryTitle)
@@ -769,7 +773,7 @@ private struct CategoryMetricsDetailView: View {
         }
         .padding(.vertical, 15)
         .padding(.horizontal, 14)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .pocketGlassSurface(cornerRadius: 16)
         .overlay {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)

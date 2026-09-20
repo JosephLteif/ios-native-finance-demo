@@ -461,7 +461,7 @@ struct BillScannerView: View {
                             Spacer()
                         }
                         .padding(14)
-                        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .pocketGlassSurface(cornerRadius: 16)
                     }
 
                     if let scanStatusMessage, !scanStatusMessage.isEmpty, !isScanning {
@@ -470,7 +470,7 @@ struct BillScannerView: View {
                             .foregroundStyle(PocketLedgerTheme.textSecondary)
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                            .pocketGlassSurface(cornerRadius: 14)
                     }
 
                     if !lineItems.isEmpty {
@@ -492,7 +492,7 @@ struct BillScannerView: View {
                         }
                         .padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                        .pocketGlassSurface(cornerRadius: 18)
                     }
 
                     if !recognizedText.isEmpty {
@@ -505,7 +505,7 @@ struct BillScannerView: View {
                                 .padding(.top, 8)
                         }
                         .padding(16)
-                        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                        .pocketGlassSurface(cornerRadius: 18)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -569,7 +569,7 @@ struct BillScannerView: View {
                 Label("Choose photo", systemImage: "photo")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .tint(PocketLedgerTheme.accent)
 
             if UIImagePickerController.isSourceTypeAvailable(.camera) {
@@ -579,7 +579,7 @@ struct BillScannerView: View {
                     Label("Camera", systemImage: "camera")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .tint(PocketLedgerTheme.accent)
             }
             }
@@ -590,7 +590,7 @@ struct BillScannerView: View {
                 Label("Choose PDF", systemImage: "doc.richtext")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
             .tint(PocketLedgerTheme.accent)
         }
     }
@@ -660,7 +660,7 @@ struct BillScannerView: View {
             }
         }
         .padding(14)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+        .pocketGlassSurface(cornerRadius: 18)
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -690,7 +690,7 @@ struct BillScannerView: View {
                     Label("Use total in transaction", systemImage: "arrow.down.to.line")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .tint(PocketLedgerTheme.accent)
 
                 if !hasMatchingAccount {
@@ -703,22 +703,11 @@ struct BillScannerView: View {
                     } label: {
                         Label("Add \(currency.rawValue) account", systemImage: "plus.circle")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                 }
             }
             .padding(16)
-            .background(
-                LinearGradient(
-                    colors: [PocketLedgerTheme.surfaceElevated, PocketLedgerTheme.surface],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: 20)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-            }
+            .pocketGlassSurface(cornerRadius: 20, tint: PocketLedgerTheme.accent.opacity(0.08))
         } else {
             Text("Select at least one item and enter a valid price for every selected line.")
                 .font(.footnote)

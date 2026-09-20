@@ -22,9 +22,13 @@ struct BudgetsView: View {
                         Button { presentNewBudget() } label: {
                                 Image(systemName: "plus")
                                     .font(.body.weight(.bold))
-                                    .foregroundStyle(PocketLedgerTheme.background)
+                                    .foregroundStyle(PocketLedgerTheme.accent)
                                     .frame(minWidth: 44, minHeight: 44)
-                                .background(PocketLedgerTheme.accent, in: Circle())
+                                .pocketGlassSurface(
+                                    cornerRadius: 22,
+                                    tint: PocketLedgerTheme.accent.opacity(0.18),
+                                    interactive: true
+                                )
                         }
                         .accessibilityLabel("Add budget")
                         .accessibilityHint("Creates a new monthly budget")
@@ -41,13 +45,13 @@ struct BudgetsView: View {
                                 .foregroundStyle(PocketLedgerTheme.textSecondary)
                                 .multilineTextAlignment(.center)
                             Button("Create budget", action: presentNewBudget)
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(.glassProminent)
                                 .tint(PocketLedgerTheme.accent)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 42)
                         .padding(.horizontal, 20)
-                        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 20))
+                        .pocketGlassSurface(cornerRadius: 20)
                     } else {
                         ForEach(store.data.budgets) { budget in
                             budgetCard(budget)
@@ -111,7 +115,7 @@ struct BudgetsView: View {
             }
         }
         .padding(16)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 20))
+        .pocketGlassSurface(cornerRadius: 20)
         .overlay { RoundedRectangle(cornerRadius: 20).stroke(PocketLedgerTheme.divider, lineWidth: 1) }
     }
 

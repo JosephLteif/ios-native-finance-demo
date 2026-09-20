@@ -68,75 +68,76 @@ struct AccountDetailView: View {
         }
 
         return ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 18) {
-                balanceCard(account)
-                totalsScopeCard(account)
+            PocketGlassContainer(spacing: 14) {
+                VStack(alignment: .leading, spacing: 18) {
+                    balanceCard(account)
+                    totalsScopeCard(account)
 
-                HStack(spacing: 10) {
-                    accountMetric(
-                        title: "Transactions",
-                        value: "\(transactions.count)",
-                        systemImage: "arrow.left.arrow.right",
-                        tint: PocketLedgerTheme.accent
-                    )
-                    accountMetric(
-                        title: "Money in",
-                        value: Money(currency: account.currency, minorUnits: incoming).formatted,
-                        systemImage: "arrow.down.left",
-                        tint: PocketLedgerTheme.income
-                    )
-                    accountMetric(
-                        title: "Money out",
-                        value: Money(currency: account.currency, minorUnits: outgoing).formatted,
-                        systemImage: "arrow.up.right",
-                        tint: PocketLedgerTheme.warning
-                    )
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Account activity")
-                            .font(.title3.weight(.bold))
-                        Spacer()
-                        Text("All time")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    HStack(spacing: 10) {
+                        accountMetric(
+                            title: "Transactions",
+                            value: "\(transactions.count)",
+                            systemImage: "arrow.left.arrow.right",
+                            tint: PocketLedgerTheme.accent
+                        )
+                        accountMetric(
+                            title: "Money in",
+                            value: Money(currency: account.currency, minorUnits: incoming).formatted,
+                            systemImage: "arrow.down.left",
+                            tint: PocketLedgerTheme.income
+                        )
+                        accountMetric(
+                            title: "Money out",
+                            value: Money(currency: account.currency, minorUnits: outgoing).formatted,
+                            systemImage: "arrow.up.right",
+                            tint: PocketLedgerTheme.warning
+                        )
                     }
 
-                    if transactions.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "tray")
-                                .font(.title2)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Account activity")
+                                .font(.title3.weight(.bold))
+                            Spacer()
+                            Text("All time")
+                                .font(.caption.weight(.medium))
                                 .foregroundStyle(PocketLedgerTheme.textTertiary)
-                            Text("No transactions for this account")
-                                .font(.headline)
-                            Text("Transactions that use this account will appear here.")
-                                .font(.subheadline)
-                                .foregroundStyle(PocketLedgerTheme.textSecondary)
-                                .multilineTextAlignment(.center)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 28)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(transactions) { transaction in
-                                AccountTransactionRow(
-                                    transaction: transaction,
-                                    account: account,
-                                    store: store
-                                )
-                                Divider().overlay(PocketLedgerTheme.divider)
+
+                        if transactions.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "tray")
+                                    .font(.title2)
+                                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+                                Text("No transactions for this account")
+                                    .font(.headline)
+                                Text("Transactions that use this account will appear here.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 28)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(transactions) { transaction in
+                                    AccountTransactionRow(
+                                        transaction: transaction,
+                                        account: account,
+                                        store: store
+                                    )
+                                    Divider().overlay(PocketLedgerTheme.divider)
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .pocketGlassSurface(cornerRadius: 18)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 18)
+                                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
                             }
                         }
-                        .padding(.horizontal, 14)
-                        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 18)
-                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                        }
                     }
                 }
-            }
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 24)
@@ -157,7 +158,7 @@ struct AccountDetailView: View {
         }
         .tint(PocketLedgerTheme.accent)
         .padding(16)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+        .pocketGlassSurface(cornerRadius: 18)
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -195,22 +196,11 @@ struct AccountDetailView: View {
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .tint(PocketLedgerTheme.accent)
         }
         .padding(20)
-        .background(
-            LinearGradient(
-                colors: [PocketLedgerTheme.surfaceElevated, PocketLedgerTheme.surface],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 22)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-        }
+        .pocketGlassSurface(cornerRadius: 22, tint: PocketLedgerTheme.accent.opacity(0.08))
     }
 
     private func accountMetric(title: String, value: String, systemImage: String, tint: Color) -> some View {
@@ -227,7 +217,7 @@ struct AccountDetailView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
         .padding(11)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .pocketGlassSurface(cornerRadius: 16)
     }
 }
 
@@ -255,7 +245,7 @@ private struct AccountTransactionRow: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 36, height: 36)
-                .background(tint.opacity(0.14), in: Circle())
+                .pocketGlassSurface(cornerRadius: 18, tint: tint.opacity(0.12))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(transaction.note)
@@ -371,8 +361,8 @@ private struct AccountBalanceEditor: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle("Edit balance")
             .navigationBarTitleDisplayMode(.inline)

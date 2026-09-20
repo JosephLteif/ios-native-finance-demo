@@ -155,7 +155,7 @@ struct DataTransferView: View {
                 Label("Export full backup", systemImage: "square.and.arrow.up")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
 
             Button {
                 startJSONBackupExport()
@@ -163,7 +163,7 @@ struct DataTransferView: View {
                 Label("Export JSON compatibility backup", systemImage: "doc.text")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
 
             Button {
                 csvDocument = LedgerCSVDocument(data: LedgerCSVExporter.data(for: store.data))
@@ -172,7 +172,7 @@ struct DataTransferView: View {
                 Label("Export transactions as CSV", systemImage: "tablecells")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
 
             Text("The full backup includes local receipt files. JSON remains available for compatibility, while CSV is useful for spreadsheets and other finance apps.")
                 .font(.footnote)
@@ -195,7 +195,7 @@ struct DataTransferView: View {
                 isShowingResetPreparation = true
             }
             .frame(maxWidth: .infinity)
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
             .tint(PocketLedgerTheme.warning)
         }
         .pocketCard()
@@ -216,7 +216,7 @@ struct DataTransferView: View {
                 Label("Restore last-good snapshot", systemImage: "arrow.uturn.backward")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
             .tint(PocketLedgerTheme.accent)
         }
         .pocketCard()
@@ -237,7 +237,7 @@ struct DataTransferView: View {
                 Label("Choose import file", systemImage: "folder")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
 
             Text("Supported spreadsheet input is .xlsx. Legacy binary .xls files should be exported as .xlsx, CSV, or TSV first.")
                 .font(.footnote)
@@ -384,8 +384,8 @@ private struct BackupRestoreView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle("Restore backup")
             .navigationBarTitleDisplayMode(.inline)
@@ -566,8 +566,8 @@ private struct ImportMappingView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle("Map import")
             .navigationBarTitleDisplayMode(.inline)
@@ -793,8 +793,8 @@ private struct ImportReviewView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .searchable(text: $searchText, prompt: "Search imported rows")
             .navigationTitle("Review import")

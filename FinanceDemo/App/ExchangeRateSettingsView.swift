@@ -88,8 +88,8 @@ struct ExchangeRatesView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(PocketLedgerTheme.background)
-        .listRowBackground(PocketLedgerTheme.surface)
+        .pocketScreen()
+        .listRowBackground(.clear)
         .tint(PocketLedgerTheme.accent)
         .navigationTitle("Exchange rates")
         .navigationBarTitleDisplayMode(.inline)
@@ -155,8 +155,8 @@ private struct ExchangeRateEditor: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(existingRate == nil ? "Add exchange rate" : "Edit exchange rate")
             .navigationBarTitleDisplayMode(.inline)

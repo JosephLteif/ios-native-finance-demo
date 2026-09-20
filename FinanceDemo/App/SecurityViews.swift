@@ -154,8 +154,8 @@ struct SecuritySettingsView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -248,8 +248,8 @@ private struct PasscodeSetupView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(mode.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -355,7 +355,7 @@ struct AppLockView: View {
                 }
 
             Button("Unlock", action: unlockWithPasscode)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .tint(PocketLedgerTheme.accent)
                 .disabled(!AppPasscodeRules.isValid(passcode))
 

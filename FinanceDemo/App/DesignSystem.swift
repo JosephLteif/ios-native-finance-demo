@@ -202,6 +202,7 @@ enum PocketLedgerTheme {
     static var income: Color { palette.income }
     static var positive: Color { palette.positive }
     static var warning: Color { palette.warning }
+    static var glassTint: Color { accent.opacity(0.10) }
 }
 
 struct PocketIcon: View {
@@ -214,14 +215,46 @@ struct PocketIcon: View {
             .font(.system(size: size * 0.42, weight: .semibold))
             .foregroundStyle(tint)
             .frame(width: size, height: size)
-            .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: size * 0.28))
+            .pocketGlassSurface(cornerRadius: size * 0.28, tint: tint.opacity(0.12))
+    }
+}
+
+struct PocketGlassContainer<Content: View>: View {
+    private let spacing: CGFloat
+    private let content: Content
+
+    init(spacing: CGFloat = 12, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if #available(iOS 26, *) {
+            GlassEffectContainer(spacing: spacing) {
+                content
+            }
+        } else {
+            content
+        }
     }
 }
 
 extension View {
     func pocketScreen() -> some View {
         self
-            .background(PocketLedgerTheme.background.ignoresSafeArea())
+            .background {
+                LinearGradient(
+                    colors: [
+                        PocketLedgerTheme.background,
+                        PocketLedgerTheme.surfaceElevated.opacity(0.24),
+                        PocketLedgerTheme.background
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+            }
             .foregroundStyle(PocketLedgerTheme.textPrimary)
             .tint(PocketLedgerTheme.accent)
             .preferredColorScheme(PocketLedgerTheme.appearanceMode.preferredColorScheme)
@@ -231,10 +264,65 @@ extension View {
         self
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: cornerRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+            .pocketGlassSurface(cornerRadius: cornerRadius)
+    }
+
+    @ViewBuilder
+    func pocketGlassSurface(
+        cornerRadius: CGFloat = 18,
+        tint: Color? = nil,
+        interactive: Bool = false
+    ) -> some View {
+        if #available(iOS 26, *) {
+            if interactive {
+                self.glassEffect(
+                    .regular
+                        .tint(tint ?? PocketLedgerTheme.glassTint)
+                        .interactive(),
+                    in: .rect(cornerRadius: cornerRadius)
+                )
+            } else {
+                self.glassEffect(
+                    .regular.tint(tint ?? PocketLedgerTheme.glassTint),
+                    in: .rect(cornerRadius: cornerRadius)
+                )
             }
+        } else {
+            self
+                .background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                }
+        }
+    }
+
+    @ViewBuilder
+    func pocketGlassCapsule(tint: Color? = nil, interactive: Bool = false) -> some View {
+        if #available(iOS 26, *) {
+            if interactive {
+                self.glassEffect(
+                    .regular
+                        .tint(tint ?? PocketLedgerTheme.glassTint)
+                        .interactive(),
+                    in: .capsule
+                )
+            } else {
+                self.glassEffect(
+                    .regular.tint(tint ?? PocketLedgerTheme.glassTint),
+                    in: .capsule
+                )
+            }
+        } else {
+            self
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                }
+        }
     }
 }

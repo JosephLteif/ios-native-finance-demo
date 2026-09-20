@@ -123,12 +123,15 @@ private final class PocketLedgerTabBarController: UITabBarController {
 
     func installVisibleTabBar(items: [UITabBarItem], delegate: any UITabBarDelegate) {
         tabBar.isHidden = false
-        tabBar.alpha = 0.001
+        tabBar.alpha = 0
         tabBar.isUserInteractionEnabled = false
         tabBar.accessibilityElementsHidden = true
         visibleTabBar.items = items
         visibleTabBar.delegate = delegate
         visibleTabBar.tintColor = UIColor(PocketLedgerTheme.accent)
+        visibleTabBar.unselectedItemTintColor = UIColor(PocketLedgerTheme.textSecondary)
+        visibleTabBar.isTranslucent = true
+        visibleTabBar.accessibilityIdentifier = "main-tab-bar"
         if visibleTabBar.superview == nil {
             view.addSubview(visibleTabBar)
         }
@@ -224,11 +227,18 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
     }
 
     private func makeViewControllers() -> [UIViewController] {
+        let addExpense = onAddAction
+
         AppTab.tabBarOrder.map { tab in
             let viewController: UIViewController
             switch tab {
             case .overview:
-                viewController = UIHostingController(rootView: DashboardView(store: store))
+                viewController = UIHostingController(
+                    rootView: DashboardView(
+                        store: store,
+                        onAddExpense: { addExpense(.expense) }
+                    )
+                )
             case .accounts:
                 viewController = UIHostingController(
                     rootView: NavigationStack {
@@ -238,13 +248,22 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
             case .transactions:
                 viewController = UIHostingController(
                     rootView: NavigationStack {
-                        TransactionsView(store: store)
+                        TransactionsView(
+                            store: store,
+                            onAddExpense: { addExpense(.expense) }
+                        )
                     }
                 )
             case .metrics:
                 viewController = UIHostingController(rootView: MetricsView(store: store))
             case .more:
-                viewController = UIHostingController(rootView: MoreView(store: store, security: security))
+                viewController = UIHostingController(
+                    rootView: MoreView(
+                        store: store,
+                        security: security,
+                        onAddExpense: { addExpense(.expense) }
+                    )
+                )
             }
 
             viewController.tabBarItem = UITabBarItem(
@@ -278,14 +297,20 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         )
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
         configuration.cornerStyle = .capsule
+        configuration.baseBackgroundColor = UIColor(PocketLedgerTheme.accent.opacity(0.12))
+        configuration.baseForegroundColor = UIColor(PocketLedgerTheme.accent)
 
         let button = UIButton(configuration: configuration)
+        let coordinator = context.coordinator
+        button.addAction(UIAction { [weak coordinator] _ in
+            coordinator?.onAddAction(.expense)
+        }, for: .primaryActionTriggered)
         button.tintColor = UIColor(PocketLedgerTheme.accent)
         button.menu = makeAddMenu(coordinator: context.coordinator)
-        button.showsMenuAsPrimaryAction = true
+        button.showsMenuAsPrimaryAction = false
         button.accessibilityIdentifier = "add-transaction-button"
-        button.accessibilityLabel = "Add"
-        button.accessibilityHint = "Choose what to add"
+        button.accessibilityLabel = "Add expense"
+        button.accessibilityHint = "Tap to add an expense. Press and hold for more options."
         return button
     }
 
@@ -474,12 +499,27 @@ enum AppTab: String, Hashable {
 private struct MoreView: View {
     @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
+    let onAddExpense: () -> Void
     @State private var isShowingSetup = false
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                Section("History") {
+                    NavigationLink {
+                        TransactionsView(store: store, onAddExpense: onAddExpense)
+                    } label: {
+                        Label("Transactions", systemImage: "list.bullet.rectangle")
+                    }
+                }
+
+                Section("Planning") {
+                    NavigationLink {
+                        BudgetsView(store: store)
+                    } label: {
+                        Label("Budgets", systemImage: "chart.bar.doc.horizontal")
+                    }
+
                     NavigationLink {
                         ScheduledTransactionsView(store: store)
                     } label: {
@@ -487,11 +527,13 @@ private struct MoreView: View {
                     }
 
                     NavigationLink {
-                        TransactionsView(store: store)
+                        TemplatesView(store: store)
                     } label: {
-                        Label("Transactions", systemImage: "list.bullet.rectangle")
+                        Label("Templates", systemImage: "rectangle.stack")
                     }
+                }
 
+                Section("Organization") {
                     NavigationLink {
                         CategoriesView(store: store)
                     } label: {
@@ -503,17 +545,13 @@ private struct MoreView: View {
                     } label: {
                         Label("Exchange rates", systemImage: "arrow.left.arrow.right")
                     }
+                }
 
+                Section {
                     NavigationLink {
-                        BudgetsView(store: store)
+                        DataTransferView(store: store)
                     } label: {
-                        Label("Budgets", systemImage: "chart.bar.doc.horizontal")
-                    }
-
-                    NavigationLink {
-                        TemplatesView(store: store)
-                    } label: {
-                        Label("Templates", systemImage: "rectangle.stack")
+                        Label("Import & Backup", systemImage: "externaldrive.badge.icloud")
                     }
 
                     NavigationLink {
@@ -528,14 +566,16 @@ private struct MoreView: View {
                         Label("Setup guide", systemImage: "wand.and.stars")
                     }
                 } header: {
-                    Text("Manage the rest of your ledger")
+                    Text("Data & security")
+                } footer: {
+                    Text("Keep advanced tools close without crowding the daily flow")
                 }
             }
             .navigationTitle("More")
             .navigationBarTitleDisplayMode(.large)
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
+            .pocketScreen()
             .sheet(isPresented: $isShowingSetup) {
                 SetupWizardView(store: store)
             }
@@ -546,6 +586,7 @@ private struct MoreView: View {
 @MainActor
 private struct DashboardView: View {
     @ObservedObject var store: LedgerStore
+    let onAddExpense: () -> Void
     @State private var editingTransaction: LedgerTransaction?
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
@@ -553,25 +594,27 @@ private struct DashboardView: View {
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    dashboardHeader
-                    balanceHero
-                    monthSnapshot
-                    upcomingSchedules
-                    budgetSnapshot
-                    recentActivity
-                    storageNotice
+                PocketGlassContainer(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        dashboardHeader
+                        balanceHero
+                        monthSnapshot
+                        recentActivity
+                        upcomingSchedules
+                        budgetSnapshot
+                        storageNotice
 
-                    if let status = store.lastActionStatus {
-                        Text(status)
-                            .font(.caption)
-                            .foregroundStyle(PocketLedgerTheme.textTertiary)
-                            .padding(.horizontal, 4)
+                        if let status = store.lastActionStatus {
+                            Text(status)
+                                .font(.caption)
+                                .foregroundStyle(PocketLedgerTheme.textTertiary)
+                                .padding(.horizontal, 4)
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
             }
             .pocketScreen()
             .accessibilityIdentifier("dashboard-\(selectedColorTheme)")
@@ -629,18 +672,7 @@ private struct DashboardView: View {
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
         }
         .padding(20)
-        .background(
-            LinearGradient(
-                colors: [PocketLedgerTheme.surfaceElevated, PocketLedgerTheme.surface],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 22)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-        }
+        .pocketGlassSurface(cornerRadius: 22, tint: PocketLedgerTheme.accent.opacity(0.08))
     }
 
     private func balanceRow(for currency: LedgerCurrency) -> some View {
@@ -697,7 +729,7 @@ private struct DashboardView: View {
                 }
             }
             .padding(14)
-            .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 17))
+            .pocketGlassSurface(cornerRadius: 17)
         }
     }
 
@@ -735,7 +767,7 @@ private struct DashboardView: View {
                     }
                 }
                 .padding(.horizontal, 14)
-                .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 17))
+                .pocketGlassSurface(cornerRadius: 17)
 
                 if schedules.count > 3 {
                     Text("+\(schedules.count - 3) more scheduled \(schedules.count - 3 == 1 ? "entry" : "entries")")
@@ -753,7 +785,7 @@ private struct DashboardView: View {
                 .font(.body.weight(.semibold))
                 .foregroundStyle(schedule.kind == .income ? PocketLedgerTheme.income : PocketLedgerTheme.accent)
                 .frame(width: 28, height: 28)
-                .background(PocketLedgerTheme.surfaceElevated, in: Circle())
+                .pocketGlassSurface(cornerRadius: 14, tint: PocketLedgerTheme.accent.opacity(0.14))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(schedule.note.isEmpty ? schedule.kind.displayName : schedule.note)
@@ -818,7 +850,7 @@ private struct DashboardView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
         .padding(13)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 17))
+        .pocketGlassSurface(cornerRadius: 17)
     }
 
     private func monthExpenseRow(currency: LedgerCurrency, total: Int64) -> some View {
@@ -848,7 +880,7 @@ private struct DashboardView: View {
                     .font(.title3.weight(.bold))
                 Spacer()
                 NavigationLink("See all") {
-                    TransactionsView(store: store)
+                    TransactionsView(store: store, onAddExpense: onAddExpense)
                 }
                 .font(.caption.weight(.semibold))
             }
@@ -864,6 +896,8 @@ private struct DashboardView: View {
                         .font(.subheadline)
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
                         .multilineTextAlignment(.center)
+                    Button("Add expense", systemImage: "plus", action: onAddExpense)
+                        .buttonStyle(.glassProminent)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 22)
@@ -884,7 +918,7 @@ private struct DashboardView: View {
                     }
                 }
                 .padding(.horizontal, 14)
-                .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                .pocketGlassSurface(cornerRadius: 18)
                 .overlay {
                     RoundedRectangle(cornerRadius: 18)
                         .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -935,7 +969,7 @@ private struct DashboardView: View {
                     }
                 }
                 .padding(14)
-                .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 17))
+                .pocketGlassSurface(cornerRadius: 17)
             }
         }
     }
@@ -958,7 +992,7 @@ private struct DashboardView: View {
                           : PocketLedgerTheme.warning)
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(PocketLedgerTheme.surface.opacity(0.72), in: Capsule())
+        .pocketGlassCapsule(tint: PocketLedgerTheme.accent.opacity(0.08))
     }
 
     private func sectionHeader(title: String, detail: String) -> some View {
@@ -1030,6 +1064,7 @@ private struct TransactionDay: Identifiable {
 @MainActor
 private struct TransactionsView: View {
     @ObservedObject var store: LedgerStore
+    let onAddExpense: () -> Void
     @State private var selectedFilter: TransactionFilter = .all
     @State private var selectedPeriod: TransactionPeriod = .all
     @State private var searchText = ""
@@ -1040,6 +1075,7 @@ private struct TransactionsView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
+            PocketGlassContainer(spacing: 14) {
                 VStack(alignment: .leading, spacing: 18) {
                     screenHeader
 
@@ -1078,6 +1114,8 @@ private struct TransactionsView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 38)
+                        Button("Add expense", systemImage: "plus", action: onAddExpense)
+                            .buttonStyle(.glassProminent)
                     } else {
                         ForEach(groupedTransactions) { day in
                             VStack(alignment: .leading, spacing: 0) {
@@ -1098,7 +1136,7 @@ private struct TransactionsView: View {
                                     }
                                 }
                                 .padding(.horizontal, 14)
-                                .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                                .pocketGlassSurface(cornerRadius: 18)
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 18)
                                         .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -1111,34 +1149,35 @@ private struct TransactionsView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 24)
             }
-            .pocketScreen()
-            .sheet(isPresented: $isPresentingBillScanner) {
-                BillScannerView(store: store)
-            }
-            .sheet(item: $editingTransaction) { transaction in
-                TransactionEditor(store: store, transaction: transaction)
-            }
-            .sheet(item: $transactionToTemplate) { transaction in
-                TemplateNameEditor(store: store, transaction: transaction)
-            }
-            .confirmationDialog(
-                "Delete transaction?",
-                isPresented: Binding(
-                    get: { transactionToDelete != nil },
-                    set: { if !$0 { transactionToDelete = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("Delete", role: .destructive) {
-                    if let transactionToDelete {
-                        _ = store.deleteTransaction(id: transactionToDelete.id)
-                    }
-                    self.transactionToDelete = nil
+        }
+        .pocketScreen()
+        .sheet(isPresented: $isPresentingBillScanner) {
+            BillScannerView(store: store)
+        }
+        .sheet(item: $editingTransaction) { transaction in
+            TransactionEditor(store: store, transaction: transaction)
+        }
+        .sheet(item: $transactionToTemplate) { transaction in
+            TemplateNameEditor(store: store, transaction: transaction)
+        }
+        .confirmationDialog(
+            "Delete transaction?",
+            isPresented: Binding(
+                get: { transactionToDelete != nil },
+                set: { if !$0 { transactionToDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let transactionToDelete {
+                    _ = store.deleteTransaction(id: transactionToDelete.id)
                 }
-                Button("Cancel", role: .cancel) { transactionToDelete = nil }
-            } message: {
-                Text(transactionToDelete?.note ?? "")
+                self.transactionToDelete = nil
             }
+            Button("Cancel", role: .cancel) { transactionToDelete = nil }
+        } message: {
+            Text(transactionToDelete?.note ?? "")
+        }
         }
 
     private var screenHeader: some View {
@@ -1158,9 +1197,13 @@ private struct TransactionsView: View {
             } label: {
                 Image(systemName: "doc.viewfinder")
                     .font(.body.weight(.bold))
-                    .foregroundStyle(PocketLedgerTheme.background)
+                    .foregroundStyle(PocketLedgerTheme.positive)
                     .frame(minWidth: 44, minHeight: 44)
-                    .background(PocketLedgerTheme.positive, in: Circle())
+                    .pocketGlassSurface(
+                        cornerRadius: 22,
+                        tint: PocketLedgerTheme.positive.opacity(0.18),
+                        interactive: true
+                    )
             }
             .accessibilityLabel("Scan bill")
 
@@ -1271,7 +1314,7 @@ private struct TransactionsView: View {
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
             .frame(width: 46, height: 46)
-            .background(PocketLedgerTheme.surfaceElevated, in: RoundedRectangle(cornerRadius: 13))
+            .pocketGlassSurface(cornerRadius: 13, tint: PocketLedgerTheme.surfaceElevated.opacity(0.22))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(day.date, style: .date)
@@ -1328,7 +1371,7 @@ private struct TransactionRow: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(accentColor)
                 .frame(width: 38, height: 38)
-                .background(accentColor.opacity(0.14), in: Circle())
+                .pocketGlassSurface(cornerRadius: 19, tint: accentColor.opacity(0.12))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(transaction.note)
@@ -1429,33 +1472,35 @@ private struct AccountsView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 18) {
-                screenHeader
-                globalPositionSummary
+            PocketGlassContainer(spacing: 14) {
+                VStack(alignment: .leading, spacing: 18) {
+                    screenHeader
+                    globalPositionSummary
 
-                ForEach(AccountType.allCases) { accountType in
-                    let accounts = store.activeAccounts.filter { $0.type == accountType }
-                    if !accounts.isEmpty {
-                        accountSection(type: accountType, accounts: accounts)
+                    ForEach(AccountType.allCases) { accountType in
+                        let accounts = store.activeAccounts.filter { $0.type == accountType }
+                        if !accounts.isEmpty {
+                            accountSection(type: accountType, accounts: accounts)
+                        }
                     }
-                }
 
-                if !archivedAccounts.isEmpty {
-                    archivedAccountsSection
-                }
+                    if !archivedAccounts.isEmpty {
+                        archivedAccountsSection
+                    }
 
-                Text(store.storageAvailable && store.sharedStorageAvailable
-                     ? "Stored locally in the shared app container."
-                     : store.storageAvailable
-                     ? "Stored persistently on this device; widget sharing is unavailable."
-                     : "Persistent storage is unavailable; changes cannot be saved.")
-                    .font(.caption)
-                    .foregroundStyle(PocketLedgerTheme.textTertiary)
-                    .padding(.horizontal, 4)
+                    Text(store.storageAvailable && store.sharedStorageAvailable
+                         ? "Stored locally in the shared app container."
+                         : store.storageAvailable
+                         ? "Stored persistently on this device; widget sharing is unavailable."
+                         : "Persistent storage is unavailable; changes cannot be saved.")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                        .padding(.horizontal, 4)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 24)
         }
         .pocketScreen()
         .navigationTitle("Accounts")
@@ -1559,9 +1604,13 @@ private struct AccountsView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.body.weight(.bold))
-                    .foregroundStyle(PocketLedgerTheme.background)
+                    .foregroundStyle(PocketLedgerTheme.accent)
                     .frame(minWidth: 44, minHeight: 44)
-                    .background(PocketLedgerTheme.accent, in: Circle())
+                    .pocketGlassSurface(
+                        cornerRadius: 22,
+                        tint: PocketLedgerTheme.accent.opacity(0.18),
+                        interactive: true
+                    )
             }
             .accessibilityLabel("Add account")
         }
@@ -1629,7 +1678,7 @@ private struct AccountsView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+            .pocketGlassSurface(cornerRadius: 18)
             .overlay {
                 RoundedRectangle(cornerRadius: 18)
                     .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -1677,7 +1726,7 @@ private struct AccountsView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+            .pocketGlassSurface(cornerRadius: 18)
             .overlay {
                 RoundedRectangle(cornerRadius: 18)
                     .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -1811,9 +1860,13 @@ private struct CategoriesView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.body.weight(.bold))
-                    .foregroundStyle(PocketLedgerTheme.background)
+                    .foregroundStyle(PocketLedgerTheme.accent)
                     .frame(minWidth: 44, minHeight: 44)
-                    .background(PocketLedgerTheme.accent, in: Circle())
+                    .pocketGlassSurface(
+                        cornerRadius: 22,
+                        tint: PocketLedgerTheme.accent.opacity(0.18),
+                        interactive: true
+                    )
             }
             .accessibilityLabel("Add category")
         }
@@ -1905,7 +1958,7 @@ private struct CategoryTile: View {
         }
         .frame(maxWidth: .infinity, minHeight: 70)
         .padding(.horizontal, 4)
-        .background(PocketLedgerTheme.surfaceElevated, in: RoundedRectangle(cornerRadius: 13))
+        .pocketGlassSurface(cornerRadius: 13, tint: PocketLedgerTheme.surfaceElevated.opacity(0.22))
         .contextMenu {
             Button("Edit", systemImage: "pencil", action: onEdit)
             Button("Archive", systemImage: "archivebox", action: onArchive)
@@ -1986,8 +2039,8 @@ struct AccountEditor: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(account == nil ? "New account" : "Edit account")
             .navigationBarTitleDisplayMode(.inline)
@@ -2111,8 +2164,8 @@ private struct CategoryEditor: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(category == nil ? "New category" : "Edit category")
             .navigationBarTitleDisplayMode(.inline)
@@ -2564,8 +2617,8 @@ struct TransactionEditor: View {
                 synchronizeAutomaticTransferAmount()
             }
             .scrollContentBackground(.hidden)
-            .background(PocketLedgerTheme.background)
-            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+            .listRowBackground(.clear)
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)

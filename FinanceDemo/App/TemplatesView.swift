@@ -32,7 +32,7 @@ struct TemplatesView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 42)
                         .padding(.horizontal, 20)
-                        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 20))
+                        .pocketGlassSurface(cornerRadius: 20)
                     } else {
                         ForEach(store.data.templates) { template in
                             templateCard(template)
@@ -80,7 +80,7 @@ struct TemplatesView: View {
 
             HStack {
                 Button("Use template") { templateToUse = template }
-                    .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                     .tint(PocketLedgerTheme.accent)
                 Spacer()
                 Button(role: .destructive) { templateToDelete = template } label: {
@@ -92,7 +92,7 @@ struct TemplatesView: View {
             }
         }
         .padding(16)
-        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 20))
+        .pocketGlassSurface(cornerRadius: 20)
         .overlay {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
