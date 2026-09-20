@@ -1355,7 +1355,7 @@ private struct AttentionInboxView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 54)
         .padding(.horizontal, 20)
-        .pocketGlassSurface(cornerRadius: 20, tint: PocketLedgerTheme.positive.opacity(0.08))
+        .pocketGroupedSurface(cornerRadius: 20)
     }
 
     private func attentionCard(_ item: FinanceAttentionItem) -> some View {
@@ -1403,7 +1403,7 @@ private struct AttentionInboxView: View {
             .accessibilityLabel("Dismiss \(item.title)")
         }
         .padding(16)
-        .pocketGlassSurface(cornerRadius: 20)
+        .pocketGroupedSurface(cornerRadius: 20)
         .overlay {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -2579,7 +2579,7 @@ private struct AccountsView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .pocketGlassSurface(cornerRadius: 18)
+            .pocketGroupedSurface(cornerRadius: 18)
             .overlay {
                 RoundedRectangle(cornerRadius: 18)
                     .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -2627,7 +2627,7 @@ private struct AccountsView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .pocketGlassSurface(cornerRadius: 18)
+            .pocketGroupedSurface(cornerRadius: 18)
             .overlay {
                 RoundedRectangle(cornerRadius: 18)
                     .stroke(PocketLedgerTheme.divider, lineWidth: 1)
@@ -2859,7 +2859,7 @@ private struct CategoryTile: View {
         }
         .frame(maxWidth: .infinity, minHeight: 70)
         .padding(.horizontal, 4)
-        .pocketGlassSurface(cornerRadius: 13, tint: PocketLedgerTheme.surfaceElevated.opacity(0.22))
+        .pocketGroupedSurface(cornerRadius: 13)
         .contextMenu {
             Button("Edit", systemImage: "pencil", action: onEdit)
             Button("Archive", systemImage: "archivebox", action: onArchive)

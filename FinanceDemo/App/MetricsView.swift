@@ -705,7 +705,7 @@ private struct CategoryMetricsDetailView: View {
         }
         .padding(.vertical, 15)
         .padding(.horizontal, 14)
-        .pocketGlassSurface(cornerRadius: 16)
+        .pocketGroupedSurface(cornerRadius: 16)
         .overlay {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
