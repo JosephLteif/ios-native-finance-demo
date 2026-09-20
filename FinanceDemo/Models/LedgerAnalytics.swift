@@ -135,7 +135,7 @@ struct LedgerIndex {
     func categoryMatches(_ categoryID: UUID?, selectedCategoryID: UUID?) -> Bool {
         guard let selectedCategoryID else { return true }
         guard let categoryID else { return false }
-        return categoryAncestorsByID[categoryID]?.contains(selectedCategoryID) ?? categoryID == selectedCategoryID
+        return categoryAncestorsByID[categoryID]?.contains(selectedCategoryID) ?? (categoryID == selectedCategoryID)
     }
 
     func categoryPath(for categoryID: UUID?) -> String {
