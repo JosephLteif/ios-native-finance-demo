@@ -373,10 +373,10 @@ final class FinanceModelTests: XCTestCase {
         let table = ImportedTable(
             id: "assets",
             name: "Assets",
-            columns: ["Date", "Amount", "Account"],
+            columns: ["Date", "Amount", "Account", "Account Type"],
             rows: [
-                ["2026-09-06", "10", "Gold"],
-                ["2026-09-07", "20", "Silver coins"]
+                ["2026-09-06", "10", "Gold", "Good"],
+                ["2026-09-07", "20", "Silver coins", "Silver"]
             ]
         )
 
@@ -621,6 +621,250 @@ final class FinanceModelTests: XCTestCase {
 
         XCTAssertEqual(prepared.accounts.map(\.id), [usedAccount.id])
         XCTAssertEqual(Set(prepared.categories.map(\.id)), Set([root.id, child.id]))
+    }
+
+    func testImportReviewKeepsExplicitlyArchivedUnreferencedAccounts() {
+        let archivedAccount = Account(
+            name: "Old gold account",
+            type: .physicalAsset,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0),
+            isArchived: true
+        )
+        let prepared = FinanceImportReview.removingUnusedCreatedRecords(
+            from: FinanceData(accounts: [archivedAccount], categories: [], transactions: [])
+        )
+
+        XCTAssertEqual(prepared.accounts.map(\.id), [archivedAccount.id])
+    }
+
+    func testImportWizardDraftPreservesStateAcrossStepsAndDiscardsStagedData() {
+        let document = ImportedDocument(
+            fileName: "ledger.csv",
+            format: .delimited,
+            tables: [
+                ImportedTable(
+                    id: "rows",
+                    name: "Rows",
+                    columns: ["Date", "Amount"],
+                    rows: [["2026-09-01", "10"]]
+                )
+            ]
+        )
+        var draft = ImportDraft(
+            document: document,
+            existing: FinanceData(accounts: [], categories: [], transactions: []),
+            rememberedRules: ImportStoredRules()
+        )
+        draft.setMapping(.date, to: "Date")
+        draft.setMapping(.amount, to: "Amount")
+        let mappingBeforeNavigation = draft.mapping
+        draft.step = .defaults
+        draft.step = .organize
+        draft.step = .defaults
+
+        XCTAssertEqual(draft.mapping, mappingBeforeNavigation)
+        XCTAssertEqual(draft.step, .defaults)
+
+        draft.importedData = FinanceData(accounts: [], categories: [], transactions: [])
+        draft.discard()
+        XCTAssertEqual(draft.step, .source)
+        XCTAssertNil(draft.importedData)
+        XCTAssertNil(draft.result)
+    }
+
+    func testImportWizardBulkAccountOperationsRecastArchiveAndMap() throws {
+        let imported = Account(
+            name: "Imported gold",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 1_000)
+        )
+        let target = Account(
+            name: "Physical assets",
+            type: .physicalAsset,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let transaction = LedgerTransaction(
+            note: "Gold purchase",
+            kind: .expense,
+            outflows: [
+                MoneyMovement(
+                    accountID: imported.id,
+                    money: Money(currency: .usd, minorUnits: 500)
+                )
+            ],
+            inflows: []
+        )
+        let document = ImportedDocument(
+            fileName: "rows.csv",
+            format: .delimited,
+            tables: [ImportedTable(id: "rows", name: "Rows", columns: ["Date", "Amount"], rows: [])]
+        )
+        var draft = ImportDraft(
+            document: document,
+            existing: FinanceData(accounts: [target], categories: [], transactions: []),
+            rememberedRules: ImportStoredRules()
+        )
+        draft.importedData = FinanceData(accounts: [imported], categories: [], transactions: [transaction])
+        draft.selectedAccountIDs = [imported.id]
+
+        _ = try draft.apply(.setType(.physicalAsset), existingAccounts: [target])
+        _ = try draft.apply(.setCurrency(.eur), existingAccounts: [target])
+        _ = try draft.apply(.setIncludeInTotals(false), existingAccounts: [target])
+        _ = try draft.apply(.setArchived(true), existingAccounts: [target])
+
+        let edited = try XCTUnwrap(draft.importedData?.accounts.first)
+        XCTAssertEqual(edited.type, .physicalAsset)
+        XCTAssertEqual(edited.currency, .eur)
+        XCTAssertFalse(edited.includeInTotals)
+        XCTAssertTrue(edited.isArchived)
+        XCTAssertEqual(draft.importedData?.transactions.first?.outflows.first?.money.currency, .eur)
+
+        var mappingDraft = draft
+        mappingDraft.selectedAccountIDs = [imported.id]
+        let usdImported = Account(
+            id: imported.id,
+            name: imported.name,
+            type: imported.type,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 1_000)
+        )
+        mappingDraft.importedData = FinanceData(
+            accounts: [usdImported],
+            categories: [],
+            transactions: [
+                LedgerTransaction(
+                    note: "Mapped",
+                    kind: .expense,
+                    outflows: [MoneyMovement(accountID: imported.id, money: Money(currency: .usd, minorUnits: 500))],
+                    inflows: []
+                )
+            ]
+        )
+        _ = try mappingDraft.apply(.mapToExisting(target.id), existingAccounts: [target])
+        XCTAssertTrue(mappingDraft.importedData?.accounts.isEmpty == true)
+        XCTAssertEqual(mappingDraft.importedData?.transactions.first?.outflows.first?.accountID, target.id)
+        XCTAssertEqual(mappingDraft.remappedAccountCount, 1)
+
+        let lbpImported = Account(
+            name: "LBP account",
+            type: .cash,
+            currency: .lbp,
+            openingBalance: Money(currency: .lbp, minorUnits: 0)
+        )
+        mappingDraft.importedData?.accounts = [usdImported, lbpImported]
+        mappingDraft.selectedAccountIDs = [lbpImported.id, usdImported.id]
+        XCTAssertThrowsError(try mappingDraft.apply(.mapToExisting(target.id), existingAccounts: [target])) { error in
+            XCTAssertEqual(error as? ImportBulkMutationError, .mixedCurrencies)
+        }
+    }
+
+    func testImportWizardBulkCategoryOperationsAndCreationToggleException() throws {
+        let provisional = LedgerCategory(name: "Eating out")
+        let unused = LedgerCategory(name: "Unused")
+        let existing = LedgerCategory(name: "Food")
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let transaction = LedgerTransaction(
+            note: "Lunch",
+            kind: .expense,
+            categoryID: provisional.id,
+            outflows: [MoneyMovement(accountID: account.id, money: Money(currency: .usd, minorUnits: 500))],
+            inflows: []
+        )
+        let document = ImportedDocument(
+            fileName: "rows.csv",
+            format: .delimited,
+            tables: [ImportedTable(id: "rows", name: "Rows", columns: ["Date", "Amount"], rows: [])]
+        )
+        var draft = ImportDraft(
+            document: document,
+            existing: FinanceData(accounts: [account], categories: [existing], transactions: []),
+            rememberedRules: ImportStoredRules()
+        )
+        draft.importedData = FinanceData(
+            accounts: [account],
+            categories: [provisional, unused],
+            transactions: [transaction]
+        )
+        draft.selectedCategoryIDs = [provisional.id]
+        _ = try draft.apply(.mapToExisting(existing.id), existingCategories: [existing])
+        XCTAssertEqual(draft.importedData?.transactions.first?.categoryID, existing.id)
+        XCTAssertFalse(draft.importedData?.categories.contains(where: { $0.id == provisional.id }) == true)
+
+        draft.selectedCategoryIDs = [unused.id]
+        _ = try draft.apply(.excludeUnused, existingCategories: [existing])
+        XCTAssertFalse(draft.importedData?.categories.contains(where: { $0.id == unused.id }) == true)
+
+        let archived = Account(
+            name: "Historical gold",
+            type: .physicalAsset,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0),
+            isArchived: true
+        )
+        draft.importedData = FinanceData(accounts: [archived], categories: [], transactions: [])
+        draft.createMissingAccounts = false
+        XCTAssertNil(draft.creationPolicyError)
+        XCTAssertEqual(draft.finalSummary?.archivedAccountCount, 1)
+
+        let active = Account(
+            name: "New cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        draft.importedData?.accounts.append(active)
+        draft.importedData?.transactions.append(
+            LedgerTransaction(
+                note: "Active account",
+                kind: .expense,
+                outflows: [MoneyMovement(accountID: active.id, money: Money(currency: .usd, minorUnits: 100))],
+                inflows: []
+            )
+        )
+        XCTAssertNotNil(draft.creationPolicyError)
+    }
+
+    func testImportRuleStoreEncodesDecodesMatchesAndHandlesEmptyLegacyStorage() throws {
+        let columns = ["When", "Value", "Wallet"]
+        let mapping: [ImportField: String?] = [
+            .date: "When",
+            .amount: "Value",
+            .account: "Wallet"
+        ]
+        let rules = ImportRuleStore.remembering(
+            mapping: mapping,
+            explicitFields: [.date, .account],
+            columns: columns,
+            accountRules: [
+                ImportAccountRule(key: "gold", type: .physicalAsset, currency: .usd, isArchived: true)
+            ],
+            in: ImportStoredRules()
+        )
+        let decoded = ImportRuleStore.decoded(try ImportRuleStore.encoded(rules))
+        XCTAssertEqual(decoded, rules)
+
+        let applied = ImportRuleStore.applying(
+            remembered: decoded,
+            to: [:],
+            columns: columns
+        )
+        XCTAssertEqual(applied[.date] ?? nil, "When")
+        XCTAssertEqual(applied[.account] ?? nil, "Wallet")
+        XCTAssertNil(applied[.amount] ?? nil)
+        XCTAssertEqual(ImportRuleStore.accountSuggestion(for: "Gold", in: decoded)?.type, .physicalAsset)
+        XCTAssertTrue(ImportRuleStore.accountRule(for: "Gold", in: decoded)?.isArchived == true)
+
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "ImportRuleStoreTests"))
+        defaults.removePersistentDomain(forName: "ImportRuleStoreTests")
+        XCTAssertEqual(ImportRuleStore.load(from: defaults), ImportStoredRules())
     }
 
     func testImportReviewDetectsLikelyDuplicateTransactions() {

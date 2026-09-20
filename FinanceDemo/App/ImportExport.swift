@@ -330,7 +330,9 @@ enum FinanceImportReview {
                 transaction.outflows.map(\.accountID) + transaction.inflows.map(\.accountID)
             }
         )
-        prepared.accounts.removeAll { !referencedAccountIDs.contains($0.id) }
+        prepared.accounts.removeAll {
+            !referencedAccountIDs.contains($0.id) && !$0.isArchived
+        }
 
         var referencedCategoryIDs = Set(
             prepared.transactions.compactMap(\.categoryID)
@@ -1934,7 +1936,8 @@ enum FinanceImportBuilder {
             || value.contains("gold") || value.contains("silver") || value.contains("coin")
             || value.contains("bullion") || value.contains("jewelry") || value.contains("jewellery")
             || value.contains("precious metal") || value.contains("real estate") || value.contains("land")
-            || value.contains("collectible") {
+            || value.contains("collectible") || value.contains("good") || value.contains("goods")
+            || value.contains("inventory") || value.contains("commodity") {
             return .physicalAsset
         }
         if value.contains("cash") || value.contains("wallet") || value.contains("petty") {

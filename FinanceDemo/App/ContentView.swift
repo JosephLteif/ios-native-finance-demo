@@ -9,6 +9,7 @@ struct ContentView: View {
     @StateObject private var security = AppSecurityService()
     @State private var addAction: AddAction?
     @State private var isShowingSetup = false
+    @State private var isShowingImportWizardUITest = false
     @State private var isUnlocked = false
     @SceneStorage("pocketLedger.selectedTab") private var selectedTabRawValue = AppTab.overview.rawValue
     @AppStorage(SetupWizardView.completedKey) private var setupCompleted = false
@@ -40,6 +41,10 @@ struct ContentView: View {
         .task {
             store.processDueScheduledTransactions()
             await FinanceIntentIndexing.shared.refresh()
+            if ProcessInfo.processInfo.arguments.contains("-ImportWizardUITest") {
+                isShowingImportWizardUITest = true
+                return
+            }
             if !setupCompleted && store.data.accounts.isEmpty && store.data.categories.isEmpty {
                 isShowingSetup = true
             }
@@ -50,6 +55,10 @@ struct ContentView: View {
         .onOpenURL(perform: handleDeepLink)
         .sheet(isPresented: $isShowingSetup) {
             SetupWizardView(store: store)
+        }
+        .sheet(isPresented: $isShowingImportWizardUITest) {
+            ImportWizardView(store: store, document: importWizardUITestDocument)
+                .presentationDetents([.large])
         }
     }
 
@@ -112,6 +121,24 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private var importWizardUITestDocument: ImportedDocument {
+        ImportedDocument(
+            fileName: "import-wizard-ui-test.csv",
+            format: .delimited,
+            tables: [
+                ImportedTable(
+                    id: "ui-test-rows",
+                    name: "Imported rows",
+                    columns: ["Date", "Amount", "Account", "Account Type", "Category", "Note"],
+                    rows: [
+                        ["2026-09-01", "10", "Gold", "Good", "Food", "Gold purchase"],
+                        ["2026-09-02", "20", "Silver", "Silver", "Food", "Silver purchase"]
+                    ]
+                )
+            ]
+        )
     }
 
 }
