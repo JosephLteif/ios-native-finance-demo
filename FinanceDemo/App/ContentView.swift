@@ -39,12 +39,12 @@ struct ContentView: View {
             isUnlocked = !enabled
         }
         .task {
-            store.processDueScheduledTransactions()
-            await FinanceIntentIndexing.shared.refresh()
             if ProcessInfo.processInfo.arguments.contains("-ImportWizardUITest") {
                 isShowingImportWizardUITest = true
                 return
             }
+            store.processDueScheduledTransactions()
+            await FinanceIntentIndexing.shared.refresh()
             if !setupCompleted && store.data.accounts.isEmpty && store.data.categories.isEmpty {
                 isShowingSetup = true
             }
