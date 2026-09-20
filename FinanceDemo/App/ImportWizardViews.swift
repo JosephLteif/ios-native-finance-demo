@@ -409,6 +409,30 @@ struct ImportWizardView: View {
             in: draft.rememberedRules
         )
     }
+
+    private func affectedTransactionCount(for accounts: [Account]) -> Int {
+        let ids = Set(accounts.map(\.id))
+        return draft.importedData?.transactions.filter { transaction in
+            transaction.outflows.contains { ids.contains($0.accountID) }
+                || transaction.inflows.contains { ids.contains($0.accountID) }
+        }.count ?? 0
+    }
+
+    private func affectedMovementCount(for accounts: [Account]) -> Int {
+        let ids = Set(accounts.map(\.id))
+        return draft.importedData?.transactions.reduce(into: 0) { count, transaction in
+            count += transaction.outflows.filter { ids.contains($0.accountID) }.count
+            count += transaction.inflows.filter { ids.contains($0.accountID) }.count
+        } ?? 0
+    }
+
+    private func affectedTransactionCount(for categories: [LedgerCategory]) -> Int {
+        let ids = Set(categories.map(\.id))
+        return draft.importedData?.transactions.filter { transaction in
+            guard let categoryID = transaction.categoryID else { return false }
+            return ids.contains(categoryID)
+        }.count ?? 0
+    }
 }
 
 private struct ImportWizardProgressView: View {
@@ -420,7 +444,7 @@ private struct ImportWizardProgressView: View {
                 ForEach(ImportStep.allCases) { item in
                     HStack(spacing: 6) {
                         Image(systemName: item.rawValue <= step.rawValue ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(item.rawValue <= step.rawValue ? .tint : .secondary)
+                            .foregroundStyle(item.rawValue <= step.rawValue ? Color.accentColor : Color.secondary)
                         Text(item.shortTitle)
                             .font(.subheadline.weight(item == step ? .semibold : .regular))
                     }
@@ -757,10 +781,10 @@ private struct ImportWizardOrganizeStep: View {
             HStack(spacing: 12) {
                 if isSelectingAccounts {
                     Image(systemName: draft.selectedAccountIDs.contains(account.id) ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(draft.selectedAccountIDs.contains(account.id) ? .tint : .secondary)
+                        .foregroundStyle(draft.selectedAccountIDs.contains(account.id) ? Color.accentColor : Color.secondary)
                 } else {
                     Image(systemName: account.type.systemImage)
-                        .foregroundStyle(account.isArchived ? .secondary : .tint)
+                        .foregroundStyle(account.isArchived ? Color.secondary : Color.accentColor)
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(account.name.isEmpty ? "Unnamed account" : account.name)
@@ -770,7 +794,7 @@ private struct ImportWizardOrganizeStep: View {
                         .foregroundStyle(.secondary)
                     Text(accountStatus(for: account))
                         .font(.caption2)
-                        .foregroundStyle(account.isArchived ? .orange : .secondary)
+                        .foregroundStyle(account.isArchived ? Color.orange : Color.secondary)
                 }
                 Spacer()
                 if account.isArchived {
@@ -794,7 +818,7 @@ private struct ImportWizardOrganizeStep: View {
             HStack(spacing: 12) {
                 if isSelectingCategories {
                     Image(systemName: draft.selectedCategoryIDs.contains(category.id) ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(draft.selectedCategoryIDs.contains(category.id) ? .tint : .secondary)
+                        .foregroundStyle(draft.selectedCategoryIDs.contains(category.id) ? Color.accentColor : Color.secondary)
                 } else {
                     Image(systemName: category.systemImage)
                         .foregroundStyle(.tint)
