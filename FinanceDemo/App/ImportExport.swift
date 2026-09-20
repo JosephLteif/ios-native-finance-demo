@@ -1509,6 +1509,7 @@ enum FinanceImportBuilder {
                     currency: preferredCurrency,
                     explicitCurrency: explicitCurrency,
                     type: parseAccountType(value(for: .accountType, in: row, table: table, mapping: mapping))
+                        ?? parseAccountType(accountName)
                         ?? accountSuggestion(for: accountName, in: options.accountSuggestions)?.type,
                     options: options,
                     existing: existing,
@@ -1570,18 +1571,13 @@ enum FinanceImportBuilder {
                             currency: destinationCurrency,
                             minorUnits: Swift.abs(try parseAmount(destinationAmountValue, currency: destinationCurrency).minorUnits)
                         )
-                    if destinationCurrency != currency && destinationAmountValue.isEmpty {
-                        warnings.append(
-                            "Row \(rowOffset + 2): no destination amount was provided; the source amount was used to infer the cross-currency rate."
-                        )
-                    }
                     let destination = try resolveDestinationAccount(
                         name: destinationName,
                         currency: destinationAmount.currency,
                         explicitCurrency: explicitDestinationCurrency,
                         type: parseAccountType(
                             value(for: .destinationAccountType, in: row, table: table, mapping: mapping)
-                        ) ?? accountSuggestion(
+                        ) ?? parseAccountType(destinationName) ?? accountSuggestion(
                             for: destinationName,
                             in: options.accountSuggestions
                         )?.type,
@@ -1589,8 +1585,14 @@ enum FinanceImportBuilder {
                         existing: existing,
                         imported: &importedAccounts
                     )
+                    let recastDestinationAmount = destinationAmount.recast(to: destination.currency)
+                    if destination.currency != currency && destinationAmountValue.isEmpty {
+                        warnings.append(
+                            "Row \(rowOffset + 2): no destination amount was provided; the source amount was used to infer the cross-currency rate."
+                        )
+                    }
                     outflows = [MoneyMovement(accountID: account.id, money: amount)]
-                    inflows = [MoneyMovement(accountID: destination.id, money: destinationAmount)]
+                    inflows = [MoneyMovement(accountID: destination.id, money: recastDestinationAmount)]
                 }
 
                 let exchangeRate: ExchangeRate?
@@ -1928,7 +1930,11 @@ enum FinanceImportBuilder {
             return .investment
         }
         if value.contains("asset") || value.contains("property") || value.contains("house")
-            || value.contains("home") || value.contains("vehicle") || value.contains("car") {
+            || value.contains("home") || value.contains("vehicle") || value.contains("car")
+            || value.contains("gold") || value.contains("silver") || value.contains("coin")
+            || value.contains("bullion") || value.contains("jewelry") || value.contains("jewellery")
+            || value.contains("precious metal") || value.contains("real estate") || value.contains("land")
+            || value.contains("collectible") {
             return .physicalAsset
         }
         if value.contains("cash") || value.contains("wallet") || value.contains("petty") {

@@ -369,6 +369,46 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(account.type, .bankAccount)
     }
 
+    func testImportInfersPreciousMetalAccountsAsPhysicalAssets() throws {
+        let table = ImportedTable(
+            id: "assets",
+            name: "Assets",
+            columns: ["Date", "Amount", "Account"],
+            rows: [
+                ["2026-09-06", "10", "Gold"],
+                ["2026-09-07", "20", "Silver coins"]
+            ]
+        )
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: nil,
+                defaultDestinationAccountID: nil,
+                createMissingAccounts: true,
+                createMissingCategories: true,
+                accountSuggestions: [
+                    ImportAccountCandidate.key(for: "Gold"): ImportAccountSuggestion(
+                        type: .investment,
+                        currency: .usd
+                    ),
+                    ImportAccountCandidate.key(for: "Silver coins"): ImportAccountSuggestion(
+                        type: .bankAccount,
+                        currency: .usd
+                    )
+                ]
+            ),
+            existing: FinanceData(accounts: [], categories: [], transactions: [])
+        )
+
+        let accountTypes = Dictionary(uniqueKeysWithValues: result.data.accounts.map { ($0.name, $0.type) })
+        XCTAssertEqual(accountTypes["Gold"], .physicalAsset)
+        XCTAssertEqual(accountTypes["Silver coins"], .physicalAsset)
+    }
+
     func testImportUsesAccountSuggestionWhenMappedValuesAreMissing() throws {
         let table = ImportedTable(
             id: "accounts",
@@ -710,6 +750,61 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(rate.quoteCurrency, .lbp)
         XCTAssertEqual(rate.quoteUnitsPerBaseUnit, 90_000)
         XCTAssertEqual(result.data.exchangeRates, [rate])
+        XCTAssertNil(
+            FinanceDataValidator.validate(
+                FinanceData(
+                    accounts: existing.accounts,
+                    categories: [],
+                    transactions: [transaction],
+                    exchangeRates: result.data.exchangeRates
+                )
+            )
+        )
+    }
+
+    func testImportRecastsDestinationMovementToResolvedAccountCurrency() throws {
+        let source = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let destination = Account(
+            name: "Reserve",
+            type: .bankAccount,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let table = ImportedTable(
+            id: "transfers",
+            name: "Transfers",
+            columns: [
+                "Date", "Type", "Amount", "Currency", "Account",
+                "Destination Account", "Destination Amount", "Destination Currency"
+            ],
+            rows: [["2026-09-06", "Transfer", "10", "USD", "Cash", "Reserve", "10", "LBP"]]
+        )
+        let existing = FinanceData(accounts: [source, destination], categories: [], transactions: [])
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: source.id,
+                defaultDestinationAccountID: destination.id,
+                createMissingAccounts: true,
+                createMissingCategories: true
+            ),
+            existing: existing
+        )
+
+        let transaction = try XCTUnwrap(result.data.transactions.first)
+        XCTAssertEqual(
+            transaction.inflows.first?.money,
+            Money(currency: .usd, minorUnits: 1_000)
+        )
         XCTAssertNil(
             FinanceDataValidator.validate(
                 FinanceData(
