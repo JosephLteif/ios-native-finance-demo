@@ -535,6 +535,8 @@ private struct MoreView: View {
     @ObservedObject var security: AppSecurityService
     let onAddExpense: () -> Void
     @State private var isShowingSetup = false
+    @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
+    @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
     var body: some View {
         NavigationStack {
@@ -631,7 +633,14 @@ private struct MoreView: View {
             .navigationBarTitleDisplayMode(.large)
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            .listRowBackground(PocketLedgerTheme.surface)
+            .foregroundStyle(PocketLedgerTheme.textPrimary)
+            .tint(PocketLedgerTheme.accent)
             .pocketScreen()
+            .preferredColorScheme(
+                PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
+            )
+            .accessibilityIdentifier("more-screen-\(selectedColorTheme)")
             .sheet(isPresented: $isShowingSetup) {
                 SetupWizardView(store: store)
             }
