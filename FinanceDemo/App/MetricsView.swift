@@ -735,32 +735,38 @@ private struct CategoryMetricsDetailView: View {
                     .padding(.vertical, 24)
             } else {
                 ForEach(snapshot.selectedMonthTransactions) { transaction in
-                    HStack(spacing: 12) {
-                        VStack(spacing: 0) {
-                            Text(transaction.date.formatted(.dateTime.day()))
-                                .font(.headline.weight(.bold).monospacedDigit())
-                            Text(transaction.date.formatted(.dateTime.weekday(.abbreviated)))
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    NavigationLink {
+                        MetricsTransactionDetailView(store: store, transactionID: transaction.id)
+                    } label: {
+                        HStack(spacing: 12) {
+                            VStack(spacing: 0) {
+                                Text(transaction.date.formatted(.dateTime.day()))
+                                    .font(.headline.weight(.bold).monospacedDigit())
+                                Text(transaction.date.formatted(.dateTime.weekday(.abbreviated)))
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                            }
+                            .frame(width: 42)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(accountNames(for: transaction))
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
+                                Text(transaction.note)
+                                    .font(.caption)
+                                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Text(Money(currency: currency, minorUnits: transactionAmount(transaction)).formatted)
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(PocketLedgerTheme.warning)
                         }
-                        .frame(width: 42)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(accountNames(for: transaction))
-                                .font(.subheadline.weight(.medium))
-                                .lineLimit(1)
-                            Text(transaction.note)
-                                .font(.caption)
-                                .foregroundStyle(PocketLedgerTheme.textSecondary)
-                                .lineLimit(1)
-                        }
-
-                        Spacer(minLength: 8)
-
-                        Text(Money(currency: currency, minorUnits: transactionAmount(transaction)).formatted)
-                            .font(.subheadline.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(PocketLedgerTheme.warning)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens transaction details")
                     .padding(.vertical, 12)
 
                     if transaction.id != snapshot.selectedMonthTransactions.last?.id {
@@ -798,5 +804,196 @@ private struct CategoryMetricsDetailView: View {
 
     private func moveMonth(by value: Int) {
         anchorDate = Calendar.current.date(byAdding: .month, value: value, to: anchorDate) ?? anchorDate
+    }
+}
+
+@MainActor
+private struct MetricsTransactionDetailView: View {
+    @ObservedObject var store: LedgerStore
+    let transactionID: UUID
+
+    @State private var editingTransaction: LedgerTransaction?
+
+    private var transaction: LedgerTransaction? {
+        store.data.transactions.first { $0.id == transactionID }
+    }
+
+    var body: some View {
+        Group {
+            if let transaction {
+                ScrollView(showsIndicators: false) {
+                    PocketGlassContainer(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            transactionHeader(transaction)
+                            movementSection(
+                                title: "Paid from",
+                                movements: transaction.outflows,
+                                tint: PocketLedgerTheme.warning
+                            )
+                            movementSection(
+                                title: "Received in",
+                                movements: transaction.inflows,
+                                tint: PocketLedgerTheme.income
+                            )
+                            metadataSection(transaction)
+                        }
+                        .padding(.horizontal, PocketLedgerTheme.screenHorizontalPadding)
+                        .padding(.top, 12)
+                        .padding(.bottom, 24)
+                    }
+                }
+            } else {
+                ContentUnavailableView("Transaction unavailable", systemImage: "doc.questionmark")
+            }
+        }
+        .pocketScreen()
+        .navigationTitle("Transaction")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Edit", systemImage: "pencil") {
+                    editingTransaction = transaction
+                }
+                .disabled(transaction == nil)
+                .accessibilityIdentifier("metrics-transaction-edit")
+            }
+        }
+        .sheet(item: $editingTransaction) { transaction in
+            TransactionEditor(store: store, transaction: transaction)
+        }
+    }
+
+    private func transactionHeader(_ transaction: LedgerTransaction) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: transactionIcon(transaction.kind))
+                .font(.title2)
+                .foregroundStyle(transactionTint(transaction.kind))
+                .frame(width: 46, height: 46)
+                .background(transactionTint(transaction.kind).opacity(0.14), in: Circle())
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(transaction.kind.displayName)
+                    .font(.headline.weight(.semibold))
+                if !transaction.note.isEmpty {
+                    Text(transaction.note)
+                        .font(.subheadline)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .lineLimit(2)
+                }
+                Text(transaction.date.formatted(.dateTime.weekday(.wide).month(.wide).day().year()))
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .pocketGroupedSurface(cornerRadius: 18)
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private func movementSection(
+        title: String,
+        movements: [MoneyMovement],
+        tint: Color
+    ) -> some View {
+        if !movements.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title)
+                    .font(.title3.weight(.bold))
+
+                VStack(spacing: 0) {
+                    ForEach(movements) { movement in
+                        HStack(spacing: 10) {
+                            Image(systemName: "wallet.pass")
+                                .foregroundStyle(tint)
+                                .frame(width: 24)
+
+                            Text(store.ledgerIndex.account(with: movement.accountID)?.name ?? "Unknown account")
+                                .font(.subheadline.weight(.medium))
+                                .lineLimit(1)
+
+                            Spacer(minLength: 8)
+
+                            Text(movement.money.formatted)
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 13)
+
+                        if movement.id != movements.last?.id {
+                            Divider().overlay(PocketLedgerTheme.divider)
+                        }
+                    }
+                }
+                .pocketGroupedSurface(cornerRadius: 18)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                }
+            }
+        }
+    }
+
+    private func metadataSection(_ transaction: LedgerTransaction) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            detailRow("Category", store.ledgerIndex.categoryPath(for: transaction.categoryID))
+            detailRow("Type", transaction.kind.displayName)
+
+            if let amountDue = transaction.amountDue {
+                detailRow("Bill total", amountDue.formatted)
+            }
+            if let exchangeRate = transaction.exchangeRate {
+                detailRow("Exchange rate", exchangeRate.summary)
+            }
+            if let shortfall = transaction.changeAdjustment?.shortfall {
+                detailRow("Change shortfall", shortfall.formatted)
+            }
+        }
+        .pocketGroupedSurface(cornerRadius: 18)
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+        }
+    }
+
+    private func detailRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    private func transactionIcon(_ kind: TransactionKind) -> String {
+        switch kind {
+        case .expense:
+            return "arrow.up.right"
+        case .income:
+            return "arrow.down.left"
+        case .transfer:
+            return "arrow.left.arrow.right"
+        }
+    }
+
+    private func transactionTint(_ kind: TransactionKind) -> Color {
+        switch kind {
+        case .expense:
+            return PocketLedgerTheme.warning
+        case .income:
+            return PocketLedgerTheme.income
+        case .transfer:
+            return PocketLedgerTheme.accent
+        }
     }
 }
