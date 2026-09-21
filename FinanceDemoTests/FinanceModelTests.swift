@@ -881,6 +881,44 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertNil(FinanceDataValidator.validate(migrated))
     }
 
+    func testAccountCurrencyMigrationPreservesForeignCurrencyMovements() throws {
+        let account = Account(
+            name: "USD Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 0)
+        )
+        let rate = ExchangeRate(
+            baseCurrency: .lbp,
+            quoteCurrency: .eur,
+            quoteUnitsPerBaseUnit: try XCTUnwrap(Decimal(string: "0.0000105"))
+        )
+        let transaction = LedgerTransaction(
+            note: "Foreign payment",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .lbp, minorUnits: 273_750)
+                )
+            ],
+            inflows: [],
+            exchangeRate: rate
+        )
+
+        let migrated = FinanceAccountCurrencyMigration.migrating(
+            FinanceData(accounts: [account], categories: [], transactions: [transaction]),
+            accountID: account.id,
+            from: .usd,
+            to: .eur
+        )
+
+        XCTAssertEqual(migrated.transactions.first?.outflows.first?.money, transaction.outflows.first?.money)
+        XCTAssertEqual(migrated.transactions.first?.exchangeRate, rate)
+        XCTAssertNil(FinanceDataValidator.validate(migrated))
+    }
+
     func testImportReviewDropsUnusedCreatedRecordsAndKeepsCategoryAncestors() {
         let usedAccount = Account(
             name: "Imported cash",
@@ -1334,6 +1372,121 @@ final class FinanceModelTests: XCTestCase {
         )
         XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .lbp, in: mergedData), 200_000)
         XCTAssertEqual(financeNetExpenseAmount(transaction, currency: .usd, in: mergedData), 224)
+    }
+
+    func testImportPreservesExplicitPaymentCurrencyWhenAccountUsesAnotherCurrency() throws {
+        let account = Account(
+            name: "Cash",
+            type: .cash,
+            currency: .usd,
+            openingBalance: Money(currency: .usd, minorUnits: 10_000)
+        )
+        let table = ImportedTable(
+            id: "cross-currency-expense",
+            name: "Expenses",
+            columns: [
+                "Date", "Type", "Amount", "Currency", "Reporting amount",
+                "Reporting currency", "Account", "Category"
+            ],
+            rows: [[
+                "2026-09-01", "Expense", "9000000", "LBP", "100", "USD",
+                "Cash", "Food"
+            ]]
+        )
+
+        let result = try FinanceImportBuilder.build(
+            table: table,
+            mapping: FinanceImportParser.suggestedMapping(columns: table.columns),
+            options: ImportOptions(
+                defaultKind: .expense,
+                defaultCurrency: .usd,
+                defaultAccountID: account.id,
+                defaultDestinationAccountID: nil,
+                createMissingAccounts: true,
+                createMissingCategories: true
+            ),
+            existing: FinanceData(accounts: [account], categories: [], transactions: [])
+        )
+
+        let transaction = try XCTUnwrap(result.data.transactions.first)
+        let movement = try XCTUnwrap(transaction.outflows.first)
+        let rate = try XCTUnwrap(transaction.exchangeRate)
+        XCTAssertEqual(movement.money, Money(currency: .lbp, minorUnits: 9_000_000))
+        XCTAssertEqual(rate.baseCurrency, .lbp)
+        XCTAssertEqual(rate.quoteCurrency, .usd)
+        XCTAssertEqual(
+            financeConvertedMinorUnits(
+                movement.money,
+                to: account.currency,
+                using: rate
+            ),
+            10_000
+        )
+
+        let mergedData = FinanceData(
+            accounts: [account],
+            categories: result.data.categories,
+            transactions: [transaction],
+            exchangeRates: result.data.exchangeRates
+        )
+        XCTAssertNil(FinanceDataValidator.validate(mergedData))
+        XCTAssertEqual(LedgerIndex(data: mergedData).balance(for: account).minorUnits, 0)
+    }
+
+    func testImportReviewFlagsAmountsOverOneThousandUSD() throws {
+        let exactThreshold = LedgerTransaction(
+            note: "Exactly one thousand",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [
+                MoneyMovement(
+                    accountID: UUID(),
+                    money: Money(currency: .usd, minorUnits: FinanceImportReview.suspiciousUSDMinorUnits)
+                )
+            ],
+            inflows: []
+        )
+        let largeUSD = LedgerTransaction(
+            note: "Large USD",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [
+                MoneyMovement(
+                    accountID: UUID(),
+                    money: Money(currency: .usd, minorUnits: 100_001)
+                )
+            ],
+            inflows: []
+        )
+        let largeLBP = LedgerTransaction(
+            note: "Large LBP",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [
+                MoneyMovement(
+                    accountID: UUID(),
+                    money: Money(currency: .lbp, minorUnits: 100_000_000)
+                )
+            ],
+            inflows: [],
+            exchangeRate: ExchangeRate(
+                baseCurrency: .lbp,
+                quoteCurrency: .usd,
+                quoteUnitsPerBaseUnit: try XCTUnwrap(Decimal(string: "0.0000112"))
+            )
+        )
+
+        let flagged = FinanceImportReview.suspiciousLargeAmountTransactionIDs(
+            in: FinanceData(
+                accounts: [],
+                categories: [],
+                transactions: [exactThreshold, largeUSD, largeLBP]
+            )
+        )
+
+        XCTAssertFalse(flagged.contains(exactThreshold.id))
+        XCTAssertTrue(flagged.contains(largeUSD.id))
+        XCTAssertTrue(flagged.contains(largeLBP.id))
     }
 
     func testImportExcludesModifiedBalanceFromMetrics() throws {

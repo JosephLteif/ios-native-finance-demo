@@ -345,7 +345,8 @@ struct ImportWizardView: View {
                     data,
                     accountID: data.accounts[index].id,
                     from: data.accounts[index].currency,
-                    to: currency
+                    to: currency,
+                    preserveMovementCurrencies: true
                 )
             }
             if let isArchived = rule.isArchived {
@@ -1392,6 +1393,7 @@ private struct ImportWizardReviewStep: View {
     @ViewBuilder
     private func exceptionsSection(data: FinanceData) -> some View {
         Section("Review") {
+            let suspiciousIDs = suspiciousLargeAmountTransactionIDs(data: data)
             Picker("Transaction rows", selection: $filter) {
                 ForEach(ImportTransactionReviewFilter.allCases) { filter in
                     Text(filter.title).tag(filter)
@@ -1415,6 +1417,13 @@ private struct ImportWizardReviewStep: View {
                 Label("\(draft.duplicateTransactionIDs.count) possible duplicates need a decision.", systemImage: "doc.on.doc")
                     .foregroundStyle(.orange)
             }
+            if !suspiciousIDs.isEmpty {
+                Label("\(suspiciousIDs.count) rows exceed $1,000 USD equivalent; check their currency.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("These are review reminders and do not block the import.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             if (draft.result?.skippedRows ?? 0) > 0 {
                 Label("\(draft.result?.skippedRows ?? 0) rows were skipped while parsing and are not importable.", systemImage: "arrow.uturn.right")
                     .foregroundStyle(.secondary)
@@ -1431,6 +1440,7 @@ private struct ImportWizardReviewStep: View {
     @ViewBuilder
     private func transactionSection(data: FinanceData) -> some View {
         Section("Transactions") {
+            let suspiciousIDs = suspiciousLargeAmountTransactionIDs(data: data)
             let indices = filteredTransactionIndices(data: data)
             if filter == .skipped {
                 Text("Skipped rows do not have editable transaction records.")
@@ -1445,7 +1455,9 @@ private struct ImportWizardReviewStep: View {
                         accounts: availableAccounts(data: data),
                         categories: availableCategories(data: data),
                         isDuplicate: draft.duplicateTransactionIDs.contains(data.transactions[index].id),
+                        isSuspiciousLargeAmount: suspiciousIDs.contains(data.transactions[index].id),
                         isExcluded: draft.excludedDuplicateIDs.contains(data.transactions[index].id),
+                        exchangeRates: store.data.exchangeRates + data.exchangeRates,
                         onToggleExcluded: {
                             toggleDuplicate(data.transactions[index].id)
                         }
@@ -1462,8 +1474,11 @@ private struct ImportWizardReviewStep: View {
         switch filter {
         case .exceptions:
             let conflictIndices = Set(currencyConflictIndices(data: data))
+            let suspiciousIDs = suspiciousLargeAmountTransactionIDs(data: data)
             return matchingIndices.filter {
-                draft.duplicateTransactionIDs.contains(data.transactions[$0].id) || conflictIndices.contains($0)
+                draft.duplicateTransactionIDs.contains(data.transactions[$0].id)
+                    || conflictIndices.contains($0)
+                    || suspiciousIDs.contains(data.transactions[$0].id)
             }
         case .all:
             return Array(matchingIndices)
@@ -1497,12 +1512,22 @@ private struct ImportWizardReviewStep: View {
     private func currencyConflictIndices(data: FinanceData) -> [Int] {
         let accounts = Dictionary(uniqueKeysWithValues: availableAccounts(data: data).map { ($0.id, $0) })
         return data.transactions.indices.filter { index in
-            let movements = data.transactions[index].outflows + data.transactions[index].inflows
+            let transaction = data.transactions[index]
+            let movements = transaction.outflows + transaction.inflows
             return movements.contains { movement in
                 guard let account = accounts[movement.accountID] else { return true }
-                return account.currency != movement.money.currency
+                guard account.currency != movement.money.currency else { return false }
+                return financeConvertedMinorUnits(
+                    movement.money,
+                    to: account.currency,
+                    using: transaction.exchangeRate
+                ) == nil
             }
         }
+    }
+
+    private func suspiciousLargeAmountTransactionIDs(data: FinanceData) -> Set<UUID> {
+        FinanceImportReview.suspiciousLargeAmountTransactionIDs(in: data)
     }
 
     private func availableAccounts(data: FinanceData) -> [Account] {
@@ -1542,7 +1567,9 @@ private struct ImportWizardTransactionRow: View {
     let accounts: [Account]
     let categories: [LedgerCategory]
     let isDuplicate: Bool
+    let isSuspiciousLargeAmount: Bool
     let isExcluded: Bool
+    let exchangeRates: [ExchangeRate]
     let onToggleExcluded: () -> Void
 
     var body: some View {
@@ -1556,6 +1583,11 @@ private struct ImportWizardTransactionRow: View {
                         Text(accountLabel(account)).tag(Optional(account.id))
                     }
                 }
+                Picker("Payment currency", selection: sourceCurrencyBinding) {
+                    ForEach(LedgerCurrency.allCases) { currency in
+                        Text(currency.rawValue).tag(currency)
+                    }
+                }
             }
             if transaction.kind == .transfer, !transaction.inflows.isEmpty {
                 Picker("Destination account", selection: destinationAccountBinding) {
@@ -1564,6 +1596,17 @@ private struct ImportWizardTransactionRow: View {
                         movementCurrency: transaction.inflows[0].money.currency
                     )) { account in
                         Text(accountLabel(account)).tag(Optional(account.id))
+                    }
+                }
+                Picker("Received currency", selection: destinationCurrencyBinding) {
+                    ForEach(LedgerCurrency.allCases) { currency in
+                        Text(currency.rawValue).tag(currency)
+                    }
+                }
+            } else if transaction.outflows.isEmpty, !transaction.inflows.isEmpty {
+                Picker("Received currency", selection: destinationCurrencyBinding) {
+                    ForEach(LedgerCurrency.allCases) { currency in
+                        Text(currency.rawValue).tag(currency)
                     }
                 }
             }
@@ -1579,6 +1622,11 @@ private struct ImportWizardTransactionRow: View {
                     set: { _ in onToggleExcluded() }
                 ))
             }
+            if isSuspiciousLargeAmount {
+                Label("Check currency: this is over $1,000 USD equivalent.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
@@ -1592,6 +1640,10 @@ private struct ImportWizardTransactionRow: View {
                 if isDuplicate {
                     Image(systemName: isExcluded ? "checkmark.circle.fill" : "doc.on.doc")
                         .foregroundStyle(isExcluded ? .green : .orange)
+                }
+                if isSuspiciousLargeAmount {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
                 }
             }
         }
@@ -1615,6 +1667,30 @@ private struct ImportWizardTransactionRow: View {
                 var movements = transaction.inflows
                 updateMovement(in: &movements, to: accountID)
                 transaction.inflows = movements
+            }
+        )
+    }
+
+    private var sourceCurrencyBinding: Binding<LedgerCurrency> {
+        Binding(
+            get: { transaction.outflows.first?.money.currency ?? .usd },
+            set: { currency in
+                var movements = transaction.outflows
+                updateMovementCurrency(in: &movements, to: currency)
+                transaction.outflows = movements
+                updateExchangeRateIfNeeded()
+            }
+        )
+    }
+
+    private var destinationCurrencyBinding: Binding<LedgerCurrency> {
+        Binding(
+            get: { transaction.inflows.first?.money.currency ?? .usd },
+            set: { currency in
+                var movements = transaction.inflows
+                updateMovementCurrency(in: &movements, to: currency)
+                transaction.inflows = movements
+                updateExchangeRateIfNeeded()
             }
         )
     }
@@ -1644,5 +1720,64 @@ private struct ImportWizardTransactionRow: View {
               let index = movements.indices.first,
               accounts.contains(where: { $0.id == accountID }) else { return }
         movements[index].accountID = accountID
+    }
+
+    private func updateMovementCurrency(in movements: inout [MoneyMovement], to currency: LedgerCurrency) {
+        guard let index = movements.indices.first,
+              movements[index].money.currency != currency else { return }
+        movements[index].money = movements[index].money.recast(to: currency)
+    }
+
+    private func updateExchangeRateIfNeeded() {
+        let movements = transaction.outflows + transaction.inflows
+        guard let firstMovement = movements.first else { return }
+
+        if transaction.kind == .transfer,
+           let destination = transaction.inflows.first,
+           firstMovement.money.currency != destination.money.currency,
+           financeConvertedMinorUnits(
+               firstMovement.money,
+               to: destination.money.currency,
+               using: transaction.exchangeRate
+           ) == nil,
+           let rate = storedExchangeRate(
+               from: firstMovement.money.currency,
+               to: destination.money.currency
+           ) {
+            transaction.exchangeRate = rate
+            return
+        }
+
+        guard let account = accounts.first(where: { $0.id == firstMovement.accountID }),
+              account.currency != firstMovement.money.currency,
+              financeConvertedMinorUnits(
+                  firstMovement.money,
+                  to: account.currency,
+                  using: transaction.exchangeRate
+              ) == nil,
+              let rate = storedExchangeRate(
+                  from: firstMovement.money.currency,
+                  to: account.currency
+              ) else { return }
+        transaction.exchangeRate = rate
+    }
+
+    private func storedExchangeRate(from baseCurrency: LedgerCurrency, to quoteCurrency: LedgerCurrency) -> ExchangeRate? {
+        guard baseCurrency != quoteCurrency else { return nil }
+        if let exact = exchangeRates.first(where: {
+            $0.baseCurrency == baseCurrency && $0.quoteCurrency == quoteCurrency
+        }) {
+            return exact
+        }
+        guard let reverse = exchangeRates.first(where: {
+            $0.baseCurrency == quoteCurrency && $0.quoteCurrency == baseCurrency
+        }), reverse.quoteUnitsPerBaseUnit > 0 else {
+            return nil
+        }
+        return ExchangeRate(
+            baseCurrency: baseCurrency,
+            quoteCurrency: quoteCurrency,
+            quoteUnitsPerBaseUnit: Decimal(1) / reverse.quoteUnitsPerBaseUnit
+        )
     }
 }

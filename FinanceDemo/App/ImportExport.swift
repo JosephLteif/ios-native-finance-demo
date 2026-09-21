@@ -317,6 +317,29 @@ struct FinanceImportResult {
 }
 
 enum FinanceImportReview {
+    static let suspiciousUSDMinorUnits: Int64 = 100_000
+
+    static func suspiciousLargeAmountTransactionIDs(
+        in imported: FinanceData,
+        thresholdUSDMinorUnits: Int64 = FinanceImportReview.suspiciousUSDMinorUnits
+    ) -> Set<UUID> {
+        Set(
+            imported.transactions.compactMap { transaction in
+                let hasLargeMovement = (transaction.outflows + transaction.inflows).contains { movement in
+                    guard let usdMinorUnits = financeConvertedMinorUnits(
+                        movement.money,
+                        to: .usd,
+                        using: transaction.exchangeRate
+                    ) else {
+                        return false
+                    }
+                    return usdMinorUnits > thresholdUSDMinorUnits
+                }
+                return hasLargeMovement ? transaction.id : nil
+            }
+        )
+    }
+
     static func duplicateTransactionIDs(
         in imported: FinanceData,
         existing: FinanceData
@@ -1515,8 +1538,8 @@ enum FinanceImportBuilder {
                     defaultID: options.defaultAccountID,
                     in: existing.accounts + importedAccounts
                 )
-                let preferredCurrency = knownSourceAccount?.currency
-                    ?? explicitCurrency
+                let preferredCurrency = explicitCurrency
+                    ?? knownSourceAccount?.currency
                     ?? accountSuggestion(for: accountName, in: options.accountSuggestions)?.currency
                     ?? inferredCurrency(for: accountName, fallback: options.defaultCurrency)
                 let inputCurrency = explicitCurrency ?? preferredCurrency
@@ -1584,16 +1607,20 @@ enum FinanceImportBuilder {
                 var exchangeRate: ExchangeRate?
                 switch kind {
                 case .expense:
-                    amount = try convertedAmount(
-                        importedAmount,
-                        to: currency,
+                    amount = importedAmount
+                    exchangeRate = try exchangeRateForImportedMovement(
+                        amount,
+                        accountCurrency: currency,
+                        reportingAmount: reportingAmount,
                         using: existing.exchangeRates + importedExchangeRates
                     )
                     outflows = [MoneyMovement(accountID: account.id, money: amount)]
                 case .income:
-                    amount = try convertedAmount(
-                        importedAmount,
-                        to: currency,
+                    amount = importedAmount
+                    exchangeRate = try exchangeRateForImportedMovement(
+                        amount,
+                        accountCurrency: currency,
+                        reportingAmount: reportingAmount,
                         using: existing.exchangeRates + importedExchangeRates
                     )
                     inflows = [MoneyMovement(accountID: account.id, money: amount)]
@@ -1742,12 +1769,6 @@ enum FinanceImportBuilder {
                     inflows = [MoneyMovement(accountID: destination.id, money: destinationAmount)]
                 }
 
-                if kind != .transfer,
-                   let reportingAmount,
-                   amount.currency != reportingAmount.currency {
-                    exchangeRate = inferredExchangeRate(from: amount, to: reportingAmount)
-                }
-
                 if let exchangeRate,
                    !importedExchangeRates.contains(where: {
                        $0.baseCurrency == exchangeRate.baseCurrency
@@ -1887,6 +1908,39 @@ enum FinanceImportBuilder {
         let minorUnits = NSDecimalNumber(decimal: rounded).int64Value
         guard minorUnits > 0 else { return nil }
         return Money(currency: currency, minorUnits: minorUnits)
+    }
+
+    private static func exchangeRateForImportedMovement(
+        _ amount: Money,
+        accountCurrency: LedgerCurrency,
+        reportingAmount: Money?,
+        using rates: [ExchangeRate]
+    ) throws -> ExchangeRate? {
+        if amount.currency == accountCurrency {
+            guard let reportingAmount,
+                  reportingAmount.currency != amount.currency else {
+                return nil
+            }
+            return inferredExchangeRate(from: amount, to: reportingAmount)
+        }
+
+        if let reportingAmount,
+           reportingAmount.currency != amount.currency,
+           let reportingRate = inferredExchangeRate(from: amount, to: reportingAmount),
+           convertedAmount(amount, to: accountCurrency, using: reportingRate) != nil {
+            return reportingRate
+        }
+
+        guard let accountRate = storedExchangeRate(
+            from: amount.currency,
+            to: accountCurrency,
+            in: rates
+        ) else {
+            throw FinanceImportError.row(
+                "No exchange rate is available to record the imported \(amount.currency.rawValue) amount in the \(accountCurrency.rawValue) account."
+            )
+        }
+        return accountRate
     }
 
     private static func accountSuggestion(

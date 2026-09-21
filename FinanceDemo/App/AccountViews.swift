@@ -34,11 +34,25 @@ private struct AccountDetailSnapshot {
         var incoming: Int64 = 0
         for transaction in transactions {
             outgoing += transaction.outflows
-                .filter { $0.accountID == account.id && $0.money.currency == account.currency }
-                .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+                .filter { $0.accountID == account.id }
+                .compactMap {
+                    financeConvertedMinorUnits(
+                        $0.money,
+                        to: account.currency,
+                        using: transaction.exchangeRate
+                    )
+                }
+                .reduce(Int64.zero, +)
             incoming += transaction.inflows
-                .filter { $0.accountID == account.id && $0.money.currency == account.currency }
-                .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+                .filter { $0.accountID == account.id }
+                .compactMap {
+                    financeConvertedMinorUnits(
+                        $0.money,
+                        to: account.currency,
+                        using: transaction.exchangeRate
+                    )
+                }
+                .reduce(Int64.zero, +)
         }
 
         let pageCount = max(1, (transactions.count + pageSize - 1) / pageSize)
@@ -334,14 +348,28 @@ private struct AccountTransactionRow: View {
 
     private var outgoing: Int64 {
         transaction.outflows
-            .filter { $0.accountID == account.id && $0.money.currency == account.currency }
-            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+            .filter { $0.accountID == account.id }
+            .compactMap {
+                financeConvertedMinorUnits(
+                    $0.money,
+                    to: account.currency,
+                    using: transaction.exchangeRate
+                )
+            }
+            .reduce(Int64.zero, +)
     }
 
     private var incoming: Int64 {
         transaction.inflows
-            .filter { $0.accountID == account.id && $0.money.currency == account.currency }
-            .reduce(Int64.zero) { $0 + $1.money.minorUnits }
+            .filter { $0.accountID == account.id }
+            .compactMap {
+                financeConvertedMinorUnits(
+                    $0.money,
+                    to: account.currency,
+                    using: transaction.exchangeRate
+                )
+            }
+            .reduce(Int64.zero, +)
     }
 
     var body: some View {

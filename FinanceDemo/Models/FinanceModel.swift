@@ -284,7 +284,8 @@ enum FinanceAccountCurrencyMigration {
         _ data: FinanceData,
         accountID: UUID,
         from oldCurrency: LedgerCurrency,
-        to newCurrency: LedgerCurrency
+        to newCurrency: LedgerCurrency,
+        preserveMovementCurrencies: Bool = false
     ) -> FinanceData {
         guard oldCurrency != newCurrency else { return data }
 
@@ -309,6 +310,7 @@ enum FinanceAccountCurrencyMigration {
                 accountID: accountID,
                 from: oldCurrency,
                 to: newCurrency,
+                preserveMovementCurrencies: preserveMovementCurrencies,
                 kind: transaction.kind
             )
             updated.transactions[index] = transaction
@@ -325,6 +327,7 @@ enum FinanceAccountCurrencyMigration {
                 accountID: accountID,
                 from: oldCurrency,
                 to: newCurrency,
+                preserveMovementCurrencies: preserveMovementCurrencies,
                 kind: transaction.kind
             )
             updated.scheduledTransactions[index] = transaction
@@ -341,6 +344,7 @@ enum FinanceAccountCurrencyMigration {
                 accountID: accountID,
                 from: oldCurrency,
                 to: newCurrency,
+                preserveMovementCurrencies: preserveMovementCurrencies,
                 kind: template.kind
             )
             updated.templates[index] = template
@@ -358,6 +362,7 @@ enum FinanceAccountCurrencyMigration {
         accountID: UUID,
         from oldCurrency: LedgerCurrency,
         to newCurrency: LedgerCurrency,
+        preserveMovementCurrencies: Bool,
         kind: TransactionKind
     ) {
         var didMigrateMovement = false
@@ -377,7 +382,9 @@ enum FinanceAccountCurrencyMigration {
         }
 
         func migrateMovements(_ movements: inout [MoneyMovement]) {
-            for index in movements.indices where movements[index].accountID == accountID {
+            guard !preserveMovementCurrencies else { return }
+            for index in movements.indices where movements[index].accountID == accountID
+                && movements[index].money.currency == oldCurrency {
                 movements[index].money = migratedMoney(movements[index].money)
                 didMigrateMovement = true
             }

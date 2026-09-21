@@ -3122,6 +3122,7 @@ private struct CategoryEditor: View {
 private struct MovementDraft: Identifiable, Equatable {
     let id = UUID()
     var accountID: UUID
+    var currency: LedgerCurrency
     var amount: String
 }
 
@@ -3150,14 +3151,18 @@ private struct MovementLineEditor: View {
                     .accessibilityLabel("New account")
             }
 
+            Picker("Currency", selection: $line.currency) {
+                ForEach(LedgerCurrency.allCases) { currency in
+                    Text(currency.rawValue).tag(currency)
+                }
+            }
+
             HStack {
                 TextField(amountPlaceholder, text: $line.amount)
                     .keyboardType(.decimalPad)
-                if let account = store.account(with: line.accountID) {
-                    Text(account.currency.rawValue)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
+                Text(line.currency.rawValue)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -3249,8 +3254,12 @@ struct TransactionEditor: View {
         let initialDestinationAccountID = initialDestinationAccount?.id ?? firstAccountID
         let amountDue = sourceTransaction?.amountDue ?? scheduledTransaction?.amountDue ?? initialBillTotal
         let initialCurrencies = LedgerCurrency.allCases.filter { currency in
-            (sourceTransaction?.outflows ?? scheduledTransaction?.outflows ?? []).contains { $0.money.currency == currency }
-                || (sourceTransaction?.inflows ?? scheduledTransaction?.inflows ?? []).contains { $0.money.currency == currency }
+            let initialOutflows = sourceTransaction?.outflows ?? scheduledTransaction?.outflows ?? []
+            let initialInflows = sourceTransaction?.inflows ?? scheduledTransaction?.inflows ?? []
+            initialOutflows.contains { $0.money.currency == currency }
+                || initialInflows.contains { $0.money.currency == currency }
+                || initialOutflows.contains { store.account(with: $0.accountID)?.currency == currency }
+                || initialInflows.contains { store.account(with: $0.accountID)?.currency == currency }
                 || (resolvedInitialKind == .transfer && [
                     firstAccount?.currency,
                     initialDestinationAccount?.currency
@@ -3284,19 +3293,34 @@ struct TransactionEditor: View {
         _amountDue = State(initialValue: amountDue.map { Self.inputText(for: $0) } ?? "")
         _outflows = State(
             initialValue: (sourceTransaction?.outflows ?? scheduledTransaction?.outflows)?.map {
-                MovementDraft(accountID: $0.accountID, amount: Self.inputText(for: $0.money))
+                MovementDraft(
+                    accountID: $0.accountID,
+                    currency: $0.money.currency,
+                    amount: Self.inputText(for: $0.money)
+                )
             } ?? [
                 MovementDraft(
                     accountID: firstAccountID,
+                    currency: initialAmount?.currency ?? firstAccount?.currency ?? preferredCurrency ?? .usd,
                     amount: initialAmount.map { Self.inputText(for: $0) } ?? ""
                 )
             ]
         )
         _inflows = State(
             initialValue: (sourceTransaction?.inflows ?? scheduledTransaction?.inflows)?.map {
-                MovementDraft(accountID: $0.accountID, amount: Self.inputText(for: $0.money))
+                MovementDraft(
+                    accountID: $0.accountID,
+                    currency: $0.money.currency,
+                    amount: Self.inputText(for: $0.money)
+                )
             } ?? (resolvedInitialKind == .transfer
-                ? [MovementDraft(accountID: initialDestinationAccountID, amount: "")]
+                ? [
+                    MovementDraft(
+                        accountID: initialDestinationAccountID,
+                        currency: initialDestinationAccount?.currency ?? .usd,
+                        amount: ""
+                    )
+                ]
                 : [])
         )
         _requestedChange = State(
@@ -3806,14 +3830,23 @@ struct TransactionEditor: View {
     }
 
     private var newMovementDraft: MovementDraft {
-        MovementDraft(accountID: store.activeAccounts.first?.id ?? UUID(), amount: "")
+        let account = store.activeAccounts.first
+        return MovementDraft(
+            accountID: account?.id ?? UUID(),
+            currency: account?.currency ?? .usd,
+            amount: ""
+        )
     }
 
     private var newReceivingMovementDraft: MovementDraft {
         let sourceAccountIDs = Set(outflows.map(\.accountID))
         let account = store.activeAccounts.first(where: { !sourceAccountIDs.contains($0.id) })
             ?? store.activeAccounts.first
-        return MovementDraft(accountID: account?.id ?? UUID(), amount: "")
+        return MovementDraft(
+            accountID: account?.id ?? UUID(),
+            currency: account?.currency ?? .usd,
+            amount: ""
+        )
     }
 
     private static func inputText(for money: Money) -> String {
@@ -3822,8 +3855,15 @@ struct TransactionEditor: View {
     }
 
     private var selectedCurrencies: [LedgerCurrency] {
-        let accountIDs = (kind == .income ? [] : outflows.map(\.accountID)) + inflows.map(\.accountID)
-        let currencies = Set(accountIDs.compactMap { store.account(with: $0)?.currency })
+        let drafts = (kind == .income ? [] : outflows) + inflows
+        let currencies = Set(
+            drafts.flatMap { draft in
+                [
+                    draft.currency,
+                    store.account(with: draft.accountID)?.currency
+                ].compactMap { $0 }
+            }
+        )
         return LedgerCurrency.allCases.filter { currencies.contains($0) }
     }
 
@@ -3832,12 +3872,27 @@ struct TransactionEditor: View {
     }
 
     private var rateCurrencyPair: (base: LedgerCurrency, quote: LedgerCurrency)? {
-        guard let sourceCurrency = outflows.first.flatMap({ store.account(with: $0.accountID)?.currency }),
-              let destinationCurrency = inflows.first.flatMap({ store.account(with: $0.accountID)?.currency }),
-              sourceCurrency != destinationCurrency else {
-            return nil
+        if kind == .transfer,
+           let sourceCurrency = outflows.first?.currency,
+           let destinationCurrency = inflows.first?.currency,
+           sourceCurrency != destinationCurrency {
+            return (base: sourceCurrency, quote: destinationCurrency)
         }
-        return (base: sourceCurrency, quote: destinationCurrency)
+
+        let drafts = (kind == .income ? [] : outflows) + inflows
+        for draft in drafts {
+            guard let accountCurrency = store.account(with: draft.accountID)?.currency,
+                  accountCurrency != draft.currency else {
+                continue
+            }
+            return (base: accountCurrency, quote: draft.currency)
+        }
+
+        let currencies = selectedCurrencies
+        if currencies.count > 1 {
+            return (base: currencies[0], quote: currencies[1])
+        }
+        return nil
     }
 
     private var parsedRateValue: Decimal? {
@@ -3869,12 +3924,13 @@ struct TransactionEditor: View {
             return nil
         }
 
-        let sourceUnits = parsedOutflows
+        let parsedMovements = parsedOutflows + parsedInflows
+        let sourceUnits = parsedMovements
             .filter { $0.money.currency == pair.base }
             .reduce(Decimal.zero) { total, movement in
                 total + Decimal(movement.money.minorUnits) / Decimal(pair.base.minorUnitScale)
             }
-        let destinationUnits = parsedInflows
+        let destinationUnits = parsedMovements
             .filter { $0.money.currency == pair.quote }
             .reduce(Decimal.zero) { total, movement in
                 total + Decimal(movement.money.minorUnits) / Decimal(pair.quote.minorUnitScale)
@@ -3988,14 +4044,14 @@ struct TransactionEditor: View {
         let canUpdate = currentDestinationAmount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || currentDestinationAmount == automaticTransferDestinationAmount
         guard canUpdate,
-              let sourceMoney = Money.parse(outflows[0].amount, currency: sourceAccount.currency),
+              let sourceMoney = Money.parse(outflows[0].amount, currency: outflows[0].currency),
               sourceMoney.minorUnits > 0 else {
             clearAutomaticTransferAmount()
             return
         }
 
         let destinationMoney: Money?
-        if sourceAccount.currency == destinationAccount.currency {
+        if outflows[0].currency == inflows[0].currency {
             destinationMoney = sourceMoney
         } else {
             guard let rate = automaticTransferRate else {
@@ -4005,7 +4061,7 @@ struct TransactionEditor: View {
             let sourceUnits = Decimal(sourceMoney.minorUnits) / Decimal(sourceMoney.currency.minorUnitScale)
             destinationMoney = Self.money(
                 units: sourceUnits * rate,
-                currency: destinationAccount.currency
+                currency: inflows[0].currency
             )
         }
 
@@ -4072,8 +4128,7 @@ struct TransactionEditor: View {
            inflows.count == 1,
            !requestedChange.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             guard parsedInflows.count == 1,
-                  let currency = store.account(with: inflows[0].accountID)?.currency,
-                  let requested = Money.parse(requestedChange, currency: currency),
+                  let requested = Money.parse(requestedChange, currency: inflows[0].currency),
                   requested.minorUnits >= 0 else {
                 return false
             }
@@ -4087,14 +4142,8 @@ struct TransactionEditor: View {
             }
         }
 
-        if kind == .transfer && selectedCurrencies.count > 1 {
-            guard appliedExchangeRate != nil else {
-                return false
-            }
-        } else if selectedCurrencies.count > 1 && useCustomRate {
-            guard customExchangeRate != nil else {
-                return false
-            }
+        if selectedCurrencies.count > 1 {
+            guard appliedExchangeRate != nil else { return false }
         }
 
         return true
@@ -4109,18 +4158,17 @@ struct TransactionEditor: View {
 
     private var shortfallPreview: String? {
         guard inflows.count == 1,
-              let account = store.account(with: inflows[0].accountID),
-              let requested = Money.parse(requestedChange, currency: account.currency),
-              let actual = Money.parse(inflows[0].amount, currency: account.currency) else {
+              let requested = Money.parse(requestedChange, currency: inflows[0].currency),
+              let actual = Money.parse(inflows[0].amount, currency: inflows[0].currency) else {
             return nil
         }
 
         let difference = requested.minorUnits - actual.minorUnits
         if difference > 0 {
-            return "Recorded denomination shortfall: \(Money(currency: account.currency, minorUnits: difference).formatted)."
+            return "Recorded denomination shortfall: \(Money(currency: inflows[0].currency, minorUnits: difference).formatted)."
         }
         if difference < 0 {
-            return "Actual change is \(Money(currency: account.currency, minorUnits: -difference).formatted) above the requested amount."
+            return "Actual change is \(Money(currency: inflows[0].currency, minorUnits: -difference).formatted) above the requested amount."
         }
         return "The requested and actual change match."
     }
@@ -4128,7 +4176,7 @@ struct TransactionEditor: View {
     private func parseMovements(_ drafts: [MovementDraft]) -> [MoneyMovement]? {
         let movements = drafts.compactMap { draft -> MoneyMovement? in
             guard let account = store.account(with: draft.accountID),
-                  let money = Money.parse(draft.amount, currency: account.currency),
+                  let money = Money.parse(draft.amount, currency: draft.currency),
                   money.minorUnits > 0 else {
                 return nil
             }
@@ -4144,26 +4192,21 @@ struct TransactionEditor: View {
         }
 
         var exchangeRate: ExchangeRate?
-        if kind == .transfer && selectedCurrencies.count > 1 {
+        if selectedCurrencies.count > 1 {
             guard let appliedExchangeRate else {
-                errorMessage = "Enter both transfer amounts or set a positive rate override."
+                errorMessage = kind == .transfer
+                    ? "Enter both transfer amounts or set a positive rate override."
+                    : "Set a positive exchange rate for the different movement and account currencies."
                 return
             }
             exchangeRate = appliedExchangeRate
-        } else if selectedCurrencies.count > 1 && useCustomRate {
-            guard let customExchangeRate else {
-                errorMessage = "Enter a positive custom exchange rate with different currencies."
-                return
-            }
-            exchangeRate = customExchangeRate
         }
 
         var changeAdjustment: ChangeAdjustment?
         if kind == .expense,
            !requestedChange.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            parsedInflows.count == 1,
-           let currency = store.account(with: inflows[0].accountID)?.currency,
-           let requested = Money.parse(requestedChange, currency: currency) {
+           let requested = Money.parse(requestedChange, currency: inflows[0].currency) {
             changeAdjustment = ChangeAdjustment(requested: requested, actual: parsedInflows[0].money)
         }
 

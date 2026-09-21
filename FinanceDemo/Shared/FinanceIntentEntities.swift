@@ -233,12 +233,20 @@ func financeAccountBalance(for account: Account, in data: FinanceData) -> Money 
 
     for transaction in data.transactions {
         for movement in transaction.outflows where movement.accountID == account.id {
-            guard movement.money.currency == account.currency else { continue }
-            minorUnits -= movement.money.minorUnits
+            guard let amount = financeConvertedMinorUnits(
+                movement.money,
+                to: account.currency,
+                using: transaction.exchangeRate
+            ) else { continue }
+            minorUnits -= amount
         }
         for movement in transaction.inflows where movement.accountID == account.id {
-            guard movement.money.currency == account.currency else { continue }
-            minorUnits += movement.money.minorUnits
+            guard let amount = financeConvertedMinorUnits(
+                movement.money,
+                to: account.currency,
+                using: transaction.exchangeRate
+            ) else { continue }
+            minorUnits += amount
         }
     }
 

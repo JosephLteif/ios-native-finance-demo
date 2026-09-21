@@ -69,17 +69,25 @@ struct LedgerIndex {
         for transaction in data.transactions {
             for movement in transaction.outflows {
                 guard let account = accountsByID[movement.accountID],
-                      movement.money.currency == account.currency else {
+                      let amount = financeConvertedMinorUnits(
+                          movement.money,
+                          to: account.currency,
+                          using: transaction.exchangeRate
+                      ) else {
                     continue
                 }
-                balancesByAccountID[movement.accountID, default: 0] -= movement.money.minorUnits
+                balancesByAccountID[movement.accountID, default: 0] -= amount
             }
             for movement in transaction.inflows {
                 guard let account = accountsByID[movement.accountID],
-                      movement.money.currency == account.currency else {
+                      let amount = financeConvertedMinorUnits(
+                          movement.money,
+                          to: account.currency,
+                          using: transaction.exchangeRate
+                      ) else {
                     continue
                 }
-                balancesByAccountID[movement.accountID, default: 0] += movement.money.minorUnits
+                balancesByAccountID[movement.accountID, default: 0] += amount
             }
         }
         self.balancesByAccountID = balancesByAccountID

@@ -68,19 +68,27 @@ private struct CategoryMetricsDetailSnapshot {
                   range.contains(transaction.date),
                   transaction.categoryID == categoryID,
                   transaction.outflows.contains(where: {
-                      $0.money.currency == currency
-                          && index.includesInTotals(accountID: $0.accountID)
+                      index.includesInTotals(accountID: $0.accountID)
+                          && financeConvertedMinorUnits(
+                              $0.money,
+                              to: currency,
+                              using: transaction.exchangeRate
+                          ) != nil
                   }),
                   let monthStart = calendar.dateInterval(of: .month, for: transaction.date)?.start else {
                 continue
             }
 
             let outflowAmount = transaction.outflows.reduce(Int64.zero) { total, movement in
-                guard movement.money.currency == currency,
-                      index.includesInTotals(accountID: movement.accountID) else {
+                guard index.includesInTotals(accountID: movement.accountID),
+                      let converted = financeConvertedMinorUnits(
+                          movement.money,
+                          to: currency,
+                          using: transaction.exchangeRate
+                      ) else {
                     return total
                 }
-                return total + movement.money.minorUnits
+                return total + converted
             }
             monthlyAmounts[monthStart, default: 0] += outflowAmount
 

@@ -314,12 +314,20 @@ final class FinanceStorage {
 
             for transaction in value.transactions {
                 for movement in transaction.outflows where movement.accountID == account.id {
-                    guard movement.money.currency == account.currency else { continue }
-                    balance -= movement.money.minorUnits
+                    guard let amount = financeConvertedMinorUnits(
+                        movement.money,
+                        to: account.currency,
+                        using: transaction.exchangeRate
+                    ) else { continue }
+                    balance -= amount
                 }
                 for movement in transaction.inflows where movement.accountID == account.id {
-                    guard movement.money.currency == account.currency else { continue }
-                    balance += movement.money.minorUnits
+                    guard let amount = financeConvertedMinorUnits(
+                        movement.money,
+                        to: account.currency,
+                        using: transaction.exchangeRate
+                    ) else { continue }
+                    balance += amount
                 }
             }
 

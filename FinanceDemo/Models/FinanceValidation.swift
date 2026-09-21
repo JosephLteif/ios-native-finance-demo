@@ -23,7 +23,7 @@ enum FinanceTransactionValidationError: LocalizedError, Equatable {
         case .archivedMovementAccount:
             return "Choose an active account for this transaction."
         case .movementCurrencyMismatch:
-            return "A movement amount must use its account's currency."
+            return "A movement amount must use its account's currency, or include a valid exchange rate."
         case .nonPositiveMovement:
             return "Movement amounts must be greater than zero."
         case .missingCategory:
@@ -39,7 +39,7 @@ enum FinanceTransactionValidationError: LocalizedError, Equatable {
         case .unbalancedTransfer:
             return "A same-currency transfer must send and receive the same amount."
         case .missingExchangeRate:
-            return "Add an exchange rate for a cross-currency transfer."
+            return "Add an exchange rate for this cross-currency transaction."
         }
     }
 }
@@ -60,8 +60,13 @@ enum FinanceTransactionValidator {
             if account.isArchived && !allowArchivedReferences {
                 return .archivedMovementAccount
             }
-            guard movement.money.currency == account.currency else {
-                return .movementCurrencyMismatch
+            if movement.money.currency != account.currency,
+               financeConvertedMinorUnits(
+                   movement.money,
+                   to: account.currency,
+                   using: transaction.exchangeRate
+               ) == nil {
+                return .missingExchangeRate
             }
             guard movement.money.minorUnits > 0 else {
                 return .nonPositiveMovement
