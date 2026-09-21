@@ -3256,7 +3256,7 @@ struct TransactionEditor: View {
         let initialCurrencies = LedgerCurrency.allCases.filter { currency in
             let initialOutflows = sourceTransaction?.outflows ?? scheduledTransaction?.outflows ?? []
             let initialInflows = sourceTransaction?.inflows ?? scheduledTransaction?.inflows ?? []
-            initialOutflows.contains { $0.money.currency == currency }
+            return initialOutflows.contains { $0.money.currency == currency }
                 || initialInflows.contains { $0.money.currency == currency }
                 || initialOutflows.contains { store.account(with: $0.accountID)?.currency == currency }
                 || initialInflows.contains { store.account(with: $0.accountID)?.currency == currency }
