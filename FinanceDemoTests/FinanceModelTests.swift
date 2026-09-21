@@ -884,6 +884,46 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertNil(FinanceDataValidator.validate(migrated))
     }
 
+    func testAccountCurrencyMigrationRepairsNegativeImportedMovement() throws {
+        let account = Account(
+            name: "LBP Cash",
+            type: .cash,
+            currency: .lbp,
+            openingBalance: Money(currency: .lbp, minorUnits: 0)
+        )
+        let rate = ExchangeRate(
+            baseCurrency: .lbp,
+            quoteCurrency: .usd,
+            quoteUnitsPerBaseUnit: try XCTUnwrap(Decimal(string: "0.000073059"))
+        )
+        let transaction = LedgerTransaction(
+            note: "Imported LBP expense",
+            kind: .expense,
+            categoryID: nil,
+            outflows: [
+                MoneyMovement(
+                    accountID: account.id,
+                    money: Money(currency: .lbp, minorUnits: -273_750)
+                )
+            ],
+            inflows: [],
+            exchangeRate: rate
+        )
+
+        let migrated = FinanceAccountCurrencyMigration.migrating(
+            FinanceData(accounts: [account], categories: [], transactions: [transaction]),
+            accountID: account.id,
+            from: .lbp,
+            to: .usd
+        )
+
+        XCTAssertEqual(
+            migrated.transactions.first?.outflows.first?.money,
+            Money(currency: .usd, minorUnits: 2_000)
+        )
+        XCTAssertNil(FinanceDataValidator.validate(migrated))
+    }
+
     func testAccountCurrencyMigrationPreservesForeignCurrencyMovements() throws {
         let account = Account(
             name: "USD Cash",
