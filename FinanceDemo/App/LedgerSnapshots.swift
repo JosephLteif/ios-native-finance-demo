@@ -10,12 +10,23 @@ struct MetricsCategorySnapshot: Identifiable {
     let colorIndex: Int
 }
 
+struct MetricsAccountSnapshot: Identifiable {
+    let id: UUID
+    let accountID: UUID
+    let title: String
+    let currency: LedgerCurrency
+    let amount: Int64
+    let count: Int
+    let colorIndex: Int
+}
+
 struct MetricsSnapshot {
     let filteredTransactions: [LedgerTransaction]
     let income: Int64
     let expenses: Int64
     let activityCounts: [TransactionKind: Int]
     let categories: [MetricsCategorySnapshot]
+    let accounts: [MetricsAccountSnapshot]
 
     static var empty: MetricsSnapshot {
         MetricsSnapshot(
@@ -23,7 +34,8 @@ struct MetricsSnapshot {
             income: 0,
             expenses: 0,
             activityCounts: [:],
-            categories: []
+            categories: [],
+            accounts: []
         )
     }
 
@@ -38,6 +50,7 @@ struct MetricsSnapshot {
         var expenses: Int64 = 0
         var activityCounts: [TransactionKind: Int] = [:]
         var categoryTotals: [UUID?: (title: String, amount: Int64, count: Int)] = [:]
+        var accountTotals: [UUID: (amount: Int64, transactionIDs: Set<UUID>)] = [:]
 
         for transaction in index.sortedTransactions {
             guard interval.contains(transaction.date),
@@ -64,13 +77,48 @@ struct MetricsSnapshot {
                 let amount = index.netExpenseAmount(transaction, currency: selectedCurrency)
                 expenses += amount
                 guard amount > 0 else { continue }
-                let current = categoryTotals[transaction.categoryID]
-                    ?? (index.categoryPath(for: transaction.categoryID), 0, 0)
-                categoryTotals[transaction.categoryID] = (
+                let groupID = index.topLevelCategoryID(for: transaction.categoryID)
+                let current = categoryTotals[groupID]
+                    ?? (index.categoryName(for: groupID), 0, 0)
+                categoryTotals[groupID] = (
                     current.title,
                     current.amount + amount,
                     current.count + 1
                 )
+
+                var accountNetAmounts: [UUID: Int64] = [:]
+                for movement in transaction.outflows {
+                    guard index.includesInTotals(accountID: movement.accountID),
+                          let converted = financeConvertedMinorUnits(
+                              movement.money,
+                              to: selectedCurrency,
+                              using: transaction.exchangeRate
+                          ) else {
+                        continue
+                    }
+                    accountNetAmounts[movement.accountID, default: 0] += converted
+                }
+                for movement in transaction.inflows {
+                    guard index.includesInTotals(accountID: movement.accountID),
+                          let converted = financeConvertedMinorUnits(
+                              movement.money,
+                              to: selectedCurrency,
+                              using: transaction.exchangeRate
+                          ) else {
+                        continue
+                    }
+                    accountNetAmounts[movement.accountID, default: 0] -= converted
+                }
+
+                for (accountID, amount) in accountNetAmounts where amount > 0 {
+                    guard index.account(with: accountID) != nil else { continue }
+                    let current = accountTotals[accountID]
+                        ?? (amount: 0, transactionIDs: Set<UUID>())
+                    accountTotals[accountID] = (
+                        current.amount + amount,
+                        current.transactionIDs.union([transaction.id])
+                    )
+                }
             case .transfer:
                 break
             }
@@ -103,12 +151,41 @@ struct MetricsSnapshot {
                 )
             }
 
+        let accounts = accountTotals
+            .compactMap { accountID, value -> (accountID: UUID, title: String, amount: Int64, count: Int)? in
+                guard let account = index.account(with: accountID) else { return nil }
+                return (
+                    accountID: accountID,
+                    title: account.name,
+                    amount: value.amount,
+                    count: value.transactionIDs.count
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.amount != rhs.amount { return lhs.amount > rhs.amount }
+                if lhs.title != rhs.title { return lhs.title < rhs.title }
+                return lhs.accountID.uuidString < rhs.accountID.uuidString
+            }
+            .enumerated()
+            .map { index, value in
+                MetricsAccountSnapshot(
+                    id: "\(value.accountID.uuidString)-\(selectedCurrency.rawValue)",
+                    accountID: value.accountID,
+                    title: value.title,
+                    currency: selectedCurrency,
+                    amount: value.amount,
+                    count: value.count,
+                    colorIndex: index
+                )
+            }
+
         return MetricsSnapshot(
             filteredTransactions: filteredTransactions,
             income: income,
             expenses: expenses,
             activityCounts: activityCounts,
-            categories: categories
+            categories: categories,
+            accounts: accounts
         )
     }
 }

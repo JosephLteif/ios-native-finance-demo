@@ -151,6 +151,29 @@ struct LedgerIndex {
         return categoryPathsByID[categoryID] ?? "Uncategorized"
     }
 
+    func categoryName(for categoryID: UUID?) -> String {
+        guard let categoryID else { return "Uncategorized" }
+        return categoriesByID[categoryID]?.name ?? "Uncategorized"
+    }
+
+    func topLevelCategoryID(for categoryID: UUID?) -> UUID? {
+        guard let categoryID else { return nil }
+        return categoryAncestorsByID[categoryID]?.last
+    }
+
+    func directDescendantCategoryID(
+        for categoryID: UUID?,
+        under ancestorID: UUID
+    ) -> UUID? {
+        guard let categoryID,
+              let ancestors = categoryAncestorsByID[categoryID],
+              let ancestorIndex = ancestors.firstIndex(of: ancestorID),
+              ancestorIndex > 0 else {
+            return nil
+        }
+        return ancestors[ancestorIndex - 1]
+    }
+
     func categorySystemImage(for categoryID: UUID?) -> String {
         guard let categoryID else { return "tag.fill" }
         return categoriesByID[categoryID]?.systemImage ?? "tag.fill"

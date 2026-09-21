@@ -69,6 +69,10 @@ final class FinanceDemoUITests: XCTestCase {
         app.buttons["Month"].tap()
         XCTAssertTrue(app.buttons["Previous period"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Next period"].waitForExistence(timeout: 5))
+
+        XCTAssertTrue(app.buttons["Account"].waitForExistence(timeout: 5))
+        app.buttons["Account"].tap()
+        XCTAssertTrue(app.staticTexts["Spending by account"].waitForExistence(timeout: 5))
     }
 
     func testTransactionsExposeSelectionAndSavedFilters() {

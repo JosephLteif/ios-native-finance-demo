@@ -10,6 +10,13 @@ private enum MetricsPeriod: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+private enum MetricsBreakdown: String, CaseIterable, Identifiable {
+    case category = "Category"
+    case account = "Account"
+
+    var id: String { rawValue }
+}
+
 private typealias CategoryMetric = MetricsCategorySnapshot
 
 private struct CategoryMonthPoint: Identifiable {
@@ -29,12 +36,14 @@ private struct CategoryMetricsDetailSnapshot {
     let monthlyPoints: [CategoryMonthPoint]
     let selectedMonthTransactions: [LedgerTransaction]
     let selectedMonthTotal: Int64
+    let subcategories: [CategoryMetric]
 
     static var empty: CategoryMetricsDetailSnapshot {
         CategoryMetricsDetailSnapshot(
             monthlyPoints: [],
             selectedMonthTransactions: [],
-            selectedMonthTotal: 0
+            selectedMonthTotal: 0,
+            subcategories: []
         )
     }
 
@@ -62,11 +71,16 @@ private struct CategoryMetricsDetailSnapshot {
         }
         var selectedMonthTransactions: [LedgerTransaction] = []
         var selectedMonthTotal: Int64 = 0
+        var subcategoryTotals: [UUID: (title: String, amount: Int64, count: Int)] = [:]
 
         for transaction in index.sortedTransactions {
             guard transaction.kind == .expense,
                   range.contains(transaction.date),
-                  transaction.categoryID == categoryID,
+                  index.categoryMatches(
+                      transaction.categoryID,
+                      selectedCategoryID: categoryID
+                  ),
+                  index.categoryIncludedInTotals(transaction.categoryID),
                   transaction.outflows.contains(where: {
                       index.includesInTotals(accountID: $0.accountID)
                           && financeConvertedMinorUnits(
@@ -92,6 +106,21 @@ private struct CategoryMetricsDetailSnapshot {
             }
             monthlyAmounts[monthStart, default: 0] += outflowAmount
 
+            if let categoryID,
+               let subcategoryID = index.directDescendantCategoryID(
+                   for: transaction.categoryID,
+                   under: categoryID
+               ),
+               outflowAmount > 0 {
+                let current = subcategoryTotals[subcategoryID]
+                    ?? (index.categoryName(for: subcategoryID), 0, 0)
+                subcategoryTotals[subcategoryID] = (
+                    current.title,
+                    current.amount + outflowAmount,
+                    current.count + 1
+                )
+            }
+
             if monthStart == currentMonth {
                 selectedMonthTransactions.append(transaction)
                 selectedMonthTotal += outflowAmount
@@ -103,7 +132,28 @@ private struct CategoryMetricsDetailSnapshot {
                 CategoryMonthPoint(date: $0, amount: monthlyAmounts[$0] ?? 0)
             },
             selectedMonthTransactions: selectedMonthTransactions,
-            selectedMonthTotal: selectedMonthTotal
+            selectedMonthTotal: selectedMonthTotal,
+            subcategories: subcategoryTotals
+                .map { categoryID, value in
+                    (categoryID: categoryID, title: value.title, amount: value.amount, count: value.count)
+                }
+                .sorted { lhs, rhs in
+                    if lhs.amount != rhs.amount { return lhs.amount > rhs.amount }
+                    if lhs.title != rhs.title { return lhs.title < rhs.title }
+                    return lhs.categoryID.uuidString < rhs.categoryID.uuidString
+                }
+                .enumerated()
+                .map { index, value in
+                    CategoryMetric(
+                        id: "detail-\(value.categoryID.uuidString)-\(currency.rawValue)",
+                        categoryID: value.categoryID,
+                        title: value.title,
+                        currency: currency,
+                        amount: value.amount,
+                        count: value.count,
+                        colorIndex: index
+                    )
+                }
         )
     }
 }
@@ -118,6 +168,7 @@ struct MetricsView: View {
     @State private var customStart = Calendar.current.date(byAdding: .month, value: -1, to: Date.now) ?? Date.now
     @State private var customEnd = Date.now
     @State private var selectedCategoryID: UUID?
+    @State private var breakdown: MetricsBreakdown = .category
     @State private var reportToShare: MetricsReportShareItem?
     @State private var reportError: String?
     @State private var snapshot = MetricsSnapshot.empty
@@ -232,6 +283,14 @@ struct MetricsView: View {
                 .pocketGlassSurface(cornerRadius: 10, tint: PocketLedgerTheme.surfaceElevated.opacity(0.22))
             }
 
+            Picker("Breakdown", selection: $breakdown) {
+                ForEach(MetricsBreakdown.allCases) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("metrics-breakdown-picker")
+
             Picker("Category", selection: $selectedCategoryID) {
                 Text("All categories").tag(UUID?.none)
                 ForEach(store.activeCategories) { category in
@@ -324,7 +383,7 @@ struct MetricsView: View {
     private func spendingChart(_ snapshot: MetricsSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Spending by category")
+                Text(breakdown == .category ? "Spending by category" : "Spending by account")
                     .font(.title3.weight(.bold))
                 Spacer()
                 Text("\(snapshot.filteredTransactions.count) entries")
@@ -332,58 +391,105 @@ struct MetricsView: View {
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
 
-            if snapshot.categories.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "chart.pie")
-                        .font(.title2)
-                        .foregroundStyle(PocketLedgerTheme.textTertiary)
-                    Text("No expense activity in this range.")
-                        .font(.subheadline)
-                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+            if breakdown == .category {
+                if snapshot.categories.isEmpty {
+                    emptySpendingChart
+                } else {
+                    categorySpendingChart(snapshot)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 46)
             } else {
-                ZStack {
-                    Chart(snapshot.categories) { metric in
-                        SectorMark(
-                            angle: .value("Amount", Double(metric.amount)),
-                            innerRadius: .ratio(0.61),
-                            angularInset: 1.5
-                        )
-                        .foregroundStyle(chartColor(for: metric.colorIndex))
-                        .annotation(position: .overlay) {
-                            if share(for: metric, total: snapshot.expenses) >= 0.08 {
-                                Text("\(percentage(for: metric, total: snapshot.expenses))%")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(.white)
-                            }
-                        }
-                    }
-                    .chartLegend(.hidden)
-                    .frame(height: 246)
-
-                    VStack(spacing: 3) {
-                        Text(Money(currency: selectedCurrency, minorUnits: snapshot.expenses).formatted)
-                            .font(.headline.weight(.bold).monospacedDigit())
-                            .minimumScaleFactor(0.8)
-                            .lineLimit(1)
-                        Text("TOTAL SPENT")
-                            .font(.caption2.weight(.bold))
-                            .tracking(0.8)
-                            .foregroundStyle(PocketLedgerTheme.textTertiary)
-                    }
+                if snapshot.accounts.isEmpty {
+                    emptySpendingChart
+                } else {
+                    accountSpendingChart(snapshot)
                 }
             }
         }
         .pocketCard()
     }
 
+    private var emptySpendingChart: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "chart.pie")
+                .font(.title2)
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+            Text("No expense activity in this range.")
+                .font(.subheadline)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 46)
+    }
+
+    private func categorySpendingChart(_ snapshot: MetricsSnapshot) -> some View {
+        ZStack {
+            Chart(snapshot.categories) { metric in
+                SectorMark(
+                    angle: .value("Amount", Double(metric.amount)),
+                    innerRadius: .ratio(0.61),
+                    angularInset: 1.5
+                )
+                .foregroundStyle(chartColor(for: metric.colorIndex))
+                .annotation(position: .overlay) {
+                    if share(for: metric.amount, total: snapshot.expenses) >= 0.08 {
+                        Text("\(percentage(for: metric.amount, total: snapshot.expenses))%")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            .chartLegend(.hidden)
+            .frame(height: 246)
+
+            spendingTotal(snapshot.expenses)
+        }
+    }
+
+    private func accountSpendingChart(_ snapshot: MetricsSnapshot) -> some View {
+        let total = snapshot.accounts.reduce(Int64.zero) { $0 + $1.amount }
+        return ZStack {
+            Chart(snapshot.accounts) { metric in
+                SectorMark(
+                    angle: .value("Amount", Double(metric.amount)),
+                    innerRadius: .ratio(0.61),
+                    angularInset: 1.5
+                )
+                .foregroundStyle(chartColor(for: metric.colorIndex))
+                .annotation(position: .overlay) {
+                    if share(for: metric.amount, total: total) >= 0.08 {
+                        Text("\(percentage(for: metric.amount, total: total))%")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            .chartLegend(.hidden)
+            .frame(height: 246)
+
+            spendingTotal(total)
+        }
+    }
+
+    private func spendingTotal(_ total: Int64) -> some View {
+        VStack(spacing: 3) {
+            Text(Money(currency: selectedCurrency, minorUnits: total).formatted)
+                .font(.headline.weight(.bold).monospacedDigit())
+                .minimumScaleFactor(0.8)
+                .lineLimit(1)
+            Text("TOTAL SPENT")
+                .font(.caption2.weight(.bold))
+                .tracking(0.8)
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+        }
+    }
+
     private func categoryRows(_ snapshot: MetricsSnapshot) -> some View {
-        VStack(spacing: 0) {
-            if snapshot.categories.isEmpty {
-                EmptyView()
-            } else {
+        let total = breakdown == .category
+            ? snapshot.expenses
+            : snapshot.accounts.reduce(Int64.zero) { $0 + $1.amount }
+
+        return VStack(spacing: 0) {
+            if breakdown == .category {
                 ForEach(snapshot.categories) { metric in
                     NavigationLink {
                         CategoryMetricsDetailView(
@@ -394,33 +500,31 @@ struct MetricsView: View {
                             anchorDate: anchorDate
                         )
                     } label: {
-                        HStack(spacing: 10) {
-                            Text("\(percentage(for: metric, total: snapshot.expenses))%")
-                                .font(.caption.weight(.bold).monospacedDigit())
-                                .foregroundStyle(.white)
-                                .frame(width: 48, height: 30)
-                                .background(chartColor(for: metric.colorIndex), in: RoundedRectangle(cornerRadius: 7))
-
-                            Image(systemName: categoryIcon(for: metric.categoryID))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(chartColor(for: metric.colorIndex))
-                                .frame(width: 22)
-
-                            Text(metric.title)
-                                .font(.subheadline.weight(.medium))
-                                .lineLimit(1)
-
-                            Spacer(minLength: 8)
-
-                            Text(Money(currency: metric.currency, minorUnits: metric.amount).formatted)
-                                .font(.subheadline.weight(.semibold).monospacedDigit())
-                        }
-                        .contentShape(Rectangle())
-                        .padding(.vertical, 13)
+                        breakdownRow(
+                            title: metric.title,
+                            icon: categoryIcon(for: metric.categoryID),
+                            amount: metric.amount,
+                            percentage: percentage(for: metric.amount, total: total),
+                            colorIndex: metric.colorIndex
+                        )
                     }
                     .buttonStyle(.plain)
 
                     if metric.id != snapshot.categories.last?.id {
+                        Divider().overlay(PocketLedgerTheme.divider)
+                    }
+                }
+            } else {
+                ForEach(snapshot.accounts) { metric in
+                    breakdownRow(
+                        title: metric.title,
+                        icon: store.account(with: metric.accountID)?.type.systemImage ?? "wallet.pass",
+                        amount: metric.amount,
+                        percentage: percentage(for: metric.amount, total: total),
+                        colorIndex: metric.colorIndex
+                    )
+
+                    if metric.id != snapshot.accounts.last?.id {
                         Divider().overlay(PocketLedgerTheme.divider)
                     }
                 }
@@ -433,6 +537,38 @@ struct MetricsView: View {
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
         }
         .padding(.top, 12)
+    }
+
+    private func breakdownRow(
+        title: String,
+        icon: String,
+        amount: Int64,
+        percentage: Int,
+        colorIndex: Int
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text("\(percentage)%")
+                .font(.caption.weight(.bold).monospacedDigit())
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 30)
+                .background(chartColor(for: colorIndex), in: RoundedRectangle(cornerRadius: 7))
+
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(chartColor(for: colorIndex))
+                .frame(width: 22)
+
+            Text(title)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Text(Money(currency: selectedCurrency, minorUnits: amount).formatted)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 13)
     }
 
     private func activityMix(_ snapshot: MetricsSnapshot) -> some View {
@@ -477,13 +613,17 @@ struct MetricsView: View {
         return colors[index % colors.count]
     }
 
-    private func share(for metric: CategoryMetric, total: Int64) -> Double {
+    private func share(for amount: Int64, total: Int64) -> Double {
         guard total > 0 else { return 0 }
-        return Double(metric.amount) / Double(total)
+        return Double(amount) / Double(total)
     }
 
     private func percentage(for metric: CategoryMetric, total: Int64) -> Int {
-        Int((share(for: metric, total: total) * 100).rounded())
+        percentage(for: metric.amount, total: total)
+    }
+
+    private func percentage(for amount: Int64, total: Int64) -> Int {
+        Int((share(for: amount, total: total) * 100).rounded())
     }
 
     private func categoryIcon(for categoryID: UUID?) -> String {
@@ -597,6 +737,7 @@ private struct CategoryMetricsDetailView: View {
                     detailHeader
                     lineChart(snapshot)
                     detailCategoryRow(snapshot)
+                    subcategoryRows(snapshot)
                     transactionRows(snapshot)
                 }
                 .padding(.horizontal, 16)
@@ -719,6 +860,60 @@ private struct CategoryMetricsDetailView: View {
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
         }
         .padding(.top, 10)
+    }
+
+    @ViewBuilder
+    private func subcategoryRows(_ snapshot: CategoryMetricsDetailSnapshot) -> some View {
+        if !snapshot.subcategories.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Subcategories")
+                    .font(.title3.weight(.bold))
+                    .padding(.top, 20)
+                    .padding(.bottom, 8)
+
+                VStack(spacing: 0) {
+                    ForEach(snapshot.subcategories) { metric in
+                        NavigationLink {
+                            CategoryMetricsDetailView(
+                                store: store,
+                                categoryID: metric.categoryID,
+                                categoryTitle: metric.title,
+                                currency: currency,
+                                anchorDate: anchorDate
+                            )
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: store.ledgerIndex.categorySystemImage(for: metric.categoryID))
+                                    .foregroundStyle(PocketLedgerTheme.accent)
+                                    .frame(width: 24)
+
+                                Text(metric.title)
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
+
+                                Spacer(minLength: 8)
+
+                                Text(Money(currency: currency, minorUnits: metric.amount).formatted)
+                                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                            }
+                            .contentShape(Rectangle())
+                            .padding(.vertical, 13)
+                        }
+                        .buttonStyle(.plain)
+
+                        if metric.id != snapshot.subcategories.last?.id {
+                            Divider().overlay(PocketLedgerTheme.divider)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .pocketGroupedSurface(cornerRadius: 18)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                }
+            }
+        }
     }
 
     private func transactionRows(_ snapshot: CategoryMetricsDetailSnapshot) -> some View {

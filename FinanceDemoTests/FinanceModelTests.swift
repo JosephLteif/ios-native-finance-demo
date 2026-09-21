@@ -102,6 +102,9 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(month.income, 0)
         XCTAssertEqual(month.filteredTransactions.count, 1)
         XCTAssertEqual(month.categories.first?.amount, 1_500)
+        XCTAssertEqual(month.categories.first?.title, "Living")
+        XCTAssertEqual(month.accounts.first?.title, "Cash")
+        XCTAssertEqual(month.accounts.first?.amount, 1_500)
         XCTAssertEqual(month.activityCounts[.expense], 1)
 
         let year = MetricsSnapshot.make(
