@@ -1916,6 +1916,7 @@ final class FinanceModelTests: XCTestCase {
             decoded.recurrenceDay,
             Calendar.current.component(.day, from: schedule.nextRunDate)
         )
+        XCTAssertNil(decoded.reminderTiming)
         XCTAssertNil(decoded.lastSkippedDate)
     }
 

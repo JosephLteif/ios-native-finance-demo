@@ -3211,6 +3211,7 @@ struct TransactionEditor: View {
     private let editingScheduleNextRunDate: Date?
     private let editingScheduleFrequency: ScheduleFrequency?
     private let editingScheduleRecurrenceDay: Int?
+    private let editingScheduleReminderTiming: ScheduledReminderTiming?
     private let editingTransactionID: UUID?
     private let initialAttachmentData: Data?
     private let initialAttachmentFileName: String?
@@ -3359,6 +3360,7 @@ struct TransactionEditor: View {
         editingScheduleNextRunDate = scheduledTransaction?.nextRunDate
         editingScheduleFrequency = scheduledTransaction?.frequency
         editingScheduleRecurrenceDay = scheduledTransaction?.recurrenceDay
+        editingScheduleReminderTiming = scheduledTransaction?.reminderTiming
         editingTransactionID = transaction?.id
         self.initialAttachmentData = initialAttachmentData
         self.initialAttachmentFileName = initialAttachmentFileName
@@ -4285,6 +4287,7 @@ struct TransactionEditor: View {
                 monthlyRule: monthlyRule,
                 recurrenceDay: recurrenceDay,
                 isEnabled: enabled,
+                reminderTiming: editingScheduleReminderTiming,
                 lastRunDate: lastRunDate,
                 note: transaction.note,
                 kind: transaction.kind,

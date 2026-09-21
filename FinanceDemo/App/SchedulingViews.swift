@@ -8,6 +8,8 @@ struct ScheduledTransactionsView: View {
     @State private var editingSchedule: ScheduledTransaction?
     @State private var scheduleToDelete: ScheduledTransaction?
     @State private var reminderStatus: String?
+    @AppStorage(NotificationService.globalReminderKey)
+    private var globalReminderRawValue = ScheduledReminderTiming.oneDayBefore.rawValue
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -19,6 +21,8 @@ struct ScheduledTransactionsView: View {
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
                         .padding(.horizontal, 4)
 
+                    globalReminderSettings
+
                     if !schedules.isEmpty {
                         Button {
                             Task {
@@ -28,7 +32,7 @@ struct ScheduledTransactionsView: View {
                                     )
                             }
                         } label: {
-                            Label("Enable due reminders", systemImage: "bell.badge")
+                            Label("Enable scheduled reminders", systemImage: "bell.badge")
                         }
                         .buttonStyle(.glass)
                         .tint(PocketLedgerTheme.accent)
@@ -77,6 +81,39 @@ struct ScheduledTransactionsView: View {
         } message: {
             Text(scheduleToDelete?.note ?? "")
         }
+        .onChange(of: globalReminderRawValue) { _, _ in
+            Task {
+                await NotificationService.refreshScheduledTransactionNotifications(
+                    schedules: schedules
+                )
+            }
+        }
+    }
+
+    private var globalReminderTiming: ScheduledReminderTiming {
+        ScheduledReminderTiming(rawValue: globalReminderRawValue) ?? .oneDayBefore
+    }
+
+    private var globalReminderSettings: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Reminder defaults", systemImage: "bell.badge")
+                .font(.headline)
+                .foregroundStyle(PocketLedgerTheme.textPrimary)
+
+            Picker("Default reminder", selection: $globalReminderRawValue) {
+                ForEach(ScheduledReminderTiming.allCases) { timing in
+                    Text(timing.title).tag(timing.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(PocketLedgerTheme.accent)
+
+            Text("Schedules set to Default use this timing. Each schedule can override it below.")
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+        }
+        .padding(14)
+        .pocketGroupedSurface(cornerRadius: 18)
     }
 
     private var schedules: [ScheduledTransaction] {
@@ -186,6 +223,35 @@ struct ScheduledTransactionsView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(schedule.isEnabled ? PocketLedgerTheme.accent : PocketLedgerTheme.textTertiary)
 
+            Menu {
+                Button {
+                    updateReminder(for: schedule, timing: nil)
+                } label: {
+                    if schedule.reminderTiming == nil {
+                        Label("Default · \(globalReminderTiming.title)", systemImage: "checkmark")
+                    } else {
+                        Text("Default · \(globalReminderTiming.title)")
+                    }
+                }
+
+                ForEach(ScheduledReminderTiming.allCases) { timing in
+                    Button {
+                        updateReminder(for: schedule, timing: timing)
+                    } label: {
+                        if schedule.reminderTiming == timing {
+                            Label(timing.title, systemImage: "checkmark")
+                        } else {
+                            Text(timing.title)
+                        }
+                    }
+                }
+            } label: {
+                Label("Reminder: \(reminderLabel(for: schedule))", systemImage: "bell")
+            }
+            .font(.caption.weight(.semibold))
+            .buttonStyle(.glass)
+            .tint(PocketLedgerTheme.accent)
+
             HStack {
                 if schedule.isEnabled {
                     Menu {
@@ -266,6 +332,19 @@ struct ScheduledTransactionsView: View {
                 _ = store.setScheduledTransactionEnabled(id: schedule.id, isEnabled: isEnabled)
             }
         )
+    }
+
+    private func reminderLabel(for schedule: ScheduledTransaction) -> String {
+        schedule.reminderTiming?.title ?? "Default · \(globalReminderTiming.title)"
+    }
+
+    private func updateReminder(
+        for schedule: ScheduledTransaction,
+        timing: ScheduledReminderTiming?
+    ) {
+        var updated = schedule
+        updated.reminderTiming = timing
+        _ = store.updateScheduledTransaction(updated)
     }
 
     private func presentNewSchedule() {

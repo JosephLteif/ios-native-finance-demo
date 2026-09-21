@@ -538,6 +538,51 @@ enum ScheduleMonthlyRule: String, Codable, CaseIterable, Identifiable, Hashable,
     }
 }
 
+enum ScheduledReminderTiming: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
+    case atDue
+    case oneHourBefore
+    case oneDayBefore
+    case threeDaysBefore
+    case oneWeekBefore
+    case none
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .atDue:
+            return "At due time"
+        case .oneHourBefore:
+            return "1 hour before"
+        case .oneDayBefore:
+            return "1 day before"
+        case .threeDaysBefore:
+            return "3 days before"
+        case .oneWeekBefore:
+            return "1 week before"
+        case .none:
+            return "Never"
+        }
+    }
+
+    var leadTime: TimeInterval {
+        switch self {
+        case .atDue:
+            return 0
+        case .oneHourBefore:
+            return 60 * 60
+        case .oneDayBefore:
+            return 24 * 60 * 60
+        case .threeDaysBefore:
+            return 3 * 24 * 60 * 60
+        case .oneWeekBefore:
+            return 7 * 24 * 60 * 60
+        case .none:
+            return .infinity
+        }
+    }
+}
+
 enum TransactionTiming: String, CaseIterable, Identifiable, Hashable, Sendable {
     case now
     case scheduled
@@ -738,6 +783,8 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
     var monthlyRule: ScheduleMonthlyRule
     var recurrenceDay: Int
     var isEnabled: Bool
+    /// `nil` means the global reminder preference is used.
+    var reminderTiming: ScheduledReminderTiming?
     var lastRunDate: Date?
     var lastSkippedDate: Date?
     var note: String
@@ -756,6 +803,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         monthlyRule: ScheduleMonthlyRule = .dayOfMonth,
         recurrenceDay: Int? = nil,
         isEnabled: Bool = true,
+        reminderTiming: ScheduledReminderTiming? = nil,
         lastRunDate: Date? = nil,
         lastSkippedDate: Date? = nil,
         note: String,
@@ -773,6 +821,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         self.monthlyRule = monthlyRule
         self.recurrenceDay = min(max(recurrenceDay ?? Calendar.current.component(.day, from: nextRunDate), 1), 31)
         self.isEnabled = isEnabled
+        self.reminderTiming = reminderTiming
         self.lastRunDate = lastRunDate
         self.lastSkippedDate = lastSkippedDate
         self.note = note
@@ -792,6 +841,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         case monthlyRule
         case recurrenceDay
         case isEnabled
+        case reminderTiming
         case lastRunDate
         case lastSkippedDate
         case note
@@ -822,6 +872,10 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
             31
         )
         isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        reminderTiming = try container.decodeIfPresent(
+            ScheduledReminderTiming.self,
+            forKey: .reminderTiming
+        )
         lastRunDate = try container.decodeIfPresent(Date.self, forKey: .lastRunDate)
         lastSkippedDate = try container.decodeIfPresent(Date.self, forKey: .lastSkippedDate)
         note = try container.decode(String.self, forKey: .note)
@@ -842,6 +896,7 @@ struct ScheduledTransaction: Identifiable, Codable, Equatable {
         try container.encode(monthlyRule, forKey: .monthlyRule)
         try container.encode(recurrenceDay, forKey: .recurrenceDay)
         try container.encode(isEnabled, forKey: .isEnabled)
+        try container.encodeIfPresent(reminderTiming, forKey: .reminderTiming)
         try container.encodeIfPresent(lastRunDate, forKey: .lastRunDate)
         try container.encodeIfPresent(lastSkippedDate, forKey: .lastSkippedDate)
         try container.encode(note, forKey: .note)
