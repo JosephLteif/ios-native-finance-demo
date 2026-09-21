@@ -322,6 +322,7 @@ struct AppLockView: View {
     @ObservedObject var security: AppSecurityService
     @Binding var isUnlocked: Bool
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var passcode = ""
     @State private var errorMessage: String?
     @State private var isAuthenticating = false
@@ -388,7 +389,19 @@ struct AppLockView: View {
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .pocketScreen()
-        .task {
+        .onAppear {
+            requestBiometricUnlockIfPossible()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                requestBiometricUnlockIfPossible()
+            }
+        }
+    }
+
+    private func requestBiometricUnlockIfPossible() {
+        guard scenePhase == .active else { return }
+        Task {
             await unlockWithBiometrics()
         }
     }

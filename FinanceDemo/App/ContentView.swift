@@ -17,16 +17,21 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Group {
+        ZStack {
+            unlockedContent
+                .allowsHitTesting(!(security.isPasscodeEnabled && !isUnlocked))
+
             if security.isPasscodeEnabled && !isUnlocked {
                 AppLockView(security: security, isUnlocked: $isUnlocked)
-            } else {
-                unlockedContent
+                    .zIndex(1)
             }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 security.refresh()
+                if security.isPasscodeEnabled {
+                    isUnlocked = false
+                }
                 store.reload()
                 store.processDueScheduledTransactions()
             } else if phase == .inactive || phase == .background {
