@@ -92,6 +92,7 @@ final class AppSecurityService: ObservableObject {
 
     @Published private(set) var isPasscodeEnabled: Bool
     @Published private(set) var biometricsEnabled: Bool
+    private(set) var isBiometricPromptActive = false
 
     private var passcodeRecord: PasscodeRecord?
 
@@ -188,6 +189,8 @@ final class AppSecurityService: ObservableObject {
                 throw AppSecurityError.biometricUnavailable
             }
 
+            isBiometricPromptActive = true
+            defer { isBiometricPromptActive = false }
             do {
                 let verified = try await context.evaluatePolicy(
                     .deviceOwnerAuthenticationWithBiometrics,
@@ -219,6 +222,8 @@ final class AppSecurityService: ObservableObject {
             return false
         }
 
+        isBiometricPromptActive = true
+        defer { isBiometricPromptActive = false }
         do {
             return try await context.evaluatePolicy(
                 .deviceOwnerAuthenticationWithBiometrics,

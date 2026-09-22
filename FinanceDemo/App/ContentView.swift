@@ -29,15 +29,14 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 security.refresh()
-                if security.isPasscodeEnabled {
-                    isUnlocked = false
-                }
                 store.reload()
                 store.processDueScheduledTransactions()
-            } else if phase == .inactive || phase == .background {
-                if security.isPasscodeEnabled {
+            } else if phase == .inactive {
+                if security.isPasscodeEnabled && !security.isBiometricPromptActive {
                     isUnlocked = false
                 }
+            } else if phase == .background, security.isPasscodeEnabled {
+                isUnlocked = false
             }
         }
         .onChange(of: security.isPasscodeEnabled) { _, enabled in

@@ -326,81 +326,100 @@ struct AppLockView: View {
     @State private var passcode = ""
     @State private var errorMessage: String?
     @State private var isAuthenticating = false
+    @State private var shouldRetryBiometricsOnActivation = false
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
+        ZStack {
+            LinearGradient(
+                colors: [
+                    PocketLedgerTheme.background,
+                    PocketLedgerTheme.surfaceElevated.opacity(0.24),
+                    PocketLedgerTheme.background
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            Image(systemName: "lock.shield.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(PocketLedgerTheme.accent)
+            VStack(spacing: 24) {
+                Spacer()
 
-            VStack(spacing: 8) {
-                Text("Pocket Ledger is locked")
-                    .font(.title2.weight(.bold))
-                Text("Enter your app passcode to view your financial data.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            SecureField("App passcode", text: $passcode)
-                .keyboardType(.numberPad)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 280)
-                .onChange(of: passcode) { _, value in
-                    let sanitized = AppPasscodeRules.sanitized(value)
-                    if sanitized != value {
-                        passcode = sanitized
-                    }
-                }
-
-            Button("Unlock", action: unlockWithPasscode)
-                .buttonStyle(.glassProminent)
-                .tint(PocketLedgerTheme.accent)
-                .disabled(!AppPasscodeRules.isValid(passcode))
-
-            if security.biometricsEnabled {
-                Button {
-                    Task { await unlockWithBiometrics() }
-                } label: {
-                    Label(
-                        "Unlock with \(security.biometricName)",
-                        systemImage: security.availableBiometry?.systemImage ?? "touchid"
-                    )
-                }
-                .disabled(isAuthenticating)
-            }
-
-            if isAuthenticating {
-                ProgressView()
-                    .controlSize(.small)
-            }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.footnote)
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 56))
                     .foregroundStyle(PocketLedgerTheme.accent)
-                    .multilineTextAlignment(.center)
-            }
 
-            Spacer()
+                VStack(spacing: 8) {
+                    Text("Pocket Ledger is locked")
+                        .font(.title2.weight(.bold))
+                    Text("Enter your app passcode to view your financial data.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                SecureField("App passcode", text: $passcode)
+                    .keyboardType(.numberPad)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 280)
+                    .onChange(of: passcode) { _, value in
+                        let sanitized = AppPasscodeRules.sanitized(value)
+                        if sanitized != value {
+                            passcode = sanitized
+                        }
+                    }
+
+                Button("Unlock", action: unlockWithPasscode)
+                    .buttonStyle(.glassProminent)
+                    .tint(PocketLedgerTheme.accent)
+                    .disabled(!AppPasscodeRules.isValid(passcode))
+
+                if security.biometricsEnabled {
+                    Button {
+                        Task { await unlockWithBiometrics() }
+                    } label: {
+                        Label(
+                            "Unlock with \(security.biometricName)",
+                            systemImage: security.availableBiometry?.systemImage ?? "touchid"
+                        )
+                    }
+                    .disabled(isAuthenticating)
+                }
+
+                if isAuthenticating {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(PocketLedgerTheme.accent)
+                        .multilineTextAlignment(.center)
+                }
+
+                Spacer()
+            }
+            .padding(32)
         }
-        .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .pocketScreen()
+        .foregroundStyle(PocketLedgerTheme.textPrimary)
+        .tint(PocketLedgerTheme.accent)
+        .preferredColorScheme(PocketLedgerTheme.appearanceMode.preferredColorScheme)
         .onAppear {
             requestBiometricUnlockIfPossible()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
+            if phase == .background {
+                shouldRetryBiometricsOnActivation = true
+            } else if phase == .active, shouldRetryBiometricsOnActivation {
+                shouldRetryBiometricsOnActivation = false
                 requestBiometricUnlockIfPossible()
             }
         }
     }
 
     private func requestBiometricUnlockIfPossible() {
-        guard scenePhase == .active else { return }
+        guard scenePhase == .active, !isUnlocked, !isAuthenticating else { return }
         Task {
             await unlockWithBiometrics()
         }
@@ -424,10 +443,10 @@ struct AppLockView: View {
         let authenticated = await security.authenticateWithBiometrics()
         isAuthenticating = false
 
-        if authenticated {
+        if authenticated, scenePhase != .background {
             errorMessage = nil
             isUnlocked = true
-        } else if !Task.isCancelled {
+        } else if !Task.isCancelled, scenePhase != .background {
             errorMessage = "Biometric unlock was not completed. Enter your app passcode to continue."
         }
     }
