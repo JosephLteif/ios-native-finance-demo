@@ -194,9 +194,14 @@ private final class PocketLedgerTabBarController: UITabBarController {
         )
         visibleTabBar.frame = tabBarFrame
 
+        let bottomSafeAreaOverlap = max(
+            0,
+            tabBarFrame.maxY - (view.bounds.maxY - view.safeAreaInsets.bottom)
+        )
+        let tabBarContentCenterY = tabBarFrame.midY - bottomSafeAreaOverlap / 2
         let buttonFrame = CGRect(
             x: buttonTrailing - buttonSize,
-            y: tabBarFrame.midY - buttonSize / 2,
+            y: tabBarContentCenterY - buttonSize / 2,
             width: buttonSize,
             height: buttonSize
         )

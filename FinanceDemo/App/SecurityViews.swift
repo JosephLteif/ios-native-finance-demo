@@ -330,16 +330,8 @@ struct AppLockView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    PocketLedgerTheme.background,
-                    PocketLedgerTheme.surfaceElevated.opacity(0.24),
-                    PocketLedgerTheme.background
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            PocketLedgerTheme.background
+                .ignoresSafeArea()
 
             VStack(spacing: 24) {
                 Spacer()
