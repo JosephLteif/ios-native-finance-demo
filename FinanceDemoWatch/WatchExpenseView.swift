@@ -18,19 +18,26 @@ struct WatchExpenseView: View {
     }
 
     private var categorySections: [CategorySection] {
-        Dictionary(grouping: categories) { category in
-            category.path.split(separator: "/", maxSplits: 1).first.map(String.init) ?? category.path
+        var groupedCategories: [String: [WatchCategorySummary]] = [:]
+        for category in categories {
+            let parentName = category.path.split(separator: "/", maxSplits: 1).first.map(String.init)
+                ?? category.path
+            groupedCategories[parentName, default: []].append(category)
         }
-        .map { parentName, categories in
-            CategorySection(
+
+        var sections: [CategorySection] = []
+        for (parentName, categories) in groupedCategories {
+            let sortedCategories = categories.sorted { lhs, rhs in
+                lhs.path.localizedCaseInsensitiveCompare(rhs.path) == .orderedAscending
+            }
+            sections.append(CategorySection(
                 parentName: parentName,
-                categories: categories.sorted {
-                    $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending
-                }
-            )
+                categories: sortedCategories
+            ))
         }
-        .sorted {
-            $0.parentName.localizedCaseInsensitiveCompare($1.parentName) == .orderedAscending
+
+        return sections.sorted { lhs, rhs in
+            lhs.parentName.localizedCaseInsensitiveCompare(rhs.parentName) == .orderedAscending
         }
     }
 

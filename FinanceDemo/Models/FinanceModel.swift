@@ -89,6 +89,7 @@ enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable, Send
         let formatter = NumberFormatter()
         formatter.locale = locale
         formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
         formatter.minimumFractionDigits = fractionDigits
         formatter.maximumFractionDigits = fractionDigits
         return formatter.string(from: NSDecimalNumber(decimal: amount)) ?? String(describing: amount)
