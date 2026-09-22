@@ -107,6 +107,15 @@ final class FinanceModelTests: XCTestCase {
         XCTAssertEqual(month.accounts.first?.amount, 1_500)
         XCTAssertEqual(month.activityCounts[.expense], 1)
 
+        let februarySubcategories = MetricsSnapshot.subcategoryBreakdown(
+            index: index,
+            categoryID: living.id,
+            interval: februaryInterval,
+            selectedCurrency: .usd
+        )
+        XCTAssertEqual(februarySubcategories.first?.title, "Food")
+        XCTAssertEqual(februarySubcategories.first?.amount, 1_500)
+
         let year = MetricsSnapshot.make(
             index: index,
             interval: yearInterval,

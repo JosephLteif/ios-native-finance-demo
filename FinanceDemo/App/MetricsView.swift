@@ -52,6 +52,7 @@ private struct CategoryMetricsDetailSnapshot {
         categoryID: UUID?,
         currency: LedgerCurrency,
         anchorDate: Date,
+        selectedInterval: DateInterval,
         calendar: Calendar = .current
     ) -> CategoryMetricsDetailSnapshot {
         let currentMonth = calendar.dateInterval(of: .month, for: anchorDate)?.start ?? anchorDate
@@ -71,7 +72,6 @@ private struct CategoryMetricsDetailSnapshot {
         }
         var selectedMonthTransactions: [LedgerTransaction] = []
         var selectedMonthTotal: Int64 = 0
-        var subcategoryTotals: [UUID: (title: String, amount: Int64, count: Int)] = [:]
 
         for transaction in index.sortedTransactions {
             guard transaction.kind == .expense,
@@ -106,21 +106,6 @@ private struct CategoryMetricsDetailSnapshot {
             }
             monthlyAmounts[monthStart, default: 0] += outflowAmount
 
-            if let categoryID,
-               let subcategoryID = index.directDescendantCategoryID(
-                   for: transaction.categoryID,
-                   under: categoryID
-               ),
-               outflowAmount > 0 {
-                let current = subcategoryTotals[subcategoryID]
-                    ?? (index.categoryName(for: subcategoryID), 0, 0)
-                subcategoryTotals[subcategoryID] = (
-                    current.title,
-                    current.amount + outflowAmount,
-                    current.count + 1
-                )
-            }
-
             if monthStart == currentMonth {
                 selectedMonthTransactions.append(transaction)
                 selectedMonthTotal += outflowAmount
@@ -133,27 +118,12 @@ private struct CategoryMetricsDetailSnapshot {
             },
             selectedMonthTransactions: selectedMonthTransactions,
             selectedMonthTotal: selectedMonthTotal,
-            subcategories: subcategoryTotals
-                .map { categoryID, value in
-                    (categoryID: categoryID, title: value.title, amount: value.amount, count: value.count)
-                }
-                .sorted { lhs, rhs in
-                    if lhs.amount != rhs.amount { return lhs.amount > rhs.amount }
-                    if lhs.title != rhs.title { return lhs.title < rhs.title }
-                    return lhs.categoryID.uuidString < rhs.categoryID.uuidString
-                }
-                .enumerated()
-                .map { index, value in
-                    CategoryMetric(
-                        id: "detail-\(value.categoryID.uuidString)-\(currency.rawValue)",
-                        categoryID: value.categoryID,
-                        title: value.title,
-                        currency: currency,
-                        amount: value.amount,
-                        count: value.count,
-                        colorIndex: index
-                    )
-                }
+            subcategories: MetricsSnapshot.subcategoryBreakdown(
+                index: index,
+                categoryID: categoryID,
+                interval: selectedInterval,
+                selectedCurrency: currency
+            )
         )
     }
 }
@@ -497,7 +467,8 @@ struct MetricsView: View {
                             categoryID: metric.categoryID,
                             categoryTitle: metric.title,
                             currency: metric.currency,
-                            anchorDate: anchorDate
+                            anchorDate: anchorDate,
+                            selectedInterval: interval
                         )
                     } label: {
                         breakdownRow(
@@ -712,6 +683,7 @@ private struct CategoryMetricsDetailView: View {
     let categoryID: UUID?
     let categoryTitle: String
     let currency: LedgerCurrency
+    let selectedInterval: DateInterval
 
     @State private var anchorDate: Date
     @State private var snapshot = CategoryMetricsDetailSnapshot.empty
@@ -721,12 +693,14 @@ private struct CategoryMetricsDetailView: View {
         categoryID: UUID?,
         categoryTitle: String,
         currency: LedgerCurrency,
-        anchorDate: Date
+        anchorDate: Date,
+        selectedInterval: DateInterval
     ) {
         self.store = store
         self.categoryID = categoryID
         self.categoryTitle = categoryTitle
         self.currency = currency
+        self.selectedInterval = selectedInterval
         _anchorDate = State(initialValue: anchorDate)
     }
 
@@ -879,7 +853,8 @@ private struct CategoryMetricsDetailView: View {
                                 categoryID: metric.categoryID,
                                 categoryTitle: metric.title,
                                 currency: currency,
-                                anchorDate: anchorDate
+                                anchorDate: anchorDate,
+                                selectedInterval: selectedInterval
                             )
                         } label: {
                             HStack(spacing: 10) {
@@ -993,7 +968,8 @@ private struct CategoryMetricsDetailView: View {
             index: store.ledgerIndex,
             categoryID: categoryID,
             currency: currency,
-            anchorDate: anchorDate
+            anchorDate: anchorDate,
+            selectedInterval: selectedInterval
         )
     }
 

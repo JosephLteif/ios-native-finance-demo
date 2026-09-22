@@ -188,6 +188,66 @@ struct MetricsSnapshot {
             accounts: accounts
         )
     }
+
+    static func subcategoryBreakdown(
+        index: LedgerIndex,
+        categoryID: UUID?,
+        interval: DateInterval,
+        selectedCurrency: LedgerCurrency
+    ) -> [MetricsCategorySnapshot] {
+        guard let categoryID else { return [] }
+
+        var totals: [UUID: (title: String, amount: Int64, count: Int)] = [:]
+        for transaction in index.sortedTransactions {
+            guard transaction.kind == .expense,
+                  interval.contains(transaction.date),
+                  index.categoryMatches(
+                      transaction.categoryID,
+                      selectedCategoryID: categoryID
+                  ),
+                  index.categoryIncludedInTotals(transaction.categoryID),
+                  index.transactionHasIncludedAccount(transaction),
+                  let subcategoryID = index.directDescendantCategoryID(
+                      for: transaction.categoryID,
+                      under: categoryID
+                  ) else {
+                continue
+            }
+
+            let amount = index.netExpenseAmount(transaction, currency: selectedCurrency)
+            guard amount > 0 else { continue }
+
+            let current = totals[subcategoryID]
+                ?? (index.categoryName(for: subcategoryID), 0, 0)
+            totals[subcategoryID] = (
+                current.title,
+                current.amount + amount,
+                current.count + 1
+            )
+        }
+
+        return totals
+            .map { categoryID, value in
+                (categoryID: categoryID, title: value.title, amount: value.amount, count: value.count)
+            }
+            .sorted { lhs, rhs in
+                if lhs.amount != rhs.amount { return lhs.amount > rhs.amount }
+                if lhs.title != rhs.title { return lhs.title < rhs.title }
+                return lhs.categoryID.uuidString < rhs.categoryID.uuidString
+            }
+            .enumerated()
+            .map { index, value in
+                MetricsCategorySnapshot(
+                    id: "detail-\(value.categoryID.uuidString)-\(selectedCurrency.rawValue)",
+                    categoryID: value.categoryID,
+                    title: value.title,
+                    currency: selectedCurrency,
+                    amount: value.amount,
+                    count: value.count,
+                    colorIndex: index
+                )
+            }
+    }
 }
 
 struct DashboardBudgetSnapshot: Identifiable {
