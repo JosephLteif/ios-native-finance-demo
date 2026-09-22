@@ -11,7 +11,7 @@ struct MetricsCategorySnapshot: Identifiable {
 }
 
 struct MetricsAccountSnapshot: Identifiable {
-    let id: UUID
+	let id: String
     let accountID: UUID
     let title: String
     let currency: LedgerCurrency
