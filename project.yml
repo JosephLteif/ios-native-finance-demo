@@ -71,7 +71,6 @@ targets:
       gatherCoverageData: false
       testTargets:
         - FinanceDemoTests
-        - FinanceDemoUITests
 
   FinanceDemoWidget:
     type: app-extension
@@ -172,16 +171,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.tests
-        GENERATE_INFOPLIST_FILE: YES
-
-  FinanceDemoUITests:
-    type: bundle.ui-testing
-    platform: iOS
-    sources:
-      - path: FinanceDemoUITests
-    dependencies:
-      - target: FinanceDemo
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.uitests
         GENERATE_INFOPLIST_FILE: YES
