@@ -730,9 +730,26 @@ enum FinanceImportParser {
         let amountIndex = columnIndex(in: table, aliases: ["AMOUNT", "VALUE", "MONEY"])
         let currencyIndex = columnIndex(in: table, aliases: ["CURRENCY", "CURRENCYCODE"])
         let usdIndex = columnIndex(in: table, aliases: ["USD", "USDEQUIVALENT", "BASEAMOUNT"])
+        // Money Manager exports a second "Accounts" column with amounts in each account's currency.
+        let accountCurrencyAmountIndex = table.columns.firstIndex {
+            normalize($0) == "accounts2"
+        }
 
         guard let dateIndex, let accountIndex, let typeIndex, let amountIndex, let currencyIndex else {
             return nil
+        }
+
+        func accountCurrencyAmount(in row: [String]?, currency: LedgerCurrency?) -> String? {
+            guard let row, let currency else { return nil }
+            let rawAmount = cell(row, accountCurrencyAmountIndex ?? -1)
+            guard let amount = Money.parse(
+                rawAmount,
+                currency: currency,
+                locale: Locale(identifier: "en_US_POSIX")
+            ), amount.minorUnits > 0 else {
+                return nil
+            }
+            return rawAmount
         }
 
         let normalizedColumns = [
@@ -802,12 +819,25 @@ enum FinanceImportParser {
                     && sourceHint != destinationHint
                 let sourceCurrency = hasCrossCurrencyHints ? (sourceHint ?? primaryCurrency) : (sourceHint ?? primaryCurrency)
                 let destinationCurrency = hasCrossCurrencyHints ? (destinationHint ?? primaryCurrency) : (destinationHint ?? primaryCurrency)
-                let sourceAmount = hasCrossCurrencyHints && sourceCurrency == .usd && !usdAmount.isEmpty
+                let otherEndpointRow = counterpart.map {
+                    $0.offset == canonicalIndex ? row : $0.element
+                }
+                let sourceEndpointRow: [String]? = canonicalKind == "transferout"
+                    ? canonicalRow
+                    : otherEndpointRow
+                let destinationEndpointRow: [String]? = canonicalKind == "transferout"
+                    ? otherEndpointRow
+                    : canonicalRow
+                let fallbackSourceAmount = hasCrossCurrencyHints && sourceCurrency == .usd && !usdAmount.isEmpty
                     ? usdAmount
                     : amount
-                let destinationAmount = hasCrossCurrencyHints && destinationCurrency == .usd && !usdAmount.isEmpty
+                let fallbackDestinationAmount = hasCrossCurrencyHints && destinationCurrency == .usd && !usdAmount.isEmpty
                     ? usdAmount
                     : amount
+                let sourceAmount = accountCurrencyAmount(in: sourceEndpointRow, currency: sourceHint)
+                    ?? fallbackSourceAmount
+                let destinationAmount = accountCurrencyAmount(in: destinationEndpointRow, currency: destinationHint)
+                    ?? fallbackDestinationAmount
                 let note = spreadsheetNote(row: canonicalRow, noteIndex: noteIndex, descriptionIndex: descriptionIndex)
 
                 rows.append([
@@ -836,14 +866,28 @@ enum FinanceImportParser {
             let categoryPath = [category, subcategory]
                 .filter { !$0.isEmpty }
                 .joined(separator: " / ")
-            let reportingAmount = usdIndex.map { cell(row, $0) } ?? ""
+            let accountCurrency = spreadsheetCurrencyHint(for: cell(row, accountIndex))
+            let isUSDTransactionInAnotherCurrencyAccount =
+                spreadsheetCurrencyHint(for: cell(row, currencyIndex)) == .usd
+                    && accountCurrency != nil
+                    && accountCurrency != .usd
+            let nativeAccountAmount = accountCurrencyAmount(in: row, currency: accountCurrency)
+            let reportingAmount: String
+            let reportingCurrency: String
+            if isUSDTransactionInAnotherCurrencyAccount, let nativeAccountAmount, let accountCurrency {
+                reportingAmount = nativeAccountAmount
+                reportingCurrency = accountCurrency.rawValue
+            } else {
+                reportingAmount = usdIndex.map { cell(row, $0) } ?? ""
+                reportingCurrency = reportingAmount.isEmpty ? "" : "USD"
+            }
             rows.append([
                 cell(row, dateIndex),
                 kind.displayName,
                 cell(row, amountIndex),
                 cell(row, currencyIndex),
                 reportingAmount,
-                reportingAmount.isEmpty ? "" : "USD",
+                reportingCurrency,
                 cell(row, accountIndex),
                 "",
                 "",
