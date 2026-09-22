@@ -224,6 +224,53 @@ struct PocketIcon: View {
     }
 }
 
+struct CurrencyInputField: View {
+    private let title: String
+    @Binding private var text: String
+    private let currency: LedgerCurrency
+    @FocusState private var isFocused: Bool
+
+    init(
+        _ title: String,
+        text: Binding<String>,
+        currency: LedgerCurrency
+    ) {
+        self.title = title
+        _text = text
+        self.currency = currency
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField(title, text: $text)
+                .keyboardType(.decimalPad)
+                .monospacedDigit()
+                .focused($isFocused)
+
+            Text(currency.rawValue)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .onAppear(perform: formatText)
+        .onChange(of: isFocused) { _, focused in
+            if !focused {
+                formatText()
+            }
+        }
+        .onChange(of: currency) { _, _ in
+            if !isFocused {
+                formatText()
+            }
+        }
+    }
+
+    private func formatText() {
+        let formatted = currency.formattedInput(text)
+        guard formatted != text else { return }
+        text = formatted
+    }
+}
+
 struct PocketGlassContainer<Content: View>: View {
     private let spacing: CGFloat
     private let content: Content

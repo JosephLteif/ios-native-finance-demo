@@ -647,8 +647,7 @@ struct BillScannerView: View {
                     .font(.subheadline)
             }
 
-            TextField("Unit price", text: item.unitPriceText)
-                .keyboardType(.decimalPad)
+            CurrencyInputField("Unit price", text: item.unitPriceText, currency: currency)
 
             HStack {
                 Text("Line total")

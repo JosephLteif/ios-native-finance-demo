@@ -38,8 +38,7 @@ struct SetupWizardView: View {
                             Text("\(currency.rawValue) · \(currency.displayName)").tag(currency)
                         }
                     }
-                    TextField("Opening balance", text: $openingBalance)
-                        .keyboardType(.decimalPad)
+                    CurrencyInputField("Opening balance", text: $openingBalance, currency: currency)
                 }
 
                 Section("Categories") {

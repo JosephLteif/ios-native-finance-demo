@@ -73,6 +73,26 @@ enum LedgerCurrency: String, Codable, CaseIterable, Identifiable, Hashable, Send
             return "\(sign)€\(unsignedNumber)"
         }
     }
+
+    func formattedInput(_ rawValue: String, locale: Locale = .current) -> String {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let money = Money.parse(trimmed, currency: self, locale: locale) else {
+            return rawValue
+        }
+
+        return formattedInput(minorUnits: money.minorUnits, locale: locale)
+    }
+
+    func formattedInput(minorUnits: Int64, locale: Locale = .current) -> String {
+        let amount = Decimal(minorUnits) / Decimal(minorUnitScale)
+        let formatter = NumberFormatter()
+        formatter.locale = locale
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = fractionDigits
+        formatter.maximumFractionDigits = fractionDigits
+        return formatter.string(from: NSDecimalNumber(decimal: amount)) ?? String(describing: amount)
+    }
 }
 
 struct Money: Codable, Equatable, Sendable {

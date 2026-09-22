@@ -3092,8 +3092,7 @@ struct AccountEditor: View {
                 }
 
                 Section("Opening balance") {
-                    TextField("Amount", text: $openingBalance)
-                        .keyboardType(.decimalPad)
+                    CurrencyInputField("Amount", text: $openingBalance, currency: currency)
                     Text("The amount is stored in the account's own currency.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -3317,13 +3316,7 @@ private struct MovementLineEditor: View {
                 }
             }
 
-            HStack {
-                TextField(amountPlaceholder, text: $line.amount)
-                    .keyboardType(.decimalPad)
-                Text(line.currency.rawValue)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
+            CurrencyInputField(amountPlaceholder, text: $line.amount, currency: line.currency)
         }
     }
 }
@@ -3720,8 +3713,7 @@ struct TransactionEditor: View {
                         Text(currency.rawValue).tag(currency)
                     }
                 }
-                TextField("Bill total (optional)", text: $amountDue)
-                    .keyboardType(.decimalPad)
+                CurrencyInputField("Bill total (optional)", text: $amountDue, currency: dueCurrency)
             }
         }
     }
@@ -3840,8 +3832,11 @@ struct TransactionEditor: View {
                 }
 
                 if kind == .expense && inflows.count == 1 {
-                    TextField("Requested change (optional)", text: $requestedChange)
-                        .keyboardType(.decimalPad)
+                    CurrencyInputField(
+                        "Requested change (optional)",
+                        text: $requestedChange,
+                        currency: inflows[0].currency
+                    )
                     if let preview = shortfallPreview {
                         Text(preview)
                             .font(.footnote)
@@ -4008,8 +4003,7 @@ struct TransactionEditor: View {
     }
 
     private static func inputText(for money: Money) -> String {
-        let amount = Decimal(money.minorUnits) / Decimal(money.currency.minorUnitScale)
-        return NSDecimalNumber(decimal: amount).stringValue
+        money.currency.formattedInput(minorUnits: money.minorUnits)
     }
 
     private var selectedCurrencies: [LedgerCurrency] {

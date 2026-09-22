@@ -593,6 +593,24 @@ final class FinanceModelTests: XCTestCase {
         )
     }
 
+    func testCurrencyInputFormattingUsesGroupingAndCurrencyFractionDigits() {
+        let locale = Locale(identifier: "en_US_POSIX")
+
+        XCTAssertEqual(
+            LedgerCurrency.usd.formattedInput("858464886", locale: locale),
+            "858,464,886.00"
+        )
+        XCTAssertEqual(
+            LedgerCurrency.lbp.formattedInput("858464886", locale: locale),
+            "858,464,886"
+        )
+        XCTAssertEqual(
+            LedgerCurrency.eur.formattedInput("12.5", locale: locale),
+            "12.50"
+        )
+        XCTAssertEqual(LedgerCurrency.usd.formattedInput("", locale: locale), "")
+    }
+
     func testMoneyRecastPreservesDisplayedNumericAmount() {
         XCTAssertEqual(
             Money(currency: .usd, minorUnits: 1_000).recast(to: .lbp),

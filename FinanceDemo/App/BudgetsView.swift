@@ -200,7 +200,7 @@ private struct BudgetEditor: View {
                     Picker("Currency", selection: $currency) {
                         ForEach(LedgerCurrency.allCases) { Text($0.rawValue).tag($0) }
                     }
-                    TextField("Monthly limit", text: $amount).keyboardType(.decimalPad)
+                    CurrencyInputField("Monthly limit", text: $amount, currency: currency)
                     Toggle("Rollover unused amount", isOn: $rollover)
                 }
             }

@@ -478,8 +478,7 @@ private struct AccountBalanceEditor: View {
                 Section("Current balance") {
                     LabeledContent("Now", value: store.balance(for: account).formatted)
 
-                    TextField("New balance", text: $balanceText)
-                        .keyboardType(.decimalPad)
+                    CurrencyInputField("New balance", text: $balanceText, currency: account.currency)
 
                     Toggle("Count as transaction", isOn: $recordAsTransaction)
 
