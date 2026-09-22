@@ -647,12 +647,27 @@ private struct MoreView: View {
     }
 }
 
+private enum DashboardSheet: Identifiable {
+    case customization
+    case transaction(LedgerTransaction)
+
+    var id: String {
+        switch self {
+        case .customization:
+            return "customization"
+        case .transaction(let transaction):
+            return "transaction-\(transaction.id.uuidString)"
+        }
+    }
+}
+
 @MainActor
 private struct DashboardView: View {
     @ObservedObject var store: LedgerStore
     let onAddExpense: () -> Void
-    @State private var editingTransaction: LedgerTransaction?
+    @State private var presentedSheet: DashboardSheet?
     @State private var snapshot = DashboardSnapshot.empty
+    @State private var dashboardPreferences = DashboardPreferences.load()
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
@@ -662,15 +677,7 @@ private struct DashboardView: View {
                 PocketGlassContainer(spacing: 14) {
                     VStack(alignment: .leading, spacing: 16) {
                         dashboardHeader
-                        balanceHero
-                        attentionSnapshot
-                        accountBreakdown
-                        monthSnapshot
-                        recentActivity
-                        upcomingSchedules
-                        cashFlowSnapshot
-                        budgetSnapshot
-                        storageNotice
+                        dashboardWidgets
 
                         if let status = store.lastActionStatus {
                             Text(status)
@@ -690,11 +697,17 @@ private struct DashboardView: View {
                 PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
             )
             .toolbar(.hidden, for: .navigationBar)
-            .sheet(item: $editingTransaction) { transaction in
-                TransactionEditor(store: store, transaction: transaction)
+            .sheet(item: $presentedSheet) { sheet in
+                switch sheet {
+                case .customization:
+                    DashboardCustomizationView(preferences: $dashboardPreferences)
+                case .transaction(let transaction):
+                    TransactionEditor(store: store, transaction: transaction)
+                }
             }
             .onAppear(perform: refreshSnapshot)
             .onChange(of: store.ledgerRevision) { _, _ in refreshSnapshot() }
+            .onChange(of: dashboardPreferences) { _, preferences in preferences.save() }
         }
     }
 
@@ -709,7 +722,71 @@ private struct DashboardView: View {
             }
 
             Spacer()
+
+            Button {
+                presentedSheet = .customization
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 40, height: 40)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Customize dashboard")
+            .accessibilityHint("Choose which widgets appear and reorder them")
+            .accessibilityIdentifier("dashboard-customize")
         }
+    }
+
+    @ViewBuilder
+    private var dashboardWidgets: some View {
+        if dashboardPreferences.enabledWidgets.isEmpty {
+            dashboardEmptyState
+        } else {
+            ForEach(dashboardPreferences.enabledWidgets) { widget in
+                dashboardWidget(widget)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func dashboardWidget(_ widget: DashboardWidget) -> some View {
+        switch widget {
+        case .balance:
+            balanceHero
+        case .attention:
+            attentionSnapshot
+        case .accounts:
+            accountBreakdown
+        case .monthSummary:
+            monthSnapshot
+        case .recentActivity:
+            recentActivity
+        case .upcoming:
+            upcomingSchedules
+        case .cashFlow:
+            cashFlowSnapshot
+        case .budgetPulse:
+            budgetSnapshot
+        case .storageStatus:
+            storageNotice
+        }
+    }
+
+    private var dashboardEmptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Your dashboard is empty", systemImage: "rectangle.stack.badge.plus")
+                .font(.headline)
+            Text("Choose the widgets you want to see here, then drag them into your preferred order.")
+                .font(.subheadline)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+            Button("Choose widgets", systemImage: "slider.horizontal.3") {
+                presentedSheet = .customization
+            }
+            .buttonStyle(.glassProminent)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .pocketGroupedSurface(cornerRadius: 20)
     }
 
     private var balanceHero: some View {
@@ -1200,7 +1277,7 @@ private struct DashboardView: View {
                         TransactionRow(
                             transaction: transaction,
                             store: store,
-                            onEdit: { editingTransaction = transaction },
+                            onEdit: { presentedSheet = .transaction(transaction) },
                             onDuplicate: {},
                             onDelete: {},
                             onSaveTemplate: {},
@@ -1313,6 +1390,76 @@ private struct DashboardView: View {
             Text(detail)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
+        }
+    }
+}
+
+@MainActor
+private struct DashboardCustomizationView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var preferences: DashboardPreferences
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Turn widgets on or off. Tap Edit to drag them into your preferred order.")
+                        .font(.subheadline)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .listRowBackground(PocketLedgerTheme.surface)
+                }
+
+                Section("Dashboard widgets") {
+                    ForEach(preferences.order) { widget in
+                        Toggle(isOn: Binding(
+                            get: { !preferences.disabledWidgets.contains(widget) },
+                            set: { preferences.setEnabled($0, for: widget) }
+                        )) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(widget.title)
+                                    Text(widget.subtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                                }
+                            } icon: {
+                                Image(systemName: widget.systemImage)
+                                    .foregroundStyle(PocketLedgerTheme.accent)
+                            }
+                        }
+                        .accessibilityIdentifier("dashboard-widget-\(widget.rawValue)")
+                        .listRowBackground(PocketLedgerTheme.surface)
+                    }
+                    .onMove { source, destination in
+                        preferences.move(from: source, to: destination)
+                    }
+                }
+
+                Section {
+                    Button("Reset dashboard", role: .destructive) {
+                        preferences.reset()
+                    }
+                } footer: {
+                    Text("Reset restores the default widgets and order.")
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(PocketLedgerTheme.background)
+            .navigationTitle("Customize dashboard")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    EditButton()
+                }
+            }
+            .tint(PocketLedgerTheme.accent)
+            .foregroundStyle(PocketLedgerTheme.textPrimary)
         }
     }
 }
