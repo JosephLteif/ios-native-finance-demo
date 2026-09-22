@@ -193,9 +193,20 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
 
-      - name: Compile unit tests for the iOS simulator
+      - name: Compile unit tests and boot an iPhone simulator
         run: |
-          set -o pipefail
+          set -euo pipefail
+          SIMULATOR_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ && $2 ~ /^[A-Fa-f0-9-]+$/ { print $2; exit }')"
+          test -n "$SIMULATOR_ID" || { echo "No available iPhone simulator found"; exit 1; }
+          echo "SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
+
+          if ! xcrun simctl list devices available | grep -F "$SIMULATOR_ID" | grep -F "(Booted)" > /dev/null; then
+            xcrun simctl boot "$SIMULATOR_ID"
+          fi
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
+          simulator_boot_pid=$!
+
+          build_status=0
           xcodebuild \
             -project ios-native-finance-demo.xcodeproj \
             -scheme FinanceDemo \
@@ -208,19 +219,29 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            build-for-testing 2>&1 | tee "$RUNNER_TEMP/xcodebuild-tests.log"
+            build-for-testing 2>&1 | tee "$RUNNER_TEMP/xcodebuild-tests.log" || build_status=$?
+
+          if [ "$build_status" -ne 0 ]; then
+            kill "$simulator_boot_pid" 2>/dev/null || true
+            exit "$build_status"
+          fi
+
+          simulator_boot_status=0
+          wait "$simulator_boot_pid" || simulator_boot_status=$?
+          cat "$RUNNER_TEMP/simulator-boot.log"
+          exit "$simulator_boot_status"
 
       - name: Run logic tests
         run: |
           set -euo pipefail
-          SIMULATOR_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ && $2 ~ /^[A-Fa-f0-9-]+$/ { print $2; exit }')"
-          test -n "$SIMULATOR_ID" || { echo "No available iPhone simulator found"; exit 1; }
+          test -n "$SIMULATOR_ID" || { echo "The test simulator was not selected"; exit 1; }
           xcodebuild \
             -project ios-native-finance-demo.xcodeproj \
             -scheme FinanceDemo \
             -configuration Debug \
             -sdk iphonesimulator \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -parallel-testing-enabled NO \
             -derivedDataPath "$RUNNER_TEMP/TestDerivedData" \
             -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
