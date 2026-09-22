@@ -263,10 +263,10 @@ struct MetricsView: View {
 
             Picker("Category", selection: $selectedCategoryID) {
                 Text("All categories").tag(UUID?.none)
-                ForEach(store.activeCategories) { category in
-                    Text(store.categoryPath(for: category.id))
-                        .tag(Optional(category.id))
-                }
+                CategoryPickerContent(
+                    categories: store.activeCategories,
+                    includeUncategorized: false
+                )
             }
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)

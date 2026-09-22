@@ -3559,11 +3559,7 @@ struct TransactionEditor: View {
                             .foregroundStyle(.secondary)
                     } else {
                         Picker("Category", selection: $categoryID) {
-                            Text("Uncategorized").tag(UUID?.none)
-                            ForEach(selectableCategories) { category in
-                                Text(store.categoryPath(for: category.id))
-                                    .tag(Optional(category.id))
-                            }
+                            CategoryPickerContent(categories: selectableCategories)
                         }
                     }
 

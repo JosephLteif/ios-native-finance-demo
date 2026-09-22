@@ -1263,18 +1263,20 @@ private struct ImportWizardBulkCategoriesSheet: View {
             case .mapToExisting:
                 Picker("Existing category", selection: $targetID) {
                     Text("Choose a target").tag(nil as UUID?)
-                    ForEach(existingCategories.filter { !$0.isArchived }) { category in
-                        Text(category.name).tag(Optional(category.id))
-                    }
+                    CategoryPickerContent(
+                        categories: existingCategories.filter { !$0.isArchived },
+                        includeUncategorized: false
+                    )
                 }
             case .parent:
                 Picker("Parent category", selection: $parentID) {
                     Text("No parent").tag(nil as UUID?)
-                    ForEach((existingCategories + importedCategories).filter { category in
-                        !selectedCategories.contains(where: { selected in selected.id == category.id })
-                    }) { category in
-                        Text(category.name).tag(Optional(category.id))
-                    }
+                    CategoryPickerContent(
+                        categories: (existingCategories + importedCategories).filter { category in
+                            !selectedCategories.contains(where: { selected in selected.id == category.id })
+                        },
+                        includeUncategorized: false
+                    )
                 }
             case .excludeUnused:
                 Label("Only categories with no staged transaction references will be removed.", systemImage: "trash")
@@ -1611,10 +1613,7 @@ private struct ImportWizardTransactionRow: View {
                 }
             }
             Picker("Category", selection: $transaction.categoryID) {
-                Text("Uncategorized").tag(nil as UUID?)
-                ForEach(categories) { category in
-                    Text(category.name).tag(Optional(category.id))
-                }
+                CategoryPickerContent(categories: categories)
             }
             if isDuplicate {
                 Toggle("Skip possible duplicate", isOn: Binding(

@@ -192,9 +192,10 @@ private struct BudgetEditor: View {
             Form {
                 Section("Budget") {
                     Picker("Category", selection: $categoryID) {
-                        ForEach(store.activeCategories) { category in
-                            Text(store.categoryPath(for: category.id)).tag(Optional(category.id))
-                        }
+                        CategoryPickerContent(
+                            categories: store.activeCategories,
+                            includeUncategorized: false
+                        )
                     }
                     Picker("Currency", selection: $currency) {
                         ForEach(LedgerCurrency.allCases) { Text($0.rawValue).tag($0) }

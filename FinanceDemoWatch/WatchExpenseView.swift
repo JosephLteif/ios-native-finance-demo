@@ -17,6 +17,23 @@ struct WatchExpenseView: View {
         store.snapshot?.categories ?? []
     }
 
+    private var categorySections: [CategorySection] {
+        Dictionary(grouping: categories) { category in
+            category.path.split(separator: "/", maxSplits: 1).first.map(String.init) ?? category.path
+        }
+        .map { parentName, categories in
+            CategorySection(
+                parentName: parentName,
+                categories: categories.sorted {
+                    $0.path.localizedCaseInsensitiveCompare($1.path) == .orderedAscending
+                }
+            )
+        }
+        .sorted {
+            $0.parentName.localizedCaseInsensitiveCompare($1.parentName) == .orderedAscending
+        }
+    }
+
     private var selectedAccount: WatchAccountSummary? {
         accounts.first { $0.id == accountID }
     }
@@ -44,9 +61,15 @@ struct WatchExpenseView: View {
 
                 Picker("Category", selection: $categoryID) {
                     Text("Uncategorized").tag(nil as UUID?)
-                    ForEach(categories) { category in
-                        Text(category.path)
-                            .tag(Optional(category.id))
+                    ForEach(categorySections) { section in
+                        Section {
+                            ForEach(section.categories) { category in
+                                Text(categoryLabel(category, parentName: section.parentName))
+                                    .tag(Optional(category.id))
+                            }
+                        } header: {
+                            Text(section.parentName)
+                        }
                     }
                 }
 
@@ -82,6 +105,19 @@ struct WatchExpenseView: View {
         } message: {
             Text(validationMessage ?? "Check the expense details and try again.")
         }
+    }
+
+    private func categoryLabel(_ category: WatchCategorySummary, parentName: String) -> String {
+        guard category.path != parentName else { return category.path }
+        let childName = category.path.split(separator: "/").dropFirst().joined(separator: " / ")
+        return "  \(childName)"
+    }
+
+    private struct CategorySection: Identifiable {
+        let parentName: String
+        let categories: [WatchCategorySummary]
+
+        var id: String { parentName }
     }
 
     private func saveExpense() {
