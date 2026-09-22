@@ -37,7 +37,7 @@ final class FinanceDemoUITests: XCTestCase {
         let moreButton = tabBar.buttons["More"]
         XCTAssertTrue(moreButton.exists)
         XCTAssertLessThan(moreButton.frame.maxX, addButton.frame.minX)
-        XCTAssertLessThan(abs(tabBar.frame.midY - addButton.frame.midY), 4)
+        XCTAssertLessThan(abs(moreButton.frame.midY - addButton.frame.midY), 4)
 
         tabBar.buttons["More"].tap()
         XCTAssertTrue(app.buttons["Transactions"].waitForExistence(timeout: 5))
