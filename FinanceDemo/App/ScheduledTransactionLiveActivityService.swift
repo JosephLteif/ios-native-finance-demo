@@ -1,0 +1,133 @@
+import ActivityKit
+import Foundation
+
+actor ScheduledTransactionLiveActivityService {
+    static let shared = ScheduledTransactionLiveActivityService()
+
+    private let maximumDuration: TimeInterval = 8 * 60 * 60
+    private let processingGracePeriod: TimeInterval = 30 * 60
+
+    func refresh(schedules: [ScheduledTransaction], isEnabled: Bool) async -> Set<UUID> {
+        let now = Date.now
+        let existingActivities = Activity<ScheduledTransactionActivityAttributes>.activities
+
+        guard isEnabled,
+              ActivityAuthorizationInfo().areActivitiesEnabled,
+              let schedule = schedules
+                .filter({
+                    $0.isEnabled
+                        && $0.nextRunDate > now
+                        && ($0.reminderTiming ?? NotificationService.globalReminderTiming) != .none
+                })
+                .min(by: { $0.nextRunDate < $1.nextRunDate }) else {
+            await end(existingActivities)
+            return []
+        }
+
+        let reminderTiming = schedule.reminderTiming ?? NotificationService.globalReminderTiming
+        let reminderDate = schedule.nextRunDate.addingTimeInterval(-reminderTiming.leadTime)
+        let notificationStartDate = reminderDate.timeIntervalSince(now) > 1
+            ? reminderDate
+            : now.addingTimeInterval(1)
+        let activityStartDate = max(
+            notificationStartDate,
+            schedule.nextRunDate.addingTimeInterval(-(maximumDuration - processingGracePeriod))
+        )
+        let groupedSchedules = schedules
+            .filter {
+                $0.isEnabled
+                    && $0.nextRunDate >= schedule.nextRunDate
+                    && $0.nextRunDate <= activityStartDate.addingTimeInterval(
+                        maximumDuration - processingGracePeriod
+                    )
+                    && ($0.reminderTiming ?? NotificationService.globalReminderTiming) != .none
+            }
+            .sorted { $0.nextRunDate < $1.nextRunDate }
+        let items = groupedSchedules.prefix(3).map {
+            ScheduledTransactionActivityItem(id: $0.id, dueDate: $0.nextRunDate)
+        }
+        let state = ScheduledTransactionActivityAttributes.ContentState(
+            items: items,
+            additionalItemsCount: groupedSchedules.count - items.count
+        )
+        let attributes = ScheduledTransactionActivityAttributes(
+            primaryScheduleID: schedule.id,
+            primaryDueDate: schedule.nextRunDate,
+            startDate: activityStartDate
+        )
+        let content = ActivityContent(
+            state: state,
+            staleDate: groupedSchedules.last?.nextRunDate.addingTimeInterval(processingGracePeriod)
+        )
+
+        if let matchingActivity = existingActivities.first(where: {
+            $0.attributes.primaryScheduleID == attributes.primaryScheduleID
+                && $0.attributes.primaryDueDate == attributes.primaryDueDate
+                && $0.activityState != .ended
+                && $0.activityState != .dismissed
+                && ($0.attributes.startDate == attributes.startDate
+                    || $0.activityState == .active
+                    || $0.activityState == .stale)
+        }) {
+            if matchingActivity.content.state != content.state {
+                await matchingActivity.update(content)
+            }
+            await end(existingActivities.filter { $0.id != matchingActivity.id })
+            return notificationIDsReplacedByActivity(
+                schedules: groupedSchedules,
+                activityStartDate: activityStartDate,
+                now: now
+            )
+        }
+
+        await end(existingActivities)
+        let alert = AlertConfiguration(
+            title: state.totalItemsCount == 1 ? "Scheduled transaction" : "Scheduled transactions",
+            body: "A private countdown to your scheduled entries is now available.",
+            sound: .default
+        )
+
+        do {
+            _ = try Activity.request(
+                attributes: attributes,
+                content: content,
+                pushType: nil,
+                style: .standard,
+                alertConfiguration: alert,
+                start: activityStartDate
+            )
+            return notificationIDsReplacedByActivity(
+                schedules: groupedSchedules,
+                activityStartDate: activityStartDate,
+                now: now
+            )
+        } catch {
+            return []
+        }
+    }
+
+    private func notificationIDsReplacedByActivity(
+        schedules: [ScheduledTransaction],
+        activityStartDate: Date,
+        now: Date
+    ) -> Set<UUID> {
+        Set(schedules.compactMap { schedule in
+            let timing = schedule.reminderTiming ?? NotificationService.globalReminderTiming
+            let reminderDate = schedule.nextRunDate.addingTimeInterval(-timing.leadTime)
+            let notificationStartDate = reminderDate.timeIntervalSince(now) > 1
+                ? reminderDate
+                : now.addingTimeInterval(1)
+            return abs(activityStartDate.timeIntervalSince(notificationStartDate)) <= 1
+                ? schedule.id
+                : nil
+        })
+    }
+
+    private func end(
+        _ activities: [Activity<ScheduledTransactionActivityAttributes>]
+    ) async {
+        for activity in activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+}

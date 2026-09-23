@@ -39,6 +39,8 @@ struct SecuritySettingsView: View {
     private var isDailyTransactionReminderEnabled = false
     @AppStorage(NotificationService.dailyTransactionReminderMinutesKey)
     private var dailyTransactionReminderMinutes = NotificationService.dailyTransactionReminderDefaultMinutes
+    @AppStorage(NotificationService.scheduledLiveActivityEnabledKey)
+    private var isScheduledLiveActivityEnabled = false
 
     var body: some View {
         Form {
@@ -105,6 +107,19 @@ struct SecuritySettingsView: View {
                     .accessibilityIdentifier("daily-transaction-reminder-time")
 
                     Text("Get a daily notification to add today’s transactions. Notification access is requested when you enable this reminder.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    Toggle(isOn: $isScheduledLiveActivityEnabled) {
+                        Label("Scheduled transaction countdown", systemImage: "timer")
+                    }
+                    .accessibilityIdentifier("scheduled-transaction-live-activity-toggle")
+
+                    Text(
+                        "Groups up to three upcoming scheduled entries in one private countdown, and counts any additional entries in the same window. "
+                            + "For reminders more than 7½ hours early, the regular notification arrives first and the Live Activity starts in the final 7½ hours. "
+                            + "Due entries are added when Pocket Ledger next opens. Scheduled notifications remain available if Live Activities are off in iOS Settings."
+                    )
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
@@ -212,6 +227,13 @@ struct SecuritySettingsView: View {
                 Button("OK") { errorMessage = nil }
             } message: {
                 Text(errorMessage ?? "")
+            }
+            .onChange(of: isScheduledLiveActivityEnabled) { _, _ in
+                Task {
+                    await NotificationService.refreshScheduledTransactionNotifications(
+                        schedules: store.data.scheduledTransactions
+                    )
+                }
             }
     }
 

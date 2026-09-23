@@ -5,6 +5,7 @@ enum NotificationService {
     private static let scheduledPrefix = "pocket-ledger-scheduled-"
     private static let dailyTransactionReminderIdentifier = "pocket-ledger-daily-transaction-reminder"
     static let globalReminderKey = "pocketLedger.scheduledReminderTiming"
+    static let scheduledLiveActivityEnabledKey = "pocketLedger.scheduledLiveActivityEnabled"
     static let dailyTransactionReminderEnabledKey = "pocketLedger.dailyTransactionReminderEnabled"
     static let dailyTransactionReminderMinutesKey = "pocketLedger.dailyTransactionReminderMinutes"
     static let dailyTransactionReminderDefaultMinutes = 20 * 60
@@ -136,6 +137,10 @@ enum NotificationService {
     static func refreshScheduledTransactionNotifications(
         schedules: [ScheduledTransaction]
     ) async {
+        let liveActivityReminderIDs = await ScheduledTransactionLiveActivityService.shared.refresh(
+            schedules: schedules,
+            isEnabled: UserDefaults.standard.bool(forKey: scheduledLiveActivityEnabledKey)
+        )
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests()
         let existingIDs = pending
@@ -148,6 +153,7 @@ enum NotificationService {
         for schedule in schedules where schedule.isEnabled && schedule.nextRunDate > now {
             let timing = schedule.reminderTiming ?? globalReminderTiming
             guard timing != .none else { continue }
+            if liveActivityReminderIDs.contains(schedule.id) { continue }
 
             let content = UNMutableNotificationContent()
             content.title = "Pocket Ledger"
