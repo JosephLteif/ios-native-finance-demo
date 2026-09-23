@@ -1,0 +1,417 @@
+import Foundation
+import SwiftUI
+
+enum FinanceSearch {
+    static func matches(_ account: Account, query: String, balance: Money) -> Bool {
+        let searchable = [
+            account.name,
+            account.type.displayName,
+            account.currency.rawValue,
+            balance.formatted,
+            account.isArchived ? "Archived" : "Active"
+        ].joined(separator: " ")
+        return searchable.localizedCaseInsensitiveContains(query)
+    }
+
+    static func matches(_ category: LedgerCategory, query: String, index: LedgerIndex) -> Bool {
+        index.categoryPath(for: category.id).localizedCaseInsensitiveContains(query)
+    }
+
+    static func matches(_ transaction: LedgerTransaction, query: String, index: LedgerIndex) -> Bool {
+        let movements = transaction.outflows + transaction.inflows
+        var searchable = [
+            transaction.note,
+            index.categoryPath(for: transaction.categoryID),
+            transaction.kind.displayName,
+            transaction.date.formatted(.dateTime.year().month().day())
+        ]
+
+        searchable.append(contentsOf: movements.flatMap { movement in
+            let accountDetails = index.account(with: movement.accountID).map {
+                "\($0.name) \($0.type.displayName) \($0.currency.rawValue)"
+            }
+            return [movement.money.formatted, movement.money.currency.rawValue, accountDetails]
+                .compactMap { $0 }
+        })
+
+        if let amountDue = transaction.amountDue {
+            searchable.append(amountDue.formatted)
+        }
+        if let exchangeRate = transaction.exchangeRate {
+            searchable.append(exchangeRate.summary)
+        }
+        if let change = transaction.changeAdjustment {
+            searchable.append(change.requested.formatted)
+            searchable.append(change.actual.formatted)
+        }
+
+        return searchable.joined(separator: " ").localizedCaseInsensitiveContains(query)
+    }
+}
+
+private struct GlobalSearchSnapshot {
+    let accounts: [Account]
+    let categories: [LedgerCategory]
+    let transactions: [LedgerTransaction]
+    let transactionCount: Int
+
+    static let empty = GlobalSearchSnapshot(
+        accounts: [],
+        categories: [],
+        transactions: [],
+        transactionCount: 0
+    )
+
+    static func make(
+        query: String,
+        accounts: [Account],
+        categories: [LedgerCategory],
+        index: LedgerIndex,
+        transactionLimit: Int = 25
+    ) -> GlobalSearchSnapshot {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return .empty }
+
+        var matchingTransactions: [LedgerTransaction] = []
+        var transactionCount = 0
+        for transaction in index.sortedTransactions where FinanceSearch.matches(
+            transaction,
+            query: query,
+            index: index
+        ) {
+            transactionCount += 1
+            if matchingTransactions.count < transactionLimit {
+                matchingTransactions.append(transaction)
+            }
+        }
+        return GlobalSearchSnapshot(
+            accounts: accounts.filter {
+                FinanceSearch.matches($0, query: query, balance: index.balance(for: $0))
+            },
+            categories: categories.filter { FinanceSearch.matches($0, query: query, index: index) },
+            transactions: matchingTransactions,
+            transactionCount: transactionCount
+        )
+    }
+}
+
+@MainActor
+struct GlobalSearchView: View {
+    @ObservedObject var store: LedgerStore
+    @State private var searchText = ""
+    @State private var results = GlobalSearchSnapshot.empty
+    @State private var editingTransaction: LedgerTransaction?
+
+    private var query: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            PocketGlassContainer(spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
+                    searchField
+
+                    if query.isEmpty {
+                        ContentUnavailableView(
+                            "Search your ledger",
+                            systemImage: "magnifyingglass",
+                            description: Text("Find accounts, transactions, descriptions, categories, amounts, and currencies.")
+                        )
+                        .padding(.top, 18)
+                    } else if results.isEmpty {
+                        ContentUnavailableView(
+                            "No results",
+                            systemImage: "magnifyingglass",
+                            description: Text("Try another name, description, category, amount, or currency.")
+                        )
+                        .padding(.top, 18)
+                    } else {
+                        if !results.accounts.isEmpty {
+                            resultsSection(title: "Accounts", count: results.accounts.count) {
+                                ForEach(results.accounts) { account in
+                                    NavigationLink {
+                                        AccountDetailView(store: store, accountID: account.id)
+                                    } label: {
+                                        SearchAccountRow(account: account, balance: store.balance(for: account))
+                                    }
+                                    .buttonStyle(.plain)
+                                    if account.id != results.accounts.last?.id {
+                                        Divider().overlay(PocketLedgerTheme.divider)
+                                    }
+                                }
+                            }
+                        }
+
+                        if !results.categories.isEmpty {
+                            resultsSection(title: "Categories", count: results.categories.count) {
+                                ForEach(results.categories) { category in
+                                    NavigationLink {
+                                        TransactionsView(
+                                            store: store,
+                                            initialSearch: store.categoryPath(for: category.id)
+                                        )
+                                    } label: {
+                                        SearchCategoryRow(
+                                            category: category,
+                                            path: store.categoryPath(for: category.id)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    if category.id != results.categories.last?.id {
+                                        Divider().overlay(PocketLedgerTheme.divider)
+                                    }
+                                }
+                            }
+                        }
+
+                        if !results.transactions.isEmpty {
+                            resultsSection(title: "Transactions", count: results.transactionCount) {
+                                ForEach(results.transactions) { transaction in
+                                    Button {
+                                        editingTransaction = transaction
+                                    } label: {
+                                        SearchTransactionRow(transaction: transaction, store: store)
+                                    }
+                                    .buttonStyle(.plain)
+                                    if transaction.id != results.transactions.last?.id {
+                                        Divider().overlay(PocketLedgerTheme.divider)
+                                    }
+                                }
+
+                                if results.transactionCount > results.transactions.count {
+                                    NavigationLink {
+                                        TransactionsView(store: store, initialSearch: query)
+                                    } label: {
+                                        Label("See all matching transactions", systemImage: "arrow.right")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(PocketLedgerTheme.accent)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.vertical, 12)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, PocketLedgerTheme.screenHorizontalPadding)
+                .padding(.top, 12)
+                .padding(.bottom, 24)
+            }
+        }
+        .pocketScreen()
+        .navigationTitle("Search")
+        .navigationBarTitleDisplayMode(.large)
+        .onAppear(perform: refreshResults)
+        .onChange(of: searchText) { _, _ in refreshResults() }
+        .onChange(of: store.ledgerRevision) { _, _ in refreshResults() }
+        .sheet(item: $editingTransaction) { transaction in
+            TransactionEditor(store: store, transaction: transaction)
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+            TextField("Accounts, transactions, descriptions…", text: $searchText)
+                .textFieldStyle(.plain)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                }
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .pocketGlassSurface(cornerRadius: 13)
+    }
+
+    private func resultsSection<Content: View>(
+        title: String,
+        count: Int,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text(title)
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Text("\(count)")
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+            }
+
+            LazyVStack(spacing: 0, content: content)
+                .padding(.horizontal, 14)
+                .pocketGroupedSurface(cornerRadius: 18)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                }
+        }
+    }
+
+    private func refreshResults() {
+        results = GlobalSearchSnapshot.make(
+            query: query,
+            accounts: store.data.accounts,
+            categories: store.data.categories,
+            index: store.ledgerIndex
+        )
+    }
+}
+
+private extension GlobalSearchSnapshot {
+    var isEmpty: Bool {
+        accounts.isEmpty && categories.isEmpty && transactions.isEmpty
+    }
+}
+
+private struct SearchAccountRow: View {
+    let account: Account
+    let balance: Money
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: account.type.systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(PocketLedgerTheme.accent)
+                .frame(width: 36, height: 36)
+                .pocketGlassSurface(cornerRadius: 18, tint: PocketLedgerTheme.accent.opacity(0.12))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(account.name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text("\(account.type.displayName) · \(account.currency.rawValue)\(account.isArchived ? " · Archived" : "")")
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+            Text(balance.formatted)
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(PocketLedgerTheme.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct SearchCategoryRow: View {
+    let category: LedgerCategory
+    let path: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: category.systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(PocketLedgerTheme.accent)
+                .frame(width: 36, height: 36)
+                .pocketGlassSurface(cornerRadius: 18, tint: PocketLedgerTheme.accent.opacity(0.12))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(category.name)
+                    .font(.subheadline.weight(.semibold))
+                Text("\(path)\(category.isArchived ? " · Archived" : "")")
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+        }
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
+    }
+}
+
+@MainActor
+private struct SearchTransactionRow: View {
+    let transaction: LedgerTransaction
+    @ObservedObject var store: LedgerStore
+
+    private var accent: Color {
+        switch transaction.kind {
+        case .expense: return PocketLedgerTheme.warning
+        case .income: return PocketLedgerTheme.income
+        case .transfer: return PocketLedgerTheme.positive
+        }
+    }
+
+    private var icon: String {
+        if transaction.categoryID != nil {
+            return store.ledgerIndex.categorySystemImage(for: transaction.categoryID)
+        }
+        switch transaction.kind {
+        case .expense: return "arrow.up.right"
+        case .income: return "arrow.down.left"
+        case .transfer: return "arrow.left.arrow.right"
+        }
+    }
+
+    private var amount: String {
+        switch transaction.kind {
+        case .expense:
+            return "− " + transaction.outflows.map { $0.money.formatted }.joined(separator: " + ")
+        case .income:
+            return "+ " + transaction.inflows.map { $0.money.formatted }.joined(separator: " + ")
+        case .transfer:
+            return store.transactionSummary(transaction)
+        }
+    }
+
+    private var subtitle: String {
+        let accountNames = (transaction.outflows + transaction.inflows)
+            .compactMap { store.account(with: $0.accountID)?.name }
+            .joined(separator: ", ")
+        return [
+            store.categoryPath(for: transaction.categoryID),
+            accountNames,
+            transaction.date.formatted(.dateTime.month(.abbreviated).day().year())
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(accent)
+                .frame(width: 36, height: 36)
+                .pocketGlassSurface(cornerRadius: 18, tint: accent.opacity(0.12))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(transaction.note)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+            Text(amount)
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(accent)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+        }
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
+    }
+}

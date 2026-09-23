@@ -103,6 +103,17 @@ struct ContentView: View {
             .accessibilityIdentifier("tab-overview")
 
             Tab(
+                "Search",
+                systemImage: AppTab.search.systemImage,
+                value: AppTab.search
+            ) {
+                NavigationStack {
+                    GlobalSearchView(store: store)
+                }
+            }
+            .accessibilityIdentifier("tab-search")
+
+            Tab(
                 "Transactions",
                 systemImage: AppTab.transactions.systemImage,
                 value: AppTab.transactions
@@ -273,17 +284,20 @@ private struct AddTransactionToolbar: ToolbarContent {
 
 enum AppTab: String, Hashable {
     case overview
+    case search
     case accounts
     case transactions
     case metrics
     case more
 
-    static let tabBarOrder: [AppTab] = [.overview, .transactions, .accounts, .more]
+    static let tabBarOrder: [AppTab] = [.overview, .search, .transactions, .accounts, .more]
 
     var title: String {
         switch self {
         case .overview:
             return "Home"
+        case .search:
+            return "Search"
         case .accounts:
             return "Accounts"
         case .transactions:
@@ -299,6 +313,8 @@ enum AppTab: String, Hashable {
         switch self {
         case .overview:
             return "house.fill"
+        case .search:
+            return "magnifyingglass"
         case .accounts:
             return "wallet.pass"
         case .transactions:
@@ -1572,16 +1588,7 @@ private struct TransactionListSnapshot {
             }
 
             guard !query.isEmpty else { return true }
-            let accountNames = (transaction.outflows + transaction.inflows)
-                .compactMap { index.account(with: $0.accountID)?.name }
-                .joined(separator: " ")
-            let searchable = [
-                transaction.note,
-                index.categoryPath(for: transaction.categoryID),
-                accountNames,
-                transaction.kind.displayName
-            ].joined(separator: " ")
-            return searchable.localizedCaseInsensitiveContains(query)
+            return FinanceSearch.matches(transaction, query: query, index: index)
         }
 
         let pageCount = max(1, (filteredTransactions.count + pageSize - 1) / pageSize)
