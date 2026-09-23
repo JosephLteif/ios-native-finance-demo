@@ -86,7 +86,8 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
                 "What is my total balance in \(.applicationName)",
                 "Get my balance in \(.applicationName)",
                 "What's my balance in \(.applicationName)",
-                "Check my balance in \(.applicationName)"
+                "Check my balance in \(.applicationName)",
+                "Tell me my balance in \(.applicationName)"
             ],
             shortTitle: "Get Pocket Ledger Balance",
             systemImageName: "dollarsign.circle"
@@ -95,7 +96,8 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: AddLedgerTransactionIntent(),
             phrases: [
                 "Add a transaction to \(\.$account) in \(.applicationName)",
-                "Record a transaction in \(.applicationName)"
+                "Record a transaction in \(.applicationName)",
+                "Add a \(\.$kind) of \(\.$amount) to \(\.$account) in \(.applicationName)"
             ],
             shortTitle: "Add Pocket Ledger Transaction",
             systemImageName: "plus.circle"
@@ -104,7 +106,9 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetCategoriesIntent(),
             phrases: [
                 "List my categories in \(.applicationName)",
-                "Get my Pocket Ledger categories in \(.applicationName)"
+                "Get my Pocket Ledger categories in \(.applicationName)",
+                "Show my categories in \(.applicationName)",
+                "What categories do I have in \(.applicationName)"
             ],
             shortTitle: "Get Pocket Ledger Categories",
             systemImageName: "tag"
@@ -113,7 +117,9 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetAccountsIntent(),
             phrases: [
                 "List my accounts in \(.applicationName)",
-                "Get my Pocket Ledger accounts in \(.applicationName)"
+                "Get my Pocket Ledger accounts in \(.applicationName)",
+                "Show my accounts in \(.applicationName)",
+                "What accounts do I have in \(.applicationName)"
             ],
             shortTitle: "Get Pocket Ledger Accounts",
             systemImageName: "wallet.pass"
@@ -122,7 +128,8 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetAccountBalanceIntent(),
             phrases: [
                 "Get the balance of \(\.$account) in \(.applicationName)",
-                "Check an account balance in \(.applicationName)"
+                "Check an account balance in \(.applicationName)",
+                "How much money is in \(\.$account) in \(.applicationName)"
             ],
             shortTitle: "Get Account Balance",
             systemImageName: "chart.bar.xaxis"
@@ -131,7 +138,8 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetTransactionHistoryIntent(),
             phrases: [
                 "Show my transactions for \(\.$period) in \(.applicationName)",
-                "Show my \(\.$category) transactions in \(.applicationName)"
+                "Show my \(\.$category) transactions in \(.applicationName)",
+                "Find my transactions for \(\.$period) in \(.applicationName)"
             ],
             shortTitle: "Get Transaction History",
             systemImageName: "clock.arrow.circlepath"
@@ -140,7 +148,8 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetSpendingSummaryIntent(),
             phrases: [
                 "How much did I spend \(\.$period) in \(.applicationName)",
-                "How much did I spend on \(\.$category) in \(.applicationName)"
+                "How much did I spend on \(\.$category) in \(.applicationName)",
+                "Summarize my spending for \(\.$period) in \(.applicationName)"
             ],
             shortTitle: "Get Spending Summary",
             systemImageName: "chart.bar.doc.horizontal"
@@ -149,7 +158,8 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GenerateBudgetSummaryIntent(),
             phrases: [
                 "Summarize my Pocket Ledger budget in \(.applicationName)",
-                "Give me a budget summary in \(.applicationName)"
+                "Give me a budget summary in \(.applicationName)",
+                "How are my category budgets doing in \(.applicationName)"
             ],
             shortTitle: "Summarize Budget",
             systemImageName: "sparkles"
@@ -158,7 +168,8 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: GetBudgetStatusIntent(),
             phrases: [
                 "Check my Pocket Ledger budgets in \(.applicationName)",
-                "How are my budgets doing in \(.applicationName)"
+                "How are my budgets doing in \(.applicationName)",
+                "Show my budget status in \(.applicationName)"
             ],
             shortTitle: "Check Budgets",
             systemImageName: "chart.bar.doc.horizontal"
