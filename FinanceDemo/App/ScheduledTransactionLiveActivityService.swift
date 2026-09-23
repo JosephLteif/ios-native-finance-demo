@@ -127,7 +127,8 @@ actor ScheduledTransactionLiveActivityService {
         _ activities: [Activity<ScheduledTransactionActivityAttributes>]
     ) async {
         for activity in activities {
-            await activity.end(nil, dismissalPolicy: .immediate)
+            nonisolated(unsafe) let activityHandle = activity
+            await activityHandle.end(nil, dismissalPolicy: .immediate)
         }
     }
 }
