@@ -155,6 +155,28 @@ enum NotificationService {
 
         let calendar = Calendar.current
         let now = Date.now
+        let schedulesByID = Dictionary(uniqueKeysWithValues: schedules.map { ($0.id.uuidString, $0) })
+        let delivered = await center.deliveredNotifications()
+        let deliveredIDsToRemove = delivered.compactMap { notification -> String? in
+            let identifier = notification.request.identifier
+            guard identifier.hasPrefix(scheduledPrefix) else { return nil }
+            guard let scheduleID = notification.request.content.userInfo[
+                "scheduledTransactionID"
+            ] as? String,
+                  let schedule = schedulesByID[scheduleID],
+                  schedule.isEnabled else {
+                return identifier
+            }
+
+            let timing = schedule.reminderTiming ?? globalReminderTiming
+            guard timing != .none else { return identifier }
+            let reminderDate = reminderDate(for: schedule, timing: timing)
+            return reminderDate <= now || notification.date < reminderDate.addingTimeInterval(-60)
+                ? identifier
+                : nil
+        }
+        center.removeDeliveredNotifications(withIdentifiers: Array(Set(deliveredIDsToRemove)))
+
         for schedule in schedules where schedule.isEnabled && schedule.nextRunDate > now {
             let timing = schedule.reminderTiming ?? globalReminderTiming
             guard timing != .none else { continue }
@@ -167,9 +189,10 @@ enum NotificationService {
             content.sound = .default
             content.userInfo = ["scheduledTransactionID": schedule.id.uuidString]
 
-            let reminderDate = timing == .atDue
-                ? schedule.nextRunDate
-                : schedule.nextRunDate.addingTimeInterval(-timing.leadTime)
+            let reminderDate = reminderDate(for: schedule, timing: timing)
+            // A refresh after delivery must not turn an elapsed reminder into a new alert.
+            guard reminderDate > now else { continue }
+
             let trigger: UNNotificationTrigger
             if reminderDate.timeIntervalSince(now) > 1 {
                 let components = calendar.dateComponents(
@@ -193,6 +216,15 @@ enum NotificationService {
                 try await center.add(request)
             } catch { continue }
         }
+    }
+
+    private static func reminderDate(
+        for schedule: ScheduledTransaction,
+        timing: ScheduledReminderTiming
+    ) -> Date {
+        timing == .atDue
+            ? schedule.nextRunDate
+            : schedule.nextRunDate.addingTimeInterval(-timing.leadTime)
     }
 
     private enum DailyReminderError: LocalizedError {

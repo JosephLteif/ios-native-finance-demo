@@ -1,24 +1,33 @@
 import ActivityKit
 import Foundation
+import OSLog
 
 actor ScheduledTransactionLiveActivityService {
     static let shared = ScheduledTransactionLiveActivityService()
 
     private let maximumDuration: TimeInterval = 8 * 60 * 60
     private let processingGracePeriod: TimeInterval = 30 * 60
+    private let logger = Logger(
+        subsystem: "com.josephlteif.financedemo",
+        category: "ScheduledLiveActivity"
+    )
 
     func refresh(schedules: [ScheduledTransaction], isEnabled: Bool) async {
         let now = Date.now
         let existingActivities = Activity<ScheduledTransactionActivityAttributes>.activities
 
-        guard isEnabled,
-              ActivityAuthorizationInfo().areActivitiesEnabled,
-              let schedule = schedules
-                .filter({
-                    $0.isEnabled
-                        && $0.nextRunDate > now
-                })
-                .min(by: { $0.nextRunDate < $1.nextRunDate }) else {
+        guard isEnabled else {
+            await end(existingActivities)
+            return
+        }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            logger.error("Scheduled transaction Live Activities are disabled in iOS Settings.")
+            await end(existingActivities)
+            return
+        }
+        guard let schedule = schedules
+            .filter({ $0.isEnabled && $0.nextRunDate > now })
+            .min(by: { $0.nextRunDate < $1.nextRunDate }) else {
             await end(existingActivities)
             return
         }
@@ -75,7 +84,7 @@ actor ScheduledTransactionLiveActivityService {
         )
 
         do {
-            _ = try Activity.request(
+            let activity = try Activity.request(
                 attributes: attributes,
                 content: content,
                 pushType: nil,
@@ -83,7 +92,12 @@ actor ScheduledTransactionLiveActivityService {
                 alertConfiguration: alert,
                 start: activityStartDate
             )
-        } catch {}
+            let activityState = String(describing: activity.activityState)
+            logger.info("Scheduled transaction Live Activity accepted with state \(activityState, privacy: .public).")
+        } catch {
+            let errorDescription = error.localizedDescription
+            logger.error("Could not schedule transaction Live Activity: \(errorDescription, privacy: .public)")
+        }
     }
 
     private func end(

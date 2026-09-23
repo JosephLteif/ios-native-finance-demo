@@ -48,10 +48,12 @@ struct ScheduledTransactionLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     Label("\(context.state.totalItemsCount) scheduled", systemImage: "calendar.badge.clock")
                         .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    countdown(to: context.state.items.first?.dueDate ?? .now)
+                    countdown(to: context.state.items.first?.dueDate ?? context.attributes.primaryDueDate)
                         .font(.headline.monospacedDigit())
+                        .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -71,14 +73,25 @@ struct ScheduledTransactionLiveActivity: Widget {
                                 .font(.caption2)
                         }
                     }
+                    .foregroundStyle(.white)
                 }
             } compactLeading: {
-                Image(systemName: "calendar")
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.teal)
             } compactTrailing: {
-                countdown(to: context.state.items.first?.dueDate ?? .now)
-                    .font(.caption2.monospacedDigit())
+                countdown(to: context.state.items.first?.dueDate ?? context.attributes.primaryDueDate)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             } minimal: {
-                Image(systemName: "calendar")
+                ProgressView(
+                    timerInterval: Date.now...(context.state.items.first?.dueDate ?? context.attributes.primaryDueDate),
+                    countsDown: true
+                )
+                .progressViewStyle(.circular)
+                .tint(.teal)
             }
             .keylineTint(.teal)
         }
