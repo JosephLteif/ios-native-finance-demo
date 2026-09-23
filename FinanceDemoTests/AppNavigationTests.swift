@@ -22,8 +22,8 @@ final class AppNavigationTests: XCTestCase {
         XCTAssertNil(AppTab(url: URL(string: "pocketledger://metrics")!))
     }
 
-    func testTransactionsHasItsOwnTab() {
-        XCTAssertEqual(AppTab.tabBarOrder, [.overview, .accounts, .transactions, .more])
-        XCTAssertEqual(AppTab.tabBarOrder[AppTab.transactions.tabBarIndex], .transactions)
+    func testMainTabOrderAndHomeLabel() {
+        XCTAssertEqual(AppTab.tabBarOrder, [.overview, .transactions, .accounts, .more])
+        XCTAssertEqual(AppTab.overview.title, "Home")
     }
 }

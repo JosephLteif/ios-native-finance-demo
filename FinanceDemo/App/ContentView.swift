@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import UIKit
 import UniformTypeIdentifiers
 
 @MainActor
@@ -88,14 +87,62 @@ struct ContentView: View {
     }
 
     private var unlockedContent: some View {
-        NativeTabBarController(
-            selectedTab: selectedTabBinding,
-            store: store,
-            security: security,
-            onAddAction: { action in addAction = action }
-        )
+        TabView(selection: selectedTabBinding) {
+            Tab(
+                "Home",
+                systemImage: AppTab.overview.systemImage,
+                value: AppTab.overview
+            ) {
+                DashboardView(
+                    store: store,
+                    onAddExpense: { addAction = .expense },
+                    onShowTransactions: { selectedTabBinding.wrappedValue = .transactions },
+                    onAddAction: { addAction = $0 }
+                )
+            }
+            .accessibilityIdentifier("tab-overview")
+
+            Tab(
+                "Transactions",
+                systemImage: AppTab.transactions.systemImage,
+                value: AppTab.transactions
+            ) {
+                NavigationStack {
+                    TransactionsView(
+                        store: store,
+                        onAddExpense: { addAction = .expense },
+                        onAddAction: { addAction = $0 }
+                    )
+                }
+            }
+            .accessibilityIdentifier("tab-transactions")
+
+            Tab(
+                "Accounts",
+                systemImage: AppTab.accounts.systemImage,
+                value: AppTab.accounts
+            ) {
+                NavigationStack {
+                    AccountsView(store: store)
+                }
+            }
+            .accessibilityIdentifier("tab-accounts")
+
+            Tab(
+                "More",
+                systemImage: AppTab.more.systemImage,
+                value: AppTab.more
+            ) {
+                MoreView(
+                    store: store,
+                    security: security,
+                    onAddExpense: { addAction = .expense }
+                )
+            }
+            .accessibilityIdentifier("tab-more")
+        }
+        .tabBarMinimizeBehavior(.onScrollDown)
         .tint(PocketLedgerTheme.accent)
-        .ignoresSafeArea()
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
         )
@@ -147,333 +194,7 @@ struct ContentView: View {
 
 }
 
-@MainActor
-private final class PocketLedgerTabBarController: UITabBarController {
-    private let visibleTabBar = UITabBar()
-    private weak var addButton: UIButton?
-
-    private let addButtonSize: CGFloat = 52
-    private let horizontalInset: CGFloat = 16
-    private let controlSpacing: CGFloat = 10
-
-    func installAddButton(_ button: UIButton) {
-        // Keep both controls frame-based. Mixing Auto Layout for the button with
-        // a manually framed UITabBar causes the button to use stale bar geometry
-        // during layout, which is especially visible with the iOS 26 tab bar.
-        addButton = button
-        button.translatesAutoresizingMaskIntoConstraints = true
-        view.addSubview(button)
-    }
-
-    func installVisibleTabBar(items: [UITabBarItem], delegate: any UITabBarDelegate) {
-        tabBar.isHidden = false
-        tabBar.alpha = 0
-        tabBar.isUserInteractionEnabled = false
-        tabBar.accessibilityElementsHidden = true
-
-        visibleTabBar.items = items
-        visibleTabBar.delegate = delegate
-        visibleTabBar.tintColor = UIColor(PocketLedgerTheme.accent)
-        visibleTabBar.unselectedItemTintColor = UIColor(PocketLedgerTheme.textSecondary)
-        visibleTabBar.isTranslucent = true
-        visibleTabBar.accessibilityIdentifier = "main-tab-bar"
-        visibleTabBar.translatesAutoresizingMaskIntoConstraints = true
-
-        if visibleTabBar.superview == nil {
-            view.addSubview(visibleTabBar)
-        }
-    }
-
-    func selectVisibleTab(at index: Int) {
-        guard visibleTabBar.items?.indices.contains(index) == true else { return }
-        visibleTabBar.selectedItem = visibleTabBar.items?[index]
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-
-        guard visibleTabBar.superview != nil else { return }
-
-        let safeFrame = view.safeAreaLayoutGuide.layoutFrame
-        let systemTabBarFrame = tabBar.frame
-
-        // Match the native tab bar's vertical geometry instead of asking the
-        // standalone bar for a second, potentially different, fitted height.
-        let tabBarHeight = max(49, systemTabBarFrame.height)
-
-        let trailingEdge = safeFrame.maxX - horizontalInset
-        let leadingEdge = max(safeFrame.minX, horizontalInset)
-        let addButtonX = trailingEdge - addButtonSize
-        let tabBarTrailingEdge = addButtonX - controlSpacing
-
-        visibleTabBar.frame = CGRect(
-            x: leadingEdge,
-            y: systemTabBarFrame.minY,
-            width: max(0, tabBarTrailingEdge - leadingEdge),
-            height: tabBarHeight
-        )
-
-        guard let addButton else { return }
-
-        // UITabBar's frame includes the bottom safe-area inset on iPhones with a
-        // home indicator. Its items live in the content row above that inset, so
-        // centering the Add button in the full frame makes it visibly too low.
-        let bottomSafeInset = max(0, view.bounds.maxY - safeFrame.maxY)
-        let tabBarContentHeight = max(49, tabBarHeight - bottomSafeInset)
-        let rowCenterY = systemTabBarFrame.minY + tabBarContentHeight / 2
-
-        addButton.bounds = CGRect(
-            origin: .zero,
-            size: CGSize(width: addButtonSize, height: addButtonSize)
-        )
-        addButton.center = CGPoint(
-            x: addButtonX + addButtonSize / 2,
-            y: rowCenterY
-        )
-    }
-}
-
-@MainActor
-private struct NativeTabBarController: UIViewControllerRepresentable {
-    @Binding var selectedTab: AppTab
-    @ObservedObject var store: LedgerStore
-    @ObservedObject var security: AppSecurityService
-    let onAddAction: (AddAction) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
-
-    func makeUIViewController(context: Context) -> PocketLedgerTabBarController {
-        let controller = PocketLedgerTabBarController()
-        controller.delegate = context.coordinator
-        controller.setViewControllers(makeViewControllers(), animated: false)
-        controller.selectedIndex = selectedTab.tabBarIndex
-        controller.tabBar.tintColor = UIColor(PocketLedgerTheme.accent)
-
-        if #available(iOS 26, *) {
-            controller.tabBarMinimizeBehavior = .onScrollDown
-            controller.installVisibleTabBar(
-                items: makeVisibleTabBarItems(),
-                delegate: context.coordinator
-            )
-            controller.selectVisibleTab(at: selectedTab.tabBarIndex)
-
-            controller.installAddButton(makeAddButton(context: context))
-        }
-
-        return controller
-    }
-
-    func updateUIViewController(_ controller: PocketLedgerTabBarController, context: Context) {
-        context.coordinator.parent = self
-        context.coordinator.onAddAction = onAddAction
-        controller.tabBar.tintColor = UIColor(PocketLedgerTheme.accent)
-
-        if #available(iOS 26, *),
-           let addButton = controller.view.subviews.first(where: {
-               ($0 as? UIButton)?.accessibilityIdentifier == "add-transaction-button"
-           }) as? UIButton {
-            addButton.menu = makeAddMenu(coordinator: context.coordinator)
-        }
-
-        let selectedIndex = selectedTab.tabBarIndex
-        if controller.selectedIndex != selectedIndex {
-            controller.selectedIndex = selectedIndex
-        }
-        if #available(iOS 26, *) {
-            controller.selectVisibleTab(at: selectedIndex)
-        }
-    }
-
-    private func makeViewControllers() -> [UIViewController] {
-        let addExpense = onAddAction
-        let selectedTabBinding = _selectedTab
-
-        return AppTab.tabBarOrder.map { tab in
-            let viewController: UIViewController
-            switch tab {
-            case .overview:
-                viewController = UIHostingController(
-                    rootView: DashboardView(
-                        store: store,
-                        onAddExpense: { addExpense(.expense) },
-                        onShowTransactions: {
-                            selectedTabBinding.wrappedValue = .transactions
-                        }
-                    )
-                )
-            case .accounts:
-                viewController = UIHostingController(
-                    rootView: NavigationStack {
-                        AccountsView(store: store)
-                    }
-                )
-            case .transactions:
-                viewController = UIHostingController(
-                    rootView: NavigationStack {
-                        TransactionsView(
-                            store: store,
-                            onAddExpense: { addExpense(.expense) }
-                        )
-                    }
-                )
-            case .metrics:
-                viewController = UIHostingController(rootView: MetricsView(store: store))
-            case .more:
-                viewController = UIHostingController(
-                    rootView: MoreView(
-                        store: store,
-                        security: security,
-                        onAddExpense: { addExpense(.expense) }
-                    )
-                )
-            }
-
-            viewController.tabBarItem = UITabBarItem(
-                title: tab.title,
-                image: UIImage(systemName: tab.systemImage),
-                tag: tab.tabBarIndex
-            )
-            viewController.tabBarItem.accessibilityIdentifier = "tab-\(tab.rawValue)"
-            return viewController
-        }
-    }
-
-    private func makeVisibleTabBarItems() -> [UITabBarItem] {
-        AppTab.tabBarOrder.map { tab in
-            let item = UITabBarItem(
-                title: tab.title,
-                image: UIImage(systemName: tab.systemImage),
-                tag: tab.tabBarIndex
-            )
-            item.accessibilityIdentifier = "tab-\(tab.rawValue)"
-            return item
-        }
-    }
-
-    private func makeAddButton(context: Context) -> UIButton {
-        var configuration = UIButton.Configuration.glass()
-        configuration.image = UIImage(systemName: "plus")
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-            pointSize: 24,
-            weight: .semibold
-        )
-        configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
-        configuration.cornerStyle = .capsule
-        configuration.baseBackgroundColor = UIColor(PocketLedgerTheme.accent.opacity(0.12))
-        configuration.baseForegroundColor = UIColor(PocketLedgerTheme.accent)
-
-        let button = UIButton(configuration: configuration)
-        let coordinator = context.coordinator
-        button.addAction(UIAction { [weak coordinator] _ in
-            coordinator?.onAddAction(.expense)
-        }, for: .primaryActionTriggered)
-        button.tintColor = UIColor(PocketLedgerTheme.accent)
-        button.menu = makeAddMenu(coordinator: context.coordinator)
-        button.showsMenuAsPrimaryAction = false
-        button.accessibilityIdentifier = "add-transaction-button"
-        button.accessibilityLabel = "Add"
-        button.accessibilityHint = "Choose what to add"
-        return button
-    }
-
-    private func makeAddMenu(coordinator: Coordinator) -> UIMenu {
-        let quickActions = UIMenu(
-            title: "Quick add",
-            options: .displayInline,
-            children: [
-                makeAction("Expense", image: "arrow.up.right", action: .expense, coordinator: coordinator),
-                makeAction("Income", image: "arrow.down.left", action: .income, coordinator: coordinator),
-                makeAction("Transfer", image: "arrow.left.arrow.right", action: .transfer, coordinator: coordinator)
-            ]
-        )
-
-        let otherActions = UIMenu(
-            title: "Other",
-            options: .displayInline,
-            children: [
-                makeAction("Scan bill", image: "doc.text.viewfinder", action: .scanBill, coordinator: coordinator),
-                makeAction("Scheduled", image: "calendar.badge.clock", action: .scheduled, coordinator: coordinator)
-            ]
-        )
-
-        var menus: [UIMenuElement] = [quickActions, otherActions]
-        let templates: [UIMenuElement] = store.data.templates.prefix(3).map { template in
-            makeAction(
-                template.name,
-                image: "rectangle.stack",
-                action: .template(template.id),
-                coordinator: coordinator
-            )
-        }
-        if !templates.isEmpty {
-            menus.append(UIMenu(title: "Templates", options: .displayInline, children: templates))
-        }
-
-        let recent: [UIMenuElement] = store.recentTransactions.prefix(3).map { transaction in
-            makeAction(
-                transaction.note,
-                image: "clock.arrow.circlepath",
-                action: .recent(transaction.id),
-                coordinator: coordinator
-            )
-        }
-        if !recent.isEmpty {
-            menus.append(UIMenu(title: "Recent", options: .displayInline, children: recent))
-        }
-
-        return UIMenu(title: "Add", children: menus)
-    }
-
-    private func makeAction(
-        _ title: String,
-        image: String,
-        action: AddAction,
-        coordinator: Coordinator
-    ) -> UIAction {
-        UIAction(title: title, image: UIImage(systemName: image)) { [weak coordinator] _ in
-            coordinator?.onAddAction(action)
-        }
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, UITabBarControllerDelegate, UITabBarDelegate {
-        var parent: NativeTabBarController
-        var onAddAction: (AddAction) -> Void
-
-        init(parent: NativeTabBarController) {
-            self.parent = parent
-            self.onAddAction = parent.onAddAction
-        }
-
-        func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
-            guard let index = tabBarController.viewControllers?.firstIndex(of: viewController),
-                  index < AppTab.tabBarOrder.count else {
-                return
-            }
-
-            let tab = AppTab.tabBarOrder[index]
-            if parent.selectedTab != tab {
-                parent.selectedTab = tab
-            }
-        }
-
-        func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
-            guard let index = tabBar.items?.firstIndex(of: item),
-                  index < AppTab.tabBarOrder.count else {
-                return
-            }
-
-            let tab = AppTab.tabBarOrder[index]
-            if parent.selectedTab != tab {
-                parent.selectedTab = tab
-            }
-        }
-    }
-}
-
-private enum AddAction: Identifiable {
+enum AddAction: Identifiable {
     case scanBill
     case expense
     case income
@@ -502,6 +223,54 @@ private enum AddAction: Identifiable {
     }
 }
 
+@MainActor
+private struct AddTransactionToolbar: ToolbarContent {
+    @ObservedObject var store: LedgerStore
+    let onAction: (AddAction) -> Void
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Section("Quick add") {
+                    Button("Expense", systemImage: "arrow.up.right") { onAction(.expense) }
+                    Button("Income", systemImage: "arrow.down.left") { onAction(.income) }
+                    Button("Transfer", systemImage: "arrow.left.arrow.right") { onAction(.transfer) }
+                }
+
+                Section("Other") {
+                    Button("Scan bill", systemImage: "doc.text.viewfinder") { onAction(.scanBill) }
+                    Button("Scheduled", systemImage: "calendar.badge.clock") { onAction(.scheduled) }
+                }
+
+                if !store.data.templates.isEmpty {
+                    Section("Templates") {
+                        ForEach(Array(store.data.templates.prefix(3)), id: \.id) { template in
+                            Button(template.name, systemImage: "rectangle.stack") {
+                                onAction(.template(template.id))
+                            }
+                        }
+                    }
+                }
+
+                if !store.recentTransactions.isEmpty {
+                    Section("Recent") {
+                        ForEach(Array(store.recentTransactions.prefix(3)), id: \.id) { transaction in
+                            Button(transaction.note, systemImage: "clock.arrow.circlepath") {
+                                onAction(.recent(transaction.id))
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "plus")
+            }
+            .accessibilityLabel("Add")
+            .accessibilityHint("Choose what to add")
+            .accessibilityIdentifier("add-transaction-button")
+        }
+    }
+}
+
 enum AppTab: String, Hashable {
     case overview
     case accounts
@@ -509,18 +278,12 @@ enum AppTab: String, Hashable {
     case metrics
     case more
 
-    static let tabBarOrder: [AppTab] = [.overview, .accounts, .transactions, .more]
-
-    var tabBarIndex: Int {
-        Self.tabBarOrder.firstIndex(of: self)
-            ?? Self.tabBarOrder.firstIndex(of: .more)
-            ?? 0
-    }
+    static let tabBarOrder: [AppTab] = [.overview, .transactions, .accounts, .more]
 
     var title: String {
         switch self {
         case .overview:
-            return "Overview"
+            return "Home"
         case .accounts:
             return "Accounts"
         case .transactions:
@@ -535,7 +298,7 @@ enum AppTab: String, Hashable {
     var systemImage: String {
         switch self {
         case .overview:
-            return "chart.bar.xaxis"
+            return "house.fill"
         case .accounts:
             return "wallet.pass"
         case .transactions:
@@ -709,6 +472,7 @@ private struct DashboardView: View {
     @ObservedObject var store: LedgerStore
     let onAddExpense: () -> Void
     let onShowTransactions: () -> Void
+    let onAddAction: (AddAction) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentedSheet: DashboardSheet?
     @State private var snapshot = DashboardSnapshot.empty
@@ -758,6 +522,7 @@ private struct DashboardView: View {
                     .accessibilityHint("Choose which widgets appear and reorder them")
                     .accessibilityIdentifier("dashboard-customize")
                 }
+                AddTransactionToolbar(store: store, onAction: onAddAction)
             }
             .sheet(item: $presentedSheet) { sheet in
                 switch sheet {
@@ -1859,6 +1624,7 @@ struct TransactionsView: View {
 
     @ObservedObject var store: LedgerStore
     let onAddExpense: () -> Void
+    private let onAddAction: ((AddAction) -> Void)?
     @State private var selectedFilter: TransactionFilter
     @State private var selectedPeriod: TransactionPeriod
     @State private var selectedQuickFilter: TransactionQuickFilter
@@ -1882,12 +1648,14 @@ struct TransactionsView: View {
     init(
         store: LedgerStore,
         onAddExpense: @escaping () -> Void = {},
+        onAddAction: ((AddAction) -> Void)? = nil,
         initialFilter: TransactionFilter = .all,
         initialPeriod: TransactionPeriod = .all,
         initialSearch: String = ""
     ) {
         _store = ObservedObject(wrappedValue: store)
         self.onAddExpense = onAddExpense
+        self.onAddAction = onAddAction
         _selectedFilter = State(initialValue: initialFilter)
         _selectedPeriod = State(initialValue: initialPeriod)
         let hasExplicitContext = initialFilter != .all || initialPeriod != .all || !initialSearch.isEmpty
@@ -2004,13 +1772,18 @@ struct TransactionsView: View {
                     .accessibilityLabel("Select transactions")
                     .accessibilityIdentifier("select-transactions")
                 }
-
-                Button {
-                    isPresentingBillScanner = true
-                } label: {
-                    Image(systemName: "doc.viewfinder")
+            }
+            if let onAddAction {
+                AddTransactionToolbar(store: store, onAction: onAddAction)
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        isPresentingBillScanner = true
+                    } label: {
+                        Image(systemName: "doc.viewfinder")
+                    }
+                    .accessibilityLabel("Scan bill")
                 }
-                .accessibilityLabel("Scan bill")
             }
         }
         .overlay(alignment: .bottom) {
