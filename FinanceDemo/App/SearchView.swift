@@ -27,11 +27,11 @@ enum FinanceSearch {
         ]
 
         searchable.append(contentsOf: movements.flatMap { movement in
-            let accountDetails = index.account(with: movement.accountID).map {
-                "\($0.name) \($0.type.displayName) \($0.currency.rawValue)"
+            var details = [movement.money.formatted, movement.money.currency.rawValue]
+            if let account = index.account(with: movement.accountID) {
+                details.append("\(account.name) \(account.type.displayName) \(account.currency.rawValue)")
             }
-            return [movement.money.formatted, movement.money.currency.rawValue, accountDetails]
-                .compactMap { $0 }
+            return details
         })
 
         if let amountDue = transaction.amountDue {
