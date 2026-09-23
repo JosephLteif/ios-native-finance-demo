@@ -59,26 +59,24 @@ enum FoundationModelService {
         let currency: String
     }
 
-    static func availabilityDescription() -> String {
-        switch SystemLanguageModel.default.availability {
-        case .available:
-            return "Available"
-        case .unavailable(.appleIntelligenceNotEnabled):
-            return "Apple Intelligence disabled"
-        case .unavailable(.deviceNotEligible):
-            return "Device not eligible"
-        case .unavailable(.modelNotReady):
-            return "Model not ready"
-        case .unavailable(let other):
-            return "Unavailable (other: \(other))"
-        }
-    }
+    static func generateBudgetSummary(for budgetLines: [String]) async -> String {
+        let fallback = "Current budget status: " + budgetLines.joined(separator: "; ")
+        let model = SystemLanguageModel.default
+        guard case .available = model.availability else { return fallback }
 
-    static func generateBudgetSummary(for snapshot: FinanceWidgetSnapshot) async -> String {
-        await generateBudgetSummary(
-            balance: snapshot.balanceSummary,
-            latestTransaction: snapshot.latestTransactionDescription
-        )
+        do {
+            let session = LanguageModelSession()
+            let prompt = """
+            Summarize these current Pocket Ledger budgets in one concise sentence. Use only the supplied data, do not invent totals, and do not combine different currencies.
+            Current monthly budget status by category:
+            \(budgetLines.joined(separator: "\n"))
+            """
+            let response = try await session.respond(to: prompt)
+            let summary = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            return summary.isEmpty ? fallback : summary
+        } catch {
+            return fallback
+        }
     }
 
     static func analyzeReceipt(text: String) async -> ReceiptAnalysis {
@@ -182,32 +180,6 @@ enum FoundationModelService {
                 suggestions: [:],
                 warning: "On-device account mapping failed, so the deterministic import fallback was used. Review the account type and currency before importing."
             )
-        }
-    }
-
-    private static func generateBudgetSummary(
-        balance: String,
-        latestTransaction: String
-    ) async -> String {
-        let model = SystemLanguageModel.default
-        guard case .available = model.availability else {
-            return "Generation skipped: \(availabilityDescription())."
-        }
-
-        do {
-            let session = LanguageModelSession()
-            let prompt = """
-            Give me one concise sentence about this current Pocket Ledger snapshot. Use only the supplied data and do not invent totals.
-            Current balances: \(balance)
-            Last transaction: \(latestTransaction)
-            """
-            let response = try await session.respond(
-                to: prompt
-            )
-            let summary = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
-            return summary.isEmpty ? "The model returned an empty response." : summary
-        } catch {
-            return "Generation failed: \(error.localizedDescription)"
         }
     }
 

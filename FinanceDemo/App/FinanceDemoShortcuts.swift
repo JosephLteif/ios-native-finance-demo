@@ -1,14 +1,48 @@
 import AppIntents
 import Foundation
 
+private func budgetStatusLines(in data: FinanceData) -> [String] {
+    let month = Calendar.current.dateInterval(of: .month, for: .now)
+    return data.budgets.map { budget in
+        let spent = financeBudgetSpent(budget, in: data, interval: month)
+        let allowance = financeBudgetAllowance(budget, in: data, interval: month)
+        let category = data.categories.first(where: { $0.id == budget.categoryID })?.name ?? "Uncategorized"
+        let remaining = Money(currency: budget.currency, minorUnits: allowance.minorUnits - spent.minorUnits)
+        let remainingText = remaining.minorUnits >= 0
+            ? "\(remaining.formatted) remaining"
+            : "\(Money(currency: budget.currency, minorUnits: -remaining.minorUnits).formatted) over"
+        return "\(category): \(spent.formatted) of \(allowance.formatted), \(remainingText)"
+    }
+}
+
 struct GenerateBudgetSummaryIntent: AppIntent {
     static let title: LocalizedStringResource = "Summarize Pocket Ledger Budget"
-    static let description = IntentDescription("Uses Apple Intelligence to summarize the current Pocket Ledger balance and latest transaction.")
+    static let description = IntentDescription("Summarizes this month's Pocket Ledger category budgets, using Apple Intelligence when available.")
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let snapshot = FinanceStorage(context: "app-intent").widgetSnapshot()
-        let summary = await FoundationModelService.generateBudgetSummary(for: snapshot)
+        let storage = FinanceStorage(context: "app-intent")
+        guard storage.isPersistent else {
+            return .result(
+                value: "Persistent database unavailable",
+                dialog: "The Pocket Ledger budgets are unavailable because the persistent database is unavailable."
+            )
+        }
+
+        let data = storage.load()
+        guard !storage.isCorrupted else {
+            return .result(
+                value: "Ledger unavailable",
+                dialog: "Pocket Ledger could not read the saved budgets."
+            )
+        }
+
+        let lines = budgetStatusLines(in: data)
+        guard !lines.isEmpty else {
+            return .result(value: "No budgets configured", dialog: "No Pocket Ledger budgets are configured.")
+        }
+
+        let summary = await FoundationModelService.generateBudgetSummary(for: lines)
         return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))
     }
 }
@@ -19,15 +53,23 @@ struct GetBudgetStatusIntent: AppIntent {
     static let openAppWhenRun = false
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        let data = FinanceStorage(context: "app-intent").load()
-        let month = Calendar.current.dateInterval(of: .month, for: .now)
-        let lines = data.budgets.map { budget -> String in
-            let spentMoney = financeBudgetSpent(budget, in: data, interval: month)
-            let allowance = financeBudgetAllowance(budget, in: data, interval: month)
-            let category = data.categories.first(where: { $0.id == budget.categoryID })?.name ?? "Uncategorized"
-            let remaining = Money(currency: budget.currency, minorUnits: allowance.minorUnits - spentMoney.minorUnits)
-            return "\(category): \(spentMoney.formatted) of \(allowance.formatted), \(remaining.minorUnits >= 0 ? "\(remaining.formatted) remaining" : "\(Money(currency: budget.currency, minorUnits: -remaining.minorUnits).formatted) over")"
+        let storage = FinanceStorage(context: "app-intent")
+        guard storage.isPersistent else {
+            return .result(
+                value: "Persistent database unavailable",
+                dialog: "The Pocket Ledger budgets are unavailable because the persistent database is unavailable."
+            )
         }
+
+        let data = storage.load()
+        guard !storage.isCorrupted else {
+            return .result(
+                value: "Ledger unavailable",
+                dialog: "Pocket Ledger could not read the saved budgets."
+            )
+        }
+
+        let lines = budgetStatusLines(in: data)
         let summary = lines.isEmpty ? "No budgets configured." : lines.joined(separator: "\n")
         return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))
     }
@@ -48,16 +90,6 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Get Pocket Ledger Balance",
             systemImageName: "dollarsign.circle"
-        )
-        AppShortcut(
-            intent: AddDemoExpenseIntent(),
-            phrases: [
-                "Add a five dollar expense in \(.applicationName)",
-                "Spend five dollars in \(.applicationName)",
-                "Add an expense in \(.applicationName)"
-            ],
-            shortTitle: "Add Pocket Ledger Expense",
-            systemImageName: "minus.circle"
         )
         AppShortcut(
             intent: AddLedgerTransactionIntent(),
