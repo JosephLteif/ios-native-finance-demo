@@ -125,6 +125,13 @@ struct FinanceTransactionEntity: IndexedEntity, Hashable, Sendable {
         )
     }
 
+    func matchesSearch(_ query: String) -> Bool {
+        [note, kind, category, amount, accountNames]
+            .contains { $0.localizedCaseInsensitiveContains(query) }
+            || date.formatted(date: .abbreviated, time: .omitted)
+                .localizedCaseInsensitiveContains(query)
+    }
+
     var attributeSet: CSSearchableItemAttributeSet {
         let attributes = CSSearchableItemAttributeSet(itemContentType: "public.text")
         attributes.title = note.isEmpty ? kind : note
@@ -168,12 +175,7 @@ struct FinanceTransactionQuery: EntityStringQuery, Sendable {
             return try await suggestedEntities()
         }
 
-        return allEntities().filter { transaction in
-            [transaction.note, transaction.kind, transaction.category, transaction.amount, transaction.accountNames]
-                .contains { $0.localizedCaseInsensitiveContains(query) }
-                || transaction.date.formatted(date: .abbreviated, time: .omitted)
-                    .localizedCaseInsensitiveContains(query)
-        }
+        return allEntities().filter { $0.matchesSearch(query) }
     }
 
     private func allEntities() -> [FinanceTransactionEntity] {

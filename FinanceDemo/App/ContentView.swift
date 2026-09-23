@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @StateObject private var store = LedgerStore()
     @StateObject private var security = AppSecurityService()
+    @StateObject private var intentSearchRouter = FinanceIntentSearchRouter.shared
     @State private var addAction: AddAction?
     @State private var searchText = ""
     @State private var isSearchPresented = false
@@ -46,7 +47,11 @@ struct ContentView: View {
         .onChange(of: security.isPasscodeEnabled) { _, enabled in
             isUnlocked = !enabled
         }
+        .onChange(of: intentSearchRouter.pendingSearch?.id) { _, _ in
+            openPendingIntentSearch()
+        }
         .task {
+            openPendingIntentSearch()
             if ProcessInfo.processInfo.arguments.contains("-ImportWizardUITest") {
                 isShowingImportWizardUITest = true
                 return
@@ -95,6 +100,14 @@ struct ContentView: View {
     private func handleDeepLink(_ url: URL) {
         guard let tab = AppTab(url: url) else { return }
         selectedTabBinding.wrappedValue = tab
+    }
+
+    private func openPendingIntentSearch() {
+        guard let request = intentSearchRouter.consumePendingSearch() else { return }
+        searchText = request.query
+        selectedTabBinding.wrappedValue = .search
+        isSearchPresented = true
+        isSearchFieldFocused = true
     }
 
     private var unlockedContent: some View {
@@ -3563,6 +3576,21 @@ struct TransactionEditor: View {
                 onCompletion: replaceAttachment
             )
         }
+        .userActivity(
+            "com.josephlteif.financedemo.viewing-transaction",
+            element: visibleTransactionEntity
+        ) { entity, activity in
+            activity.title = "Viewing \(entity.note.isEmpty ? entity.kind : entity.note)"
+            activity.appEntityIdentifier = EntityIdentifier(for: entity)
+        }
+    }
+
+    private var visibleTransactionEntity: FinanceTransactionEntity? {
+        guard let editingTransactionID,
+              let transaction = store.data.transactions.first(where: { $0.id == editingTransactionID }) else {
+            return nil
+        }
+        return FinanceTransactionEntity(transaction: transaction, data: store.data)
     }
 
     private var isEditingScheduledTransaction: Bool {
