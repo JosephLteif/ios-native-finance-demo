@@ -23,7 +23,7 @@ final class AppNavigationTests: XCTestCase {
     }
 
     func testMainTabOrderAndHomeLabel() {
-        XCTAssertEqual(AppTab.tabBarOrder, [.overview, .search, .transactions, .accounts, .more])
+        XCTAssertEqual(AppTab.tabBarOrder, [.overview, .transactions, .accounts, .more, .search])
         XCTAssertEqual(AppTab.overview.title, "Home")
     }
 }

@@ -98,7 +98,7 @@ private struct GlobalSearchSnapshot {
 @MainActor
 struct GlobalSearchView: View {
     @ObservedObject var store: LedgerStore
-    @State private var searchText = ""
+    @Binding var searchText: String
     @State private var results = GlobalSearchSnapshot.empty
     @State private var editingTransaction: LedgerTransaction?
 
@@ -110,8 +110,6 @@ struct GlobalSearchView: View {
         ScrollView(showsIndicators: false) {
             PocketGlassContainer(spacing: 14) {
                 VStack(alignment: .leading, spacing: 16) {
-                    searchField
-
                     if query.isEmpty {
                         ContentUnavailableView(
                             "Search your ledger",
@@ -208,30 +206,6 @@ struct GlobalSearchView: View {
         .sheet(item: $editingTransaction) { transaction in
             TransactionEditor(store: store, transaction: transaction)
         }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(PocketLedgerTheme.textTertiary)
-            TextField("Accounts, transactions, descriptions…", text: $searchText)
-                .textFieldStyle(.plain)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(PocketLedgerTheme.textTertiary)
-                }
-                .accessibilityLabel("Clear search")
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .pocketGlassSurface(cornerRadius: 13)
     }
 
     private func resultsSection<Content: View>(

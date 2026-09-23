@@ -7,6 +7,7 @@ struct ContentView: View {
     @StateObject private var store = LedgerStore()
     @StateObject private var security = AppSecurityService()
     @State private var addAction: AddAction?
+    @State private var searchText = ""
     @State private var isShowingSetup = false
     @State private var isShowingImportWizardUITest = false
     @State private var isUnlocked = false
@@ -102,13 +103,9 @@ struct ContentView: View {
             }
             .accessibilityIdentifier("tab-overview")
 
-            Tab(
-                "Search",
-                systemImage: AppTab.search.systemImage,
-                value: AppTab.search
-            ) {
+            Tab(value: AppTab.search, role: .search) {
                 NavigationStack {
-                    GlobalSearchView(store: store)
+                    GlobalSearchView(store: store, searchText: $searchText)
                 }
             }
             .accessibilityIdentifier("tab-search")
@@ -153,6 +150,7 @@ struct ContentView: View {
             .accessibilityIdentifier("tab-more")
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .searchable(text: $searchText, prompt: "Search accounts, transactions, descriptions…")
         .tint(PocketLedgerTheme.accent)
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
@@ -290,7 +288,7 @@ enum AppTab: String, Hashable {
     case metrics
     case more
 
-    static let tabBarOrder: [AppTab] = [.overview, .search, .transactions, .accounts, .more]
+    static let tabBarOrder: [AppTab] = [.overview, .transactions, .accounts, .more, .search]
 
     var title: String {
         switch self {
