@@ -39,6 +39,9 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: GetDemoBalanceIntent(),
             phrases: [
+                "How much money do I have in \(.applicationName)",
+                "How much do I have in \(.applicationName)",
+                "What is my total balance in \(.applicationName)",
                 "Get my balance in \(.applicationName)",
                 "What's my balance in \(.applicationName)",
                 "Check my balance in \(.applicationName)"
