@@ -96,8 +96,7 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             intent: AddLedgerTransactionIntent(),
             phrases: [
                 "Add a transaction to \(\.$account) in \(.applicationName)",
-                "Record a transaction in \(.applicationName)",
-                "Add a transaction of \(\.$amount) in \(.applicationName)"
+                "Record a transaction in \(.applicationName)"
             ],
             shortTitle: "Add Pocket Ledger Transaction",
             systemImageName: "plus.circle"
