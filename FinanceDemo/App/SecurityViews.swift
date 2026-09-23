@@ -117,8 +117,8 @@ struct SecuritySettingsView: View {
 
                     Text(
                         "Groups up to three upcoming scheduled entries in one private countdown, and counts any additional entries in the same window. "
-                            + "The Live Activity starts up to eight hours before the next due entry; scheduled notifications follow their selected reminder time independently. "
-                            + "Due entries are added when Pocket Ledger next opens. Allow Live Activities for Pocket Ledger in iOS Settings too."
+                            + "It appears up to eight hours before the next due entry; scheduled notifications follow their selected reminder time independently. "
+                            + "Due entries are added when Pocket Ledger next opens. Enable Live Activities in Settings > Apps > Pocket Ledger, and allow them on the Lock Screen in Settings > Face ID & Passcode > Allow Access When Locked."
                     )
                         .font(.footnote)
                         .foregroundStyle(.secondary)

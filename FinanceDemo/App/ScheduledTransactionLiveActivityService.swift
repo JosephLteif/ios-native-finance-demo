@@ -65,9 +65,6 @@ actor ScheduledTransactionLiveActivityService {
                 && $0.attributes.primaryDueDate == attributes.primaryDueDate
                 && $0.activityState != .ended
                 && $0.activityState != .dismissed
-                && ($0.attributes.startDate == attributes.startDate
-                    || $0.activityState == .active
-                    || $0.activityState == .stale)
         }) {
             if matchingActivity.content.state != content.state {
                 await matchingActivity.update(content)

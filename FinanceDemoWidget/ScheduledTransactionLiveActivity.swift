@@ -86,12 +86,10 @@ struct ScheduledTransactionLiveActivity: Widget {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             } minimal: {
-                ProgressView(
-                    timerInterval: Date.now...(context.state.items.first?.dueDate ?? context.attributes.primaryDueDate),
-                    countsDown: true
-                )
-                .progressViewStyle(.circular)
-                .tint(.teal)
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 16, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.teal)
             }
             .keylineTint(.teal)
         }
