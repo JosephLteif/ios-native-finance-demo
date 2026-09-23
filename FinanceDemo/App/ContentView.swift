@@ -960,7 +960,7 @@ private struct DashboardView: View {
                 Text(upcomingDateLabel(schedule.nextRunDate))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(PocketLedgerTheme.accent)
-                Text(schedule.nextRunDate.formatted(.dateTime.month(.abbreviated).day()))
+                Text(schedule.nextRunDate.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
@@ -968,7 +968,7 @@ private struct DashboardView: View {
         .padding(.vertical, 12)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(schedule.note.isEmpty ? schedule.kind.displayName : schedule.note), \(store.transactionSummary(schedule.transactionTemplate)), \(upcomingDateLabel(schedule.nextRunDate))"
+            "\(schedule.note.isEmpty ? schedule.kind.displayName : schedule.note), \(store.transactionSummary(schedule.transactionTemplate)), \(schedule.nextRunDate.formatted(date: .abbreviated, time: .shortened))"
         )
     }
 
@@ -1665,7 +1665,6 @@ struct TransactionsView: View {
     @State private var customEndDate: Date
     @State private var transactionPage = 0
     @State private var editingTransaction: LedgerTransaction?
-    @State private var transactionToDelete: LedgerTransaction?
     @State private var transactionToTemplate: LedgerTransaction?
     @State private var isPresentingBillScanner = false
     @State private var isShowingFilters = false
@@ -1707,63 +1706,75 @@ struct TransactionsView: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            PocketGlassContainer(spacing: 14) {
-                VStack(alignment: .leading, spacing: 18) {
-                    screenSubtitle
+        List {
+            screenSubtitle
+                .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 2, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-                    if isSelectingTransactions {
-                        selectionToolbar
-                    }
+            if isSelectingTransactions {
+                selectionToolbar
+                    .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 4, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
 
-                    filtersButton
+            filtersButton
+                .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-                    transactionsSummary
+            transactionsSummary
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-                    if listSnapshot.filteredTransactions.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "list.bullet.rectangle.portrait")
-                                .font(.title2)
-                                .foregroundStyle(PocketLedgerTheme.textTertiary)
-                            Text("No transactions yet")
-                                .font(.headline)
-                            Text("Start with a quick expense from the plus button.")
-                                .font(.subheadline)
-                                .foregroundStyle(PocketLedgerTheme.textSecondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 38)
-                        Button("Add expense", systemImage: "plus", action: onAddExpense)
-                            .buttonStyle(.glassProminent)
-                    } else {
-                        ForEach(listSnapshot.groupedTransactions) { day in
-                            VStack(alignment: .leading, spacing: 0) {
-                                dayHeader(day)
-
-                                VStack(spacing: 0) {
-                                    ForEach(day.transactions) { transaction in
-                                        transactionRow(for: transaction)
-                                        Divider().overlay(PocketLedgerTheme.divider)
-                                    }
-                                }
-                                .padding(.horizontal, 14)
-                                .pocketGroupedSurface(cornerRadius: 18)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 18)
-                                        .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                                }
-                            }
-                        }
-
-                        transactionPagination
-                    }
+            if listSnapshot.filteredTransactions.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "list.bullet.rectangle.portrait")
+                        .font(.title2)
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    Text("No transactions yet")
+                        .font(.headline)
+                    Text("Start with a quick expense from the plus button.")
+                        .font(.subheadline)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .multilineTextAlignment(.center)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 38)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+                Button("Add expense", systemImage: "plus", action: onAddExpense)
+                    .buttonStyle(.glassProminent)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(listSnapshot.groupedTransactions) { day in
+                    Section {
+                        ForEach(day.transactions) { transaction in
+                            transactionRow(for: transaction)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                                .listRowBackground(PocketLedgerTheme.surface)
+                                .listRowSeparatorTint(PocketLedgerTheme.divider)
+                        }
+                    } header: {
+                        dayHeader(day)
+                    }
+                    .textCase(nil)
+                    .listSectionSeparator(.hidden)
+                }
+
+                transactionPagination
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 24, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
         .pocketScreen()
         .navigationTitle("Transactions")
         .navigationBarTitleDisplayMode(.large)
@@ -1846,45 +1857,6 @@ struct TransactionsView: View {
         }
         .sheet(item: $transactionToTemplate) { transaction in
             TemplateNameEditor(store: store, transaction: transaction)
-        }
-        .confirmationDialog(
-            "Delete transaction?",
-            isPresented: Binding(
-                get: { transactionToDelete != nil },
-                set: { if !$0 { transactionToDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if let transactionToDelete {
-                    if store.deleteTransaction(id: transactionToDelete.id) {
-                        deletedTransactionsForUndo = [transactionToDelete]
-                    }
-                }
-                self.transactionToDelete = nil
-            }
-            Button("Cancel", role: .cancel) { transactionToDelete = nil }
-        } message: {
-            Text(transactionToDelete?.note ?? "")
-        }
-        .confirmationDialog(
-            "Delete selected transactions?",
-            isPresented: $isShowingBulkDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete \(selectedTransactionIDs.count) transactions", role: .destructive) {
-                let selected = store.data.transactions.filter {
-                    selectedTransactionIDs.contains($0.id)
-                }
-                if store.deleteTransactions(ids: selectedTransactionIDs) {
-                    deletedTransactionsForUndo = selected
-                    selectedTransactionIDs.removeAll()
-                    isSelectingTransactions = false
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This can be undone from the message at the bottom of the screen.")
         }
     }
 
@@ -1989,7 +1961,11 @@ struct TransactionsView: View {
                 }
             },
             onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
-            onDelete: { transactionToDelete = transaction },
+            onDelete: {
+                if store.deleteTransaction(id: transaction.id) {
+                    deletedTransactionsForUndo = [transaction]
+                }
+            },
             onSaveTemplate: { transactionToTemplate = transaction },
             allowsActions: !isSelectingTransactions,
             isSelectionMode: isSelectingTransactions,
@@ -2044,6 +2020,25 @@ struct TransactionsView: View {
         }
         .padding(12)
         .pocketGlassSurface(cornerRadius: 16, tint: PocketLedgerTheme.accent.opacity(0.08))
+        .confirmationDialog(
+            "Delete selected transactions?",
+            isPresented: $isShowingBulkDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(selectedTransactionIDs.count) transactions", role: .destructive) {
+                let selected = store.data.transactions.filter {
+                    selectedTransactionIDs.contains($0.id)
+                }
+                if store.deleteTransactions(ids: selectedTransactionIDs) {
+                    deletedTransactionsForUndo = selected
+                    selectedTransactionIDs.removeAll()
+                    isSelectingTransactions = false
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can be undone from the message at the bottom of the screen.")
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Transaction selection tools")
         .accessibilityIdentifier("transaction-selection-toolbar")
@@ -2251,6 +2246,7 @@ struct TransactionsView: View {
 private struct TransactionRow: View {
     let transaction: LedgerTransaction
     @ObservedObject var store: LedgerStore
+    @State private var isShowingDeleteConfirmation = false
     let onEdit: () -> Void
     let onDuplicate: () -> Void
     let onDelete: () -> Void
@@ -2297,14 +2293,36 @@ private struct TransactionRow: View {
                 Button("Edit", systemImage: "pencil", action: onEdit)
                 Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
                 Button("Save as template", systemImage: "rectangle.stack.badge.plus", action: onSaveTemplate)
-                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    isShowingDeleteConfirmation = true
+                }
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if allowsActions {
-                Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    isShowingDeleteConfirmation = true
+                }
                 Button("Edit", systemImage: "pencil", action: onEdit)
             }
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            if allowsActions {
+                Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
+                    .tint(PocketLedgerTheme.accent)
+                Button("Template", systemImage: "rectangle.stack.badge.plus", action: onSaveTemplate)
+                    .tint(PocketLedgerTheme.positive)
+            }
+        }
+        .confirmationDialog(
+            "Delete transaction?",
+            isPresented: $isShowingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(transaction.note)
         }
     }
 
@@ -2420,37 +2438,39 @@ private struct AccountsView: View {
     @State private var editingAccount: Account?
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            PocketGlassContainer(spacing: 14) {
-                VStack(alignment: .leading, spacing: 18) {
-                    screenSubtitle
-                    globalPositionSummary
+        List {
+            screenSubtitle
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-                    ForEach(AccountType.allCases) { accountType in
-                        let accounts = store.activeAccounts.filter { $0.type == accountType }
-                        if !accounts.isEmpty {
-                            accountSection(type: accountType, accounts: accounts)
-                        }
-                    }
+            globalPositionSummary
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-                    if !archivedAccounts.isEmpty {
-                        archivedAccountsSection
-                    }
-
-                    Text(store.storageAvailable && store.sharedStorageAvailable
-                         ? "Stored locally in the shared app container."
-                         : store.storageAvailable
-                         ? "Stored persistently on this device; widget sharing is unavailable."
-                         : "Persistent storage is unavailable; changes cannot be saved.")
-                        .font(.caption)
-                        .foregroundStyle(PocketLedgerTheme.textTertiary)
-                        .padding(.horizontal, 4)
+            ForEach(AccountType.allCases) { accountType in
+                let accounts = store.activeAccounts.filter { $0.type == accountType }
+                if !accounts.isEmpty {
+                    accountSection(type: accountType, accounts: accounts)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
             }
+
+            if !archivedAccounts.isEmpty {
+                archivedAccountsSection
+            }
+
+            Text(store.storageAvailable && store.sharedStorageAvailable
+                 ? "Stored locally in the shared app container."
+                 : store.storageAvailable
+                 ? "Stored persistently on this device; widget sharing is unavailable."
+                 : "Persistent storage is unavailable; changes cannot be saved.")
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
         .pocketScreen()
         .navigationTitle("Accounts")
         .navigationBarTitleDisplayMode(.large)
@@ -2554,82 +2574,86 @@ private struct AccountsView: View {
     }
 
     private func accountSection(type: AccountType, accounts: [Account]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: type.systemImage)
-                        .foregroundStyle(PocketLedgerTheme.accent)
-                    Text(type.displayName)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(PocketLedgerTheme.textSecondary)
-                    Text("\(accounts.count) \(accounts.count == 1 ? "account" : "accounts")")
-                        .font(.caption)
-                        .foregroundStyle(PocketLedgerTheme.textTertiary)
-                }
-
-                Spacer()
-            }
-
-            VStack(spacing: 0) {
-                ForEach(accounts) { account in
-                    let accountPosition = accounts.firstIndex(where: { $0.id == account.id }) ?? 0
-                    HStack(spacing: 4) {
-                        NavigationLink {
-                            AccountDetailView(store: store, accountID: account.id)
-                        } label: {
-                            AccountRow(account: account, balance: store.balance(for: account))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("Edit", systemImage: "pencil") {
-                                presentAccount(account)
-                            }
-                            Button("Archive", systemImage: "archivebox") {
-                                _ = store.setAccountArchived(
-                                    accountID: account.id,
-                                    isArchived: true
-                                )
-                            }
-                            .tint(PocketLedgerTheme.warning)
-                        }
-
-                        Menu {
-                            Button("Edit", systemImage: "pencil") {
-                                presentAccount(account)
-                            }
-                            Button("Move up", systemImage: "chevron.up") {
-                                _ = store.moveAccount(accountID: account.id, by: -1)
-                            }
-                            .disabled(accountPosition == 0)
-                            Button("Move down", systemImage: "chevron.down") {
-                                _ = store.moveAccount(accountID: account.id, by: 1)
-                            }
-                            .disabled(accountPosition == accounts.count - 1)
-                            Button("Archive", systemImage: "archivebox") {
-                                _ = store.setAccountArchived(
-                                    accountID: account.id,
-                                    isArchived: true
-                                )
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.title3)
-                                .foregroundStyle(PocketLedgerTheme.textSecondary)
-                                .frame(width: 44, height: 44)
-                        }
-                        .accessibilityLabel("Actions for \(account.name)")
+        Section {
+            ForEach(accounts) { account in
+                let accountPosition = accounts.firstIndex(where: { $0.id == account.id }) ?? 0
+                HStack(spacing: 4) {
+                    NavigationLink {
+                        AccountDetailView(store: store, accountID: account.id)
+                    } label: {
+                        AccountRow(account: account, balance: store.balance(for: account))
+                            .contentShape(Rectangle())
                     }
-                    Divider().overlay(PocketLedgerTheme.divider)
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Menu {
+                        Button("Edit", systemImage: "pencil") {
+                            presentAccount(account)
+                        }
+                        Button(
+                            account.includeInTotals ? "Exclude from totals" : "Include in totals",
+                            systemImage: account.includeInTotals ? "eye.slash" : "eye"
+                        ) {
+                            _ = store.setAccountIncludedInTotals(
+                                accountID: account.id,
+                                included: !account.includeInTotals
+                            )
+                        }
+                        Button("Move up", systemImage: "chevron.up") {
+                            _ = store.moveAccount(accountID: account.id, by: -1)
+                        }
+                        .disabled(accountPosition == 0)
+                        Button("Move down", systemImage: "chevron.down") {
+                            _ = store.moveAccount(accountID: account.id, by: 1)
+                        }
+                        .disabled(accountPosition == accounts.count - 1)
+                        Button("Archive", systemImage: "archivebox") {
+                            _ = store.setAccountArchived(accountID: account.id, isArchived: true)
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Actions for \(account.name)")
                 }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button("Edit", systemImage: "pencil") {
+                        presentAccount(account)
+                    }
+                    Button("Archive", systemImage: "archivebox") {
+                        _ = store.setAccountArchived(accountID: account.id, isArchived: true)
+                    }
+                    .tint(PocketLedgerTheme.warning)
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                    Button(
+                        account.includeInTotals ? "Exclude" : "Include",
+                        systemImage: account.includeInTotals ? "eye.slash" : "eye"
+                    ) {
+                        _ = store.setAccountIncludedInTotals(
+                            accountID: account.id,
+                            included: !account.includeInTotals
+                        )
+                    }
+                    .tint(account.includeInTotals ? PocketLedgerTheme.textSecondary : PocketLedgerTheme.positive)
+                }
+                .listRowBackground(PocketLedgerTheme.surface)
+                .listRowSeparatorTint(PocketLedgerTheme.divider)
             }
-            .padding(.horizontal, 14)
-            .pocketGroupedSurface(cornerRadius: 18)
-            .overlay {
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+        } header: {
+            HStack(spacing: 8) {
+                Image(systemName: type.systemImage)
+                    .foregroundStyle(PocketLedgerTheme.accent)
+                Text(type.displayName)
+                    .font(.caption.weight(.bold))
+                Text("\(accounts.count) \(accounts.count == 1 ? "account" : "accounts")")
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
             }
+            .textCase(nil)
         }
     }
 
@@ -2638,47 +2662,44 @@ private struct AccountsView: View {
     }
 
     private var archivedAccountsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        Section {
+            ForEach(archivedAccounts) { account in
+                HStack(spacing: 12) {
+                    PocketIcon(
+                        systemImage: account.type.systemImage,
+                        tint: PocketLedgerTheme.textTertiary,
+                        size: 34
+                    )
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(account.name)
+                            .font(.subheadline.weight(.semibold))
+                        Text("\(account.type.displayName) · \(account.currency.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Button("Restore", systemImage: "arrow.uturn.backward") {
+                        _ = store.setAccountArchived(accountID: account.id, isArchived: false)
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.borderless)
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                    Button("Restore", systemImage: "arrow.uturn.backward") {
+                        _ = store.setAccountArchived(accountID: account.id, isArchived: false)
+                    }
+                    .tint(PocketLedgerTheme.accent)
+                }
+                .listRowBackground(PocketLedgerTheme.surface)
+            }
+        } header: {
             Text("Archived")
                 .font(.title3.weight(.bold))
-
-            VStack(spacing: 0) {
-                ForEach(archivedAccounts) { account in
-                    HStack(spacing: 12) {
-                        PocketIcon(
-                            systemImage: account.type.systemImage,
-                            tint: PocketLedgerTheme.textTertiary,
-                            size: 34
-                        )
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(account.name)
-                                .font(.subheadline.weight(.semibold))
-                            Text("\(account.type.displayName) · \(account.currency.rawValue)")
-                                .font(.caption)
-                                .foregroundStyle(PocketLedgerTheme.textTertiary)
-                        }
-
-                        Spacer(minLength: 8)
-
-                        Button("Restore", systemImage: "arrow.uturn.backward") {
-                            _ = store.setAccountArchived(accountID: account.id, isArchived: false)
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        .buttonStyle(.borderless)
-                    }
-                    .padding(.vertical, 10)
-
-                    Divider().overlay(PocketLedgerTheme.divider)
-                }
-            }
-            .padding(.horizontal, 14)
-            .pocketGroupedSurface(cornerRadius: 18)
-            .overlay {
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-            }
-
+                .textCase(nil)
+        } footer: {
             Text("Archived accounts stay available for historical transactions but are hidden from new account selections.")
                 .font(.caption)
                 .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -3603,7 +3624,7 @@ struct TransactionEditor: View {
             .disabled(isEditingScheduledTransaction)
 
             if timing == .scheduled {
-                DatePicker("First run", selection: $date, displayedComponents: .date)
+                DatePicker("First run", selection: $date, displayedComponents: [.date, .hourAndMinute])
 
                 Picker("Repeats", selection: $scheduleFrequency) {
                     ForEach(ScheduleFrequency.allCases) { frequency in
@@ -3671,7 +3692,7 @@ struct TransactionEditor: View {
             DatePicker(
                 timing == .scheduled ? "First run" : "Date",
                 selection: $date,
-                displayedComponents: .date
+                displayedComponents: timing == .scheduled ? [.date, .hourAndMinute] : [.date]
             )
         }
     }
