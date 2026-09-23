@@ -8,6 +8,7 @@ struct ContentView: View {
     @StateObject private var security = AppSecurityService()
     @State private var addAction: AddAction?
     @State private var searchText = ""
+    @FocusState private var isSearchFieldFocused: Bool
     @State private var isShowingSetup = false
     @State private var isShowingImportWizardUITest = false
     @State private var isUnlocked = false
@@ -151,6 +152,11 @@ struct ContentView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .searchable(text: $searchText, prompt: "Search accounts, transactions, descriptions…")
+        .searchFocused($isSearchFieldFocused)
+        .onChange(of: selectedTabRawValue) { _, rawValue in
+            guard rawValue == AppTab.search.rawValue else { return }
+            isSearchFieldFocused = true
+        }
         .tint(PocketLedgerTheme.accent)
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
@@ -3281,8 +3287,6 @@ struct TransactionEditor: View {
             ?? scheduledTransaction?.outflows.first?.money.currency
             ?? scheduledTransaction?.inflows.first?.money.currency
             ?? initialAmount?.currency
-            ?? scheduledTransaction?.amountDue?.currency
-            ?? initialBillTotal?.currency
             ?? rememberedAccount?.currency
         let firstAccount = store.activeAccounts.first { account in
             guard let preferredCurrency else { return true }
@@ -3608,7 +3612,7 @@ struct TransactionEditor: View {
     }
 
     private var primaryExpenseMovementSection: some View {
-        Section("Amount and account") {
+        Section("Payment 1") {
             if outflows.isEmpty {
                 Button("Choose payment account", systemImage: "plus.circle") {
                     outflows.append(newMovementDraft)
@@ -3624,6 +3628,13 @@ struct TransactionEditor: View {
                     },
                     allowsArchivedAccount: allowsArchivedMovementAccounts
                 )
+
+                if outflows.count > 1 {
+                    Button("Remove payment", systemImage: "trash", role: .destructive) {
+                        outflows.remove(at: 0)
+                    }
+                    .font(.footnote.weight(.semibold))
+                }
             }
         }
     }
@@ -3724,69 +3735,89 @@ struct TransactionEditor: View {
     }
 
     private var expenseSplitDetails: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Split payment")
                 .font(.subheadline.weight(.semibold))
 
             ForEach(Array(outflows.dropFirst())) { movement in
                 if let index = outflows.firstIndex(where: { $0.id == movement.id }) {
-                    MovementLineEditor(
-                        store: store,
-                        line: $outflows[index],
-                        amountPlaceholder: "Amount leaving account",
-                        onCreateAccount: {
-                            accountCreationLineID = movement.id
-                            isShowingNewAccount = true
-                        },
-                        allowsArchivedAccount: allowsArchivedMovementAccounts
-                    )
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Payment \(index + 1)")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Button("Remove payment", systemImage: "trash", role: .destructive) {
+                                outflows.remove(at: index)
+                            }
+                            .labelStyle(.iconOnly)
+                            .accessibilityLabel("Remove payment \(index + 1)")
+                        }
 
-                    Button("Remove this payment", systemImage: "minus.circle", role: .destructive) {
-                        outflows.remove(at: index)
+                        MovementLineEditor(
+                            store: store,
+                            line: $outflows[index],
+                            amountPlaceholder: "Amount leaving account",
+                            onCreateAccount: {
+                                accountCreationLineID = movement.id
+                                isShowingNewAccount = true
+                            },
+                            allowsArchivedAccount: allowsArchivedMovementAccounts
+                        )
                     }
-                    .font(.footnote)
+                    .padding(12)
+                    .pocketGroupedSurface(cornerRadius: 14)
                 }
             }
 
             Button {
-                outflows.append(newMovementDraft)
+                outflows.append(newSplitPaymentDraft)
             } label: {
-                Label("Add another account", systemImage: "plus.circle")
+                Label("Add another payment", systemImage: "plus.circle")
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     .contentShape(Rectangle())
             }
             .font(.subheadline.weight(.semibold))
             .buttonStyle(.plain)
 
-            Text("Use one line for each account or currency used to pay.")
+            Text("Each payment can use a different account and currency. The bill total is separate.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
     }
 
     private var expenseReturnedMoneyDetails: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Returned money")
                 .font(.subheadline.weight(.semibold))
 
             ForEach(Array(inflows)) { movement in
                 if let index = inflows.firstIndex(where: { $0.id == movement.id }) {
-                    MovementLineEditor(
-                        store: store,
-                        line: $inflows[index],
-                        amountPlaceholder: "Amount returned",
-                        onCreateAccount: {
-                            accountCreationLineID = movement.id
-                            isShowingNewAccount = true
-                        },
-                        allowsArchivedAccount: allowsArchivedMovementAccounts
-                    )
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Return \(index + 1)")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Button("Remove returned money", systemImage: "trash", role: .destructive) {
+                                inflows.remove(at: index)
+                                if inflows.isEmpty { requestedChange = "" }
+                            }
+                            .labelStyle(.iconOnly)
+                            .accessibilityLabel("Remove returned money \(index + 1)")
+                        }
 
-                    Button("Remove returned money", systemImage: "minus.circle", role: .destructive) {
-                        inflows.remove(at: index)
-                        if inflows.isEmpty { requestedChange = "" }
+                        MovementLineEditor(
+                            store: store,
+                            line: $inflows[index],
+                            amountPlaceholder: "Amount returned",
+                            onCreateAccount: {
+                                accountCreationLineID = movement.id
+                                isShowingNewAccount = true
+                            },
+                            allowsArchivedAccount: allowsArchivedMovementAccounts
+                        )
                     }
-                    .font(.footnote)
+                    .padding(12)
+                    .pocketGroupedSurface(cornerRadius: 14)
                 }
             }
 
@@ -4210,6 +4241,17 @@ struct TransactionEditor: View {
 
     private var newMovementDraft: MovementDraft {
         let account = store.activeAccounts.first
+        return MovementDraft(
+            accountID: account?.id ?? UUID(),
+            currency: account?.currency ?? .usd,
+            amount: ""
+        )
+    }
+
+    private var newSplitPaymentDraft: MovementDraft {
+        let usedAccountIDs = Set(outflows.map(\.accountID))
+        let account = store.activeAccounts.first(where: { !usedAccountIDs.contains($0.id) })
+            ?? store.activeAccounts.first
         return MovementDraft(
             accountID: account?.id ?? UUID(),
             currency: account?.currency ?? .usd,
