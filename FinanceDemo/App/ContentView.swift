@@ -11,7 +11,6 @@ struct ContentView: View {
     @State private var isShowingSetup = false
     @State private var isShowingImportWizardUITest = false
     @State private var isUnlocked = false
-    @State private var transactionRouteRequest: UUID?
     @SceneStorage("pocketLedger.selectedTab") private var selectedTabRawValue = AppTab.overview.rawValue
     @AppStorage(SetupWizardView.completedKey) private var setupCompleted = false
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
@@ -70,10 +69,7 @@ struct ContentView: View {
 
     private var selectedTabBinding: Binding<AppTab> {
         Binding(
-            get: {
-                let tab = AppTab(rawValue: selectedTabRawValue) ?? .overview
-                return tab == .transactions ? .more : tab
-            },
+            get: { AppTab(rawValue: selectedTabRawValue) ?? .overview },
             set: { tab in
                 guard selectedTabRawValue != tab.rawValue else { return }
                 withAnimation(PocketLedgerMotion.quick(reduceMotion: reduceMotion)) {
@@ -85,18 +81,12 @@ struct ContentView: View {
 
     private func handleDeepLink(_ url: URL) {
         guard let tab = AppTab(url: url) else { return }
-        if tab == .transactions {
-            selectedTabBinding.wrappedValue = .more
-            transactionRouteRequest = UUID()
-        } else {
-            selectedTabBinding.wrappedValue = tab
-        }
+        selectedTabBinding.wrappedValue = tab
     }
 
     private var unlockedContent: some View {
         NativeTabBarController(
             selectedTab: selectedTabBinding,
-            transactionRouteRequest: $transactionRouteRequest,
             store: store,
             security: security,
             onAddAction: { action in addAction = action }
@@ -157,7 +147,17 @@ struct ContentView: View {
 @MainActor
 private final class PocketLedgerTabBarController: UITabBarController {
     private let visibleTabBar = UITabBar()
-    weak var addButton: UIButton?
+
+    func installAddButton(_ button: UIButton) {
+        button.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.centerYAnchor.constraint(equalTo: visibleTabBar.safeAreaLayoutGuide.centerYAnchor),
+            button.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            button.widthAnchor.constraint(equalToConstant: 44),
+            button.heightAnchor.constraint(equalToConstant: 44)
+        ])
+    }
 
     func installVisibleTabBar(items: [UITabBarItem], delegate: any UITabBarDelegate) {
         tabBar.isHidden = false
@@ -186,13 +186,13 @@ private final class PocketLedgerTabBarController: UITabBarController {
         guard visibleTabBar.superview != nil else { return }
 
         let systemTabBarFrame = tabBar.frame
-        // The system tab bar frame includes the bottom safe-area region. The
-        // visible tab row and Add control should share the content row's center.
+        // Keep the visible bar at the system bar's bottom edge and width the
+        // remaining row around the separate Add control.
         let tabBarHeight = max(49, visibleTabBar.sizeThatFits(view.bounds.size).height)
-        let buttonSize: CGFloat = 56
-        let buttonTrailing = view.bounds.width - view.safeAreaInsets.right - 12
-        let tabBarLeading = max(view.safeAreaInsets.left, 12)
-        let gap: CGFloat = 8
+        let buttonSize: CGFloat = 44
+        let buttonTrailing = view.safeAreaLayoutGuide.layoutFrame.maxX - 16
+        let tabBarLeading = max(view.safeAreaLayoutGuide.layoutFrame.minX, 16)
+        let gap: CGFloat = 12
         let tabBarFrame = CGRect(
             x: tabBarLeading,
             y: systemTabBarFrame.minY,
@@ -200,26 +200,12 @@ private final class PocketLedgerTabBarController: UITabBarController {
             height: tabBarHeight
         )
         visibleTabBar.frame = tabBarFrame
-
-        let contentBottom = min(
-            tabBarFrame.maxY,
-            view.bounds.maxY - (view.window?.safeAreaInsets.bottom ?? view.safeAreaInsets.bottom)
-        )
-        let contentCenterY = (tabBarFrame.minY + contentBottom) / 2
-        let buttonFrame = CGRect(
-            x: buttonTrailing - buttonSize,
-            y: contentCenterY - buttonSize / 2,
-            width: buttonSize,
-            height: buttonSize
-        )
-        addButton?.frame = buttonFrame
     }
 }
 
 @MainActor
 private struct NativeTabBarController: UIViewControllerRepresentable {
     @Binding var selectedTab: AppTab
-    @Binding var transactionRouteRequest: UUID?
     @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
     let onAddAction: (AddAction) -> Void
@@ -243,9 +229,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
             )
             controller.selectVisibleTab(at: selectedTab.tabBarIndex)
 
-            let addButton = makeAddButton(context: context)
-            controller.addButton = addButton
-            controller.view.addSubview(addButton)
+            controller.installAddButton(makeAddButton(context: context))
         }
 
         return controller
@@ -275,7 +259,6 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
     private func makeViewControllers() -> [UIViewController] {
         let addExpense = onAddAction
         let selectedTabBinding = _selectedTab
-        let transactionRouteBinding = _transactionRouteRequest
 
         return AppTab.tabBarOrder.map { tab in
             let viewController: UIViewController
@@ -286,8 +269,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
                         store: store,
                         onAddExpense: { addExpense(.expense) },
                         onShowTransactions: {
-                            selectedTabBinding.wrappedValue = .more
-                            transactionRouteBinding.wrappedValue = UUID()
+                            selectedTabBinding.wrappedValue = .transactions
                         }
                     )
                 )
@@ -313,8 +295,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
                     rootView: MoreView(
                         store: store,
                         security: security,
-                        onAddExpense: { addExpense(.expense) },
-                        transactionRouteRequest: $transactionRouteRequest
+                        onAddExpense: { addExpense(.expense) }
                     )
                 )
             }
@@ -345,7 +326,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         var configuration = UIButton.Configuration.glass()
         configuration.image = UIImage(systemName: "plus")
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-            pointSize: 22,
+            pointSize: 20,
             weight: .semibold
         )
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
@@ -498,7 +479,7 @@ enum AppTab: String, Hashable {
     case metrics
     case more
 
-    static let tabBarOrder: [AppTab] = [.overview, .accounts, .metrics, .more]
+    static let tabBarOrder: [AppTab] = [.overview, .accounts, .transactions, .metrics, .more]
 
     var tabBarIndex: Int {
         Self.tabBarOrder.firstIndex(of: self)
@@ -553,9 +534,7 @@ private struct MoreView: View {
     @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
     let onAddExpense: () -> Void
-    @Binding var transactionRouteRequest: UUID?
     @State private var isShowingSetup = false
-    @State private var isShowingTransactions = false
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
@@ -585,18 +564,14 @@ private struct MoreView: View {
                 }
 
                 Section("History") {
-                    Button {
-                        isShowingTransactions = true
+                    NavigationLink {
+                        TransactionsView(store: store, onAddExpense: onAddExpense)
                     } label: {
-                        HStack {
-                            Label("Transactions", systemImage: "list.bullet.rectangle")
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(PocketLedgerTheme.textTertiary)
-                        }
+                        Label("Transactions", systemImage: "list.bullet.rectangle")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("more-transactions-link")
                     .accessibilityHint("Browse and search transaction history")
                 }
 
@@ -658,9 +633,6 @@ private struct MoreView: View {
                     Text("Keep advanced tools close without crowding the daily flow")
                 }
             }
-            .navigationDestination(isPresented: $isShowingTransactions) {
-                TransactionsView(store: store, onAddExpense: onAddExpense)
-            }
             .navigationTitle("More")
             .navigationBarTitleDisplayMode(.large)
             .listStyle(.insetGrouped)
@@ -673,11 +645,6 @@ private struct MoreView: View {
                 PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
             )
             .accessibilityIdentifier("more-screen-\(selectedColorTheme)")
-            .onChange(of: transactionRouteRequest) { _, request in
-                guard request != nil else { return }
-                isShowingTransactions = true
-                transactionRouteRequest = nil
-            }
             .sheet(isPresented: $isShowingSetup) {
                 SetupWizardView(store: store)
             }
