@@ -8,6 +8,8 @@ struct ContentView: View {
     @StateObject private var security = AppSecurityService()
     @State private var addAction: AddAction?
     @State private var searchText = ""
+    @State private var isSearchPresented = false
+    @State private var tabBeforeSearch = AppTab.overview
     @FocusState private var isSearchFieldFocused: Bool
     @State private var isShowingSetup = false
     @State private var isShowingImportWizardUITest = false
@@ -76,6 +78,13 @@ struct ContentView: View {
             },
             set: { tab in
                 guard selectedTabRawValue != tab.rawValue else { return }
+                let currentTab = AppTab(rawValue: selectedTabRawValue) ?? .overview
+                if tab == .search, currentTab != .search {
+                    tabBeforeSearch = currentTab
+                } else if tab != .search {
+                    isSearchPresented = false
+                    isSearchFieldFocused = false
+                }
                 withAnimation(PocketLedgerMotion.quick(reduceMotion: reduceMotion)) {
                     selectedTabRawValue = tab.rawValue
                 }
@@ -151,11 +160,20 @@ struct ContentView: View {
             .accessibilityIdentifier("tab-more")
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .searchable(text: $searchText, prompt: "Search accounts, transactions, descriptions…")
+        .searchable(
+            text: $searchText,
+            isPresented: $isSearchPresented,
+            prompt: "Search accounts, transactions, descriptions…"
+        )
         .searchFocused($isSearchFieldFocused)
         .onChange(of: selectedTabRawValue) { _, rawValue in
             guard rawValue == AppTab.search.rawValue else { return }
+            isSearchPresented = true
             isSearchFieldFocused = true
+        }
+        .onChange(of: isSearchPresented) { _, isPresented in
+            guard !isPresented, selectedTabBinding.wrappedValue == .search else { return }
+            selectedTabBinding.wrappedValue = tabBeforeSearch
         }
         .tint(PocketLedgerTheme.accent)
         .preferredColorScheme(
@@ -1639,7 +1657,7 @@ struct TransactionsView: View {
     @State private var selectedFilter: TransactionFilter
     @State private var selectedPeriod: TransactionPeriod
     @State private var selectedQuickFilter: TransactionQuickFilter
-    @State private var searchText: String
+    private let searchText: String
     @State private var customStartDate: Date
     @State private var customEndDate: Date
     @State private var transactionPage = 0
@@ -1678,7 +1696,7 @@ struct TransactionsView: View {
                 ? .uncategorized
                 : hasExplicitContext ? .none : persistedQuickFilter
         )
-        _searchText = State(initialValue: initialSearch)
+        self.searchText = initialSearch
         let calendar = Calendar.current
         let start = calendar.date(byAdding: .day, value: -30, to: .now) ?? .now
         _customStartDate = State(initialValue: start)
@@ -1696,26 +1714,6 @@ struct TransactionsView: View {
                     }
 
                     filtersButton
-
-                    HStack(spacing: 10) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(PocketLedgerTheme.textTertiary)
-                        TextField("Search transactions, categories, or accounts", text: $searchText)
-                            .textFieldStyle(.plain)
-                            .textInputAutocapitalization(.never)
-                        if !searchText.isEmpty {
-                            Button {
-                                searchText = ""
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(PocketLedgerTheme.textTertiary)
-                            }
-                            .accessibilityLabel("Clear search")
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 11)
-                    .pocketGlassSurface(cornerRadius: 13)
 
                     transactionsSummary
 
@@ -1824,10 +1822,6 @@ struct TransactionsView: View {
             if customEndDate < customStartDate {
                 customStartDate = customEndDate
             }
-            transactionPage = 0
-            refreshListSnapshot()
-        }
-        .onChange(of: searchText) { _, _ in
             transactionPage = 0
             refreshListSnapshot()
         }
@@ -3198,16 +3192,37 @@ private struct MovementLineEditor: View {
                             .tag(account.id)
                     }
                 }
+                .pickerStyle(.menu)
 
                 Button("New account", systemImage: "plus.circle", action: onCreateAccount)
                     .labelStyle(.iconOnly)
                     .accessibilityLabel("New account")
+                    .buttonStyle(.borderless)
             }
 
-            Picker("Currency", selection: $line.currency) {
-                ForEach(LedgerCurrency.allCases) { currency in
-                    Text(currency.rawValue).tag(currency)
+            HStack {
+                Text("Currency")
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                Spacer()
+                Menu {
+                    ForEach(LedgerCurrency.allCases) { currency in
+                        Button {
+                            line.currency = currency
+                        } label: {
+                            if currency == line.currency {
+                                Label(currency.rawValue, systemImage: "checkmark")
+                            } else {
+                                Text(currency.rawValue)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(line.currency.rawValue, systemImage: "chevron.up.chevron.down")
+                        .font(.subheadline.weight(.semibold))
                 }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Payment currency")
+                .accessibilityValue(Text(line.currency.rawValue))
             }
         }
     }
@@ -3634,6 +3649,7 @@ struct TransactionEditor: View {
                         outflows.remove(at: 0)
                     }
                     .font(.footnote.weight(.semibold))
+                    .buttonStyle(.borderless)
                 }
             }
         }
@@ -3725,10 +3741,29 @@ struct TransactionEditor: View {
             Text("Bill total")
                 .font(.subheadline.weight(.semibold))
 
-            Picker("Currency", selection: $dueCurrency) {
-                ForEach(LedgerCurrency.allCases) { currency in
-                    Text(currency.rawValue).tag(currency)
+            HStack {
+                Text("Bill currency")
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                Spacer()
+                Menu {
+                    ForEach(LedgerCurrency.allCases) { currency in
+                        Button {
+                            dueCurrency = currency
+                        } label: {
+                            if currency == dueCurrency {
+                                Label(currency.rawValue, systemImage: "checkmark")
+                            } else {
+                                Text(currency.rawValue)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(dueCurrency.rawValue, systemImage: "chevron.up.chevron.down")
+                        .font(.subheadline.weight(.semibold))
                 }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Bill total currency")
+                .accessibilityValue(Text(dueCurrency.rawValue))
             }
             CurrencyInputField("Total due (optional)", text: $amountDue, currency: dueCurrency)
         }
@@ -3746,11 +3781,14 @@ struct TransactionEditor: View {
                             Text("Payment \(index + 1)")
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
-                            Button("Remove payment", systemImage: "trash", role: .destructive) {
+                            Button(role: .destructive) {
                                 outflows.remove(at: index)
+                            } label: {
+                                Label("Remove", systemImage: "trash")
                             }
-                            .labelStyle(.iconOnly)
                             .accessibilityLabel("Remove payment \(index + 1)")
+                            .buttonStyle(.borderless)
+                            .font(.footnote.weight(.semibold))
                         }
 
                         MovementLineEditor(
@@ -3797,12 +3835,15 @@ struct TransactionEditor: View {
                             Text("Return \(index + 1)")
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
-                            Button("Remove returned money", systemImage: "trash", role: .destructive) {
+                            Button(role: .destructive) {
                                 inflows.remove(at: index)
                                 if inflows.isEmpty { requestedChange = "" }
+                            } label: {
+                                Label("Remove", systemImage: "trash")
                             }
-                            .labelStyle(.iconOnly)
                             .accessibilityLabel("Remove returned money \(index + 1)")
+                            .buttonStyle(.borderless)
+                            .font(.footnote.weight(.semibold))
                         }
 
                         MovementLineEditor(
