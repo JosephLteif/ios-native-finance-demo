@@ -8,6 +8,9 @@ struct ContentView: View {
     @StateObject private var security = AppSecurityService()
     @State private var addAction: AddAction?
     @State private var searchText = ""
+    @State private var isSearchPresented = false
+    @State private var tabBeforeSearch = AppTab.overview
+    @FocusState private var isSearchFieldFocused: Bool
     @State private var isShowingSetup = false
     @State private var isShowingImportWizardUITest = false
     @State private var isUnlocked = false
@@ -75,6 +78,13 @@ struct ContentView: View {
             },
             set: { tab in
                 guard selectedTabRawValue != tab.rawValue else { return }
+                let currentTab = AppTab(rawValue: selectedTabRawValue) ?? .overview
+                if tab == .search, currentTab != .search {
+                    tabBeforeSearch = currentTab
+                } else if tab != .search {
+                    isSearchPresented = false
+                    isSearchFieldFocused = false
+                }
                 withAnimation(PocketLedgerMotion.quick(reduceMotion: reduceMotion)) {
                     selectedTabRawValue = tab.rawValue
                 }
@@ -106,6 +116,13 @@ struct ContentView: View {
             Tab(value: AppTab.search, role: .search) {
                 NavigationStack {
                     GlobalSearchView(store: store, searchText: $searchText)
+                        .searchable(
+                            text: $searchText,
+                            isPresented: $isSearchPresented,
+                            placement: .toolbar,
+                            prompt: "Search accounts, transactions, descriptions…"
+                        )
+                        .searchFocused($isSearchFieldFocused)
                 }
             }
             .accessibilityIdentifier("tab-search")
@@ -150,6 +167,15 @@ struct ContentView: View {
             .accessibilityIdentifier("tab-more")
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .onChange(of: selectedTabRawValue) { _, rawValue in
+            guard rawValue == AppTab.search.rawValue else { return }
+            isSearchPresented = true
+            isSearchFieldFocused = true
+        }
+        .onChange(of: isSearchPresented) { _, isPresented in
+            guard !isPresented, selectedTabBinding.wrappedValue == .search else { return }
+            selectedTabBinding.wrappedValue = tabBeforeSearch
+        }
         .tint(PocketLedgerTheme.accent)
         .preferredColorScheme(
             PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
