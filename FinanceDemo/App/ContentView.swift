@@ -190,9 +190,9 @@ private final class PocketLedgerTabBarController: UITabBarController {
         // visible tab row and Add control should share the content row's center.
         let tabBarHeight = max(49, visibleTabBar.sizeThatFits(view.bounds.size).height)
         let buttonSize: CGFloat = 56
-        let buttonTrailing = view.bounds.width - view.safeAreaInsets.right - 16
-        let tabBarLeading = max(view.safeAreaInsets.left, 16)
-        let gap: CGFloat = 12
+        let buttonTrailing = view.bounds.width - view.safeAreaInsets.right - 12
+        let tabBarLeading = max(view.safeAreaInsets.left, 12)
+        let gap: CGFloat = 8
         let tabBarFrame = CGRect(
             x: tabBarLeading,
             y: systemTabBarFrame.minY,
@@ -202,13 +202,9 @@ private final class PocketLedgerTabBarController: UITabBarController {
         visibleTabBar.frame = tabBarFrame
 
         visibleTabBar.layoutIfNeeded()
-        let tabBarContentCenterY = visibleTabBar.convert(
-            visibleTabBar.safeAreaLayoutGuide.layoutFrame,
-            to: view
-        ).midY
         let buttonFrame = CGRect(
             x: buttonTrailing - buttonSize,
-            y: tabBarContentCenterY - buttonSize / 2,
+            y: tabBarFrame.midY - buttonSize / 2,
             width: buttonSize,
             height: buttonSize
         )
@@ -3969,8 +3965,11 @@ struct TransactionEditor: View {
                 outflows.append(newMovementDraft)
             } label: {
                 Label("Add another account", systemImage: "plus.circle")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .font(.subheadline.weight(.semibold))
+            .buttonStyle(.plain)
 
             Text("Use one line for each account or currency used to pay.")
                 .font(.footnote)
@@ -4011,8 +4010,11 @@ struct TransactionEditor: View {
                     inflows.isEmpty ? "Add returned money" : "Add another receiving account",
                     systemImage: "arrow.down.circle"
                 )
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .font(.subheadline.weight(.semibold))
+            .buttonStyle(.plain)
 
             if inflows.count == 1 {
                 CurrencyInputField(

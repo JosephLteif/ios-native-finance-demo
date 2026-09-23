@@ -75,39 +75,6 @@ struct DataTransferView: View {
             ImportWizardView(store: store, document: document)
                 .presentationDetents([.large])
         }
-        .confirmationDialog(
-            "Back up before erasing?",
-            isPresented: $isShowingResetPreparation,
-            titleVisibility: .visible
-        ) {
-            Button("Export backup, then continue") {
-                startBackupExport(continueToReset: true)
-            }
-            Button("Continue without backup", role: .destructive) {
-                isShowingResetWarning = true
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("A full Pocket Ledger backup is the safest way to restore this ledger after it is erased.")
-        }
-        .confirmationDialog(
-            "Erase all ledger data?",
-            isPresented: $isShowingResetWarning,
-            titleVisibility: .visible
-        ) {
-            Button("Show final warning", role: .destructive) {
-                isShowingFinalResetWarning = true
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes every account, category, transaction, scheduled transaction, and exchange rate from this device. The action cannot be undone without a backup.")
-        }
-        .alert("Final warning: erase everything?", isPresented: $isShowingFinalResetWarning) {
-            Button("Erase all data", role: .destructive, action: resetLedger)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This is the last confirmation. Your ledger will be replaced with an empty one immediately.")
-        }
         .alert("Ledger erased", isPresented: $isShowingResetSuccess) {
             Button("OK") {}
         } message: {
@@ -199,6 +166,43 @@ struct DataTransferView: View {
             .frame(maxWidth: .infinity)
             .buttonStyle(.glass)
             .tint(PocketLedgerTheme.warning)
+            .confirmationDialog(
+                "Back up before erasing?",
+                isPresented: $isShowingResetPreparation,
+                titleVisibility: .visible
+            ) {
+                Button("Export backup, then continue") {
+                    startBackupExport(continueToReset: true)
+                }
+                Button("Continue without backup", role: .destructive) {
+                    isShowingResetWarning = true
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("A full Pocket Ledger backup is the safest way to restore this ledger after it is erased.")
+            }
+            .confirmationDialog(
+                "Erase all ledger data?",
+                isPresented: $isShowingResetWarning,
+                titleVisibility: .visible
+            ) {
+                Button("Show final warning", role: .destructive) {
+                    isShowingFinalResetWarning = true
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes every account, category, transaction, scheduled transaction, and exchange rate from this device. The action cannot be undone without a backup.")
+            }
+            .confirmationDialog(
+                "Final warning: erase everything?",
+                isPresented: $isShowingFinalResetWarning,
+                titleVisibility: .visible
+            ) {
+                Button("Erase all data", role: .destructive, action: resetLedger)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This is the last confirmation. Your ledger will be replaced with an empty one immediately.")
+            }
         }
         .pocketCard()
     }
