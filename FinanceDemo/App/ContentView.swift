@@ -96,9 +96,9 @@ struct ContentView: View {
     private var unlockedContent: some View {
         NativeTabBarController(
             selectedTab: selectedTabBinding,
+            transactionRouteRequest: $transactionRouteRequest,
             store: store,
             security: security,
-            transactionRouteRequest: $transactionRouteRequest,
             onAddAction: { action in addAction = action }
         )
         .tint(PocketLedgerTheme.accent)
