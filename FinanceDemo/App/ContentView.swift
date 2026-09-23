@@ -69,7 +69,10 @@ struct ContentView: View {
 
     private var selectedTabBinding: Binding<AppTab> {
         Binding(
-            get: { AppTab(rawValue: selectedTabRawValue) ?? .overview },
+            get: {
+                let tab = AppTab(rawValue: selectedTabRawValue) ?? .overview
+                return tab == .metrics ? .more : tab
+            },
             set: { tab in
                 guard selectedTabRawValue != tab.rawValue else { return }
                 withAnimation(PocketLedgerMotion.quick(reduceMotion: reduceMotion)) {
@@ -147,15 +150,16 @@ struct ContentView: View {
 @MainActor
 private final class PocketLedgerTabBarController: UITabBarController {
     private let visibleTabBar = UITabBar()
+    private let addButtonSize: CGFloat = 52
 
     func installAddButton(_ button: UIButton) {
         button.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(button)
         NSLayoutConstraint.activate([
-            button.centerYAnchor.constraint(equalTo: visibleTabBar.safeAreaLayoutGuide.centerYAnchor),
+            button.centerYAnchor.constraint(equalTo: visibleTabBar.centerYAnchor),
             button.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            button.widthAnchor.constraint(equalToConstant: 44),
-            button.heightAnchor.constraint(equalToConstant: 44)
+            button.widthAnchor.constraint(equalToConstant: addButtonSize),
+            button.heightAnchor.constraint(equalToConstant: addButtonSize)
         ])
     }
 
@@ -186,17 +190,15 @@ private final class PocketLedgerTabBarController: UITabBarController {
         guard visibleTabBar.superview != nil else { return }
 
         let systemTabBarFrame = tabBar.frame
-        // Keep the visible bar at the system bar's bottom edge and width the
-        // remaining row around the separate Add control.
+        // The visible bar and Add control share the same row. The tab bar's
+        // own horizontal inset leaves visual separation at the trailing edge.
         let tabBarHeight = max(49, visibleTabBar.sizeThatFits(view.bounds.size).height)
-        let buttonSize: CGFloat = 44
         let buttonTrailing = view.safeAreaLayoutGuide.layoutFrame.maxX - 16
         let tabBarLeading = max(view.safeAreaLayoutGuide.layoutFrame.minX, 16)
-        let gap: CGFloat = 12
         let tabBarFrame = CGRect(
             x: tabBarLeading,
             y: systemTabBarFrame.minY,
-            width: max(0, buttonTrailing - buttonSize - gap - tabBarLeading),
+            width: max(0, buttonTrailing - addButtonSize - tabBarLeading),
             height: tabBarHeight
         )
         visibleTabBar.frame = tabBarFrame
@@ -326,7 +328,7 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
         var configuration = UIButton.Configuration.glass()
         configuration.image = UIImage(systemName: "plus")
         configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-            pointSize: 20,
+            pointSize: 24,
             weight: .semibold
         )
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
@@ -479,7 +481,7 @@ enum AppTab: String, Hashable {
     case metrics
     case more
 
-    static let tabBarOrder: [AppTab] = [.overview, .accounts, .transactions, .metrics, .more]
+    static let tabBarOrder: [AppTab] = [.overview, .accounts, .transactions, .more]
 
     var tabBarIndex: Int {
         Self.tabBarOrder.firstIndex(of: self)
@@ -573,6 +575,14 @@ private struct MoreView: View {
                     }
                     .accessibilityIdentifier("more-transactions-link")
                     .accessibilityHint("Browse and search transaction history")
+                }
+
+                Section("Insights") {
+                    NavigationLink {
+                        MetricsView(store: store)
+                    } label: {
+                        Label("Metrics", systemImage: "chart.xyaxis.line")
+                    }
                 }
 
                 Section("Planning") {

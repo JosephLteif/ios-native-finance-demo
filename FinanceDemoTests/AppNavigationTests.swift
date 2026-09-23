@@ -23,7 +23,7 @@ final class AppNavigationTests: XCTestCase {
     }
 
     func testTransactionsHasItsOwnTab() {
-        XCTAssertTrue(AppTab.tabBarOrder.contains(.transactions))
+        XCTAssertEqual(AppTab.tabBarOrder, [.overview, .accounts, .transactions, .more])
         XCTAssertEqual(AppTab.tabBarOrder[AppTab.transactions.tabBarIndex], .transactions)
     }
 }
