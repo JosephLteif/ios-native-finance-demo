@@ -97,7 +97,7 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             phrases: [
                 "Add a transaction to \(\.$account) in \(.applicationName)",
                 "Record a transaction in \(.applicationName)",
-                "Add a \(\.$kind) of \(\.$amount) to \(\.$account) in \(.applicationName)"
+                "Add a transaction of \(\.$amount) in \(.applicationName)"
             ],
             shortTitle: "Add Pocket Ledger Transaction",
             systemImageName: "plus.circle"
