@@ -8,6 +8,7 @@ struct WatchExpenseView: View {
     @State private var accountID: UUID?
     @State private var categoryID: UUID?
     @State private var validationMessage: String?
+    @State private var saveFeedbackTrigger = 0
 
     private var accounts: [WatchAccountSummary] {
         (store.snapshot?.accounts ?? []).filter(\.canUseForExpense)
@@ -89,6 +90,7 @@ struct WatchExpenseView: View {
             }
         }
         .navigationTitle("Expense")
+        .sensoryFeedback(.success, trigger: saveFeedbackTrigger)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
@@ -141,6 +143,7 @@ struct WatchExpenseView: View {
             categoryID: categoryID,
             note: note
         )
+        saveFeedbackTrigger += 1
         dismiss()
     }
 }

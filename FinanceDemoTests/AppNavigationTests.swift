@@ -21,4 +21,9 @@ final class AppNavigationTests: XCTestCase {
         XCTAssertNil(AppTab(url: URL(string: "https://example.com")!))
         XCTAssertNil(AppTab(url: URL(string: "pocketledger://metrics")!))
     }
+
+    func testTransactionsRemainWithinMoreTab() {
+        XCTAssertFalse(AppTab.tabBarOrder.contains(.transactions))
+        XCTAssertEqual(AppTab.transactions.tabBarIndex, AppTab.more.tabBarIndex)
+    }
 }

@@ -97,9 +97,16 @@ struct DashboardPreferences: Codable, Equatable {
         order: [
             .balance,
             .attention,
-            .accounts,
             .monthSummary,
             .recentActivity,
+            .accounts,
+            .upcoming,
+            .cashFlow,
+            .budgetPulse,
+            .storageStatus
+        ],
+        disabledWidgets: [
+            .accounts,
             .upcoming,
             .cashFlow,
             .budgetPulse,

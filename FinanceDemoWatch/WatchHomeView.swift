@@ -3,24 +3,49 @@ import SwiftUI
 struct WatchHomeView: View {
     @ObservedObject var store: WatchLedgerStore
     @State private var isShowingExpense = false
+    private let staleSyncInterval: TimeInterval = 24 * 60 * 60
+
+    private var balanceUpdatedAt: Date? {
+        store.snapshot?.generatedAt ?? store.lastSyncedAt
+    }
+
+    private var isSnapshotStale: Bool {
+        guard let balanceUpdatedAt else { return false }
+        return Date.now.timeIntervalSince(balanceUpdatedAt) >= staleSyncInterval
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Label(store.status.title, systemImage: store.status.systemImage)
-                        .foregroundStyle(store.status == .error ? Color.orange : Color.secondary)
+                if store.status != .synced || isSnapshotStale || store.errorMessage != nil {
+                    Section {
+                        Label(
+                            isSnapshotStale
+                                ? "Balances may be out of date"
+                                : store.status.title,
+                            systemImage: isSnapshotStale
+                                ? "clock.badge.exclamationmark"
+                                : store.status.systemImage
+                        )
+                        .foregroundStyle(store.status == .error || isSnapshotStale ? Color.orange : Color.secondary)
 
-                    if let lastSyncedAt = store.lastSyncedAt {
-                        Text("Updated \(lastSyncedAt, style: .relative)")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                        if isSnapshotStale && store.status != .synced {
+                            Text(store.status.title)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
 
-                    if let errorMessage = store.errorMessage {
-                        Text(errorMessage)
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
+                        if let balanceUpdatedAt {
+                            Text("Data from \(balanceUpdatedAt, style: .relative)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let errorMessage = store.errorMessage {
+                            Text(errorMessage)
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
                     }
                 }
 
@@ -41,7 +66,7 @@ struct WatchHomeView: View {
                 }
 
                 if let snapshot = store.snapshot {
-                    Section("Balances") {
+                    Section {
                         ForEach(snapshot.balances) { balance in
                             HStack {
                                 Text(balance.currency.rawValue)
@@ -50,6 +75,14 @@ struct WatchHomeView: View {
                                     .fontWeight(.semibold)
                                     .monospacedDigit()
                                     .privacySensitive()
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text("Balances")
+                            Spacer()
+                            if let balanceUpdatedAt {
+                                Text("Updated \(balanceUpdatedAt, style: .relative)")
                             }
                         }
                     }

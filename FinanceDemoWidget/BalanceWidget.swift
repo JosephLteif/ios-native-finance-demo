@@ -127,8 +127,8 @@ struct BalanceWidgetEntryView: View {
                 if entry.snapshot.appGroupAvailable {
                     if family == .systemMedium {
                         Button(intent: AddDemoExpenseIntent()) {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.title3)
+                            Label("Add $5 USD expense", systemImage: "plus.circle.fill")
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(PocketWidgetTheme.accent)
                         }
                         .buttonStyle(.plain)

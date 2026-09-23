@@ -11,10 +11,12 @@ struct ContentView: View {
     @State private var isShowingSetup = false
     @State private var isShowingImportWizardUITest = false
     @State private var isUnlocked = false
+    @State private var transactionRouteRequest: UUID?
     @SceneStorage("pocketLedger.selectedTab") private var selectedTabRawValue = AppTab.overview.rawValue
     @AppStorage(SetupWizardView.completedKey) private var setupCompleted = false
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -74,7 +76,7 @@ struct ContentView: View {
             },
             set: { tab in
                 guard selectedTabRawValue != tab.rawValue else { return }
-                withAnimation(.snappy(duration: 0.35)) {
+                withAnimation(PocketLedgerMotion.quick(reduceMotion: reduceMotion)) {
                     selectedTabRawValue = tab.rawValue
                 }
             }
@@ -82,8 +84,12 @@ struct ContentView: View {
     }
 
     private func handleDeepLink(_ url: URL) {
-        if let tab = AppTab(url: url) {
-            selectedTabBinding.wrappedValue = tab == .transactions ? .more : tab
+        guard let tab = AppTab(url: url) else { return }
+        if tab == .transactions {
+            selectedTabBinding.wrappedValue = .more
+            transactionRouteRequest = UUID()
+        } else {
+            selectedTabBinding.wrappedValue = tab
         }
     }
 
@@ -92,6 +98,7 @@ struct ContentView: View {
             selectedTab: selectedTabBinding,
             store: store,
             security: security,
+            transactionRouteRequest: $transactionRouteRequest,
             onAddAction: { action in addAction = action }
         )
         .tint(PocketLedgerTheme.accent)
@@ -212,6 +219,7 @@ private final class PocketLedgerTabBarController: UITabBarController {
 @MainActor
 private struct NativeTabBarController: UIViewControllerRepresentable {
     @Binding var selectedTab: AppTab
+    @Binding var transactionRouteRequest: UUID?
     @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
     let onAddAction: (AddAction) -> Void
@@ -266,6 +274,8 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
 
     private func makeViewControllers() -> [UIViewController] {
         let addExpense = onAddAction
+        let selectedTabBinding = _selectedTab
+        let transactionRouteBinding = _transactionRouteRequest
 
         return AppTab.tabBarOrder.map { tab in
             let viewController: UIViewController
@@ -274,7 +284,11 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
                 viewController = UIHostingController(
                     rootView: DashboardView(
                         store: store,
-                        onAddExpense: { addExpense(.expense) }
+                        onAddExpense: { addExpense(.expense) },
+                        onShowTransactions: {
+                            selectedTabBinding.wrappedValue = .more
+                            transactionRouteBinding.wrappedValue = UUID()
+                        }
                     )
                 )
             case .accounts:
@@ -299,7 +313,8 @@ private struct NativeTabBarController: UIViewControllerRepresentable {
                     rootView: MoreView(
                         store: store,
                         security: security,
-                        onAddExpense: { addExpense(.expense) }
+                        onAddExpense: { addExpense(.expense) },
+                        transactionRouteRequest: $transactionRouteRequest
                     )
                 )
             }
@@ -538,7 +553,9 @@ private struct MoreView: View {
     @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
     let onAddExpense: () -> Void
+    @Binding var transactionRouteRequest: UUID?
     @State private var isShowingSetup = false
+    @State private var isShowingTransactions = false
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
@@ -568,11 +585,19 @@ private struct MoreView: View {
                 }
 
                 Section("History") {
-                    NavigationLink {
-                        TransactionsView(store: store, onAddExpense: onAddExpense)
+                    Button {
+                        isShowingTransactions = true
                     } label: {
-                        Label("Transactions", systemImage: "list.bullet.rectangle")
+                        HStack {
+                            Label("Transactions", systemImage: "list.bullet.rectangle")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(PocketLedgerTheme.textTertiary)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Browse and search transaction history")
                 }
 
                 Section("Planning") {
@@ -633,6 +658,9 @@ private struct MoreView: View {
                     Text("Keep advanced tools close without crowding the daily flow")
                 }
             }
+            .navigationDestination(isPresented: $isShowingTransactions) {
+                TransactionsView(store: store, onAddExpense: onAddExpense)
+            }
             .navigationTitle("More")
             .navigationBarTitleDisplayMode(.large)
             .listStyle(.insetGrouped)
@@ -645,6 +673,11 @@ private struct MoreView: View {
                 PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
             )
             .accessibilityIdentifier("more-screen-\(selectedColorTheme)")
+            .onChange(of: transactionRouteRequest) { _, request in
+                guard request != nil else { return }
+                isShowingTransactions = true
+                transactionRouteRequest = nil
+            }
             .sheet(isPresented: $isShowingSetup) {
                 SetupWizardView(store: store)
             }
@@ -670,6 +703,8 @@ private enum DashboardSheet: Identifiable {
 private struct DashboardView: View {
     @ObservedObject var store: LedgerStore
     let onAddExpense: () -> Void
+    let onShowTransactions: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentedSheet: DashboardSheet?
     @State private var snapshot = DashboardSnapshot.empty
     @State private var dashboardPreferences = DashboardPreferences.load()
@@ -681,7 +716,10 @@ private struct DashboardView: View {
             ScrollView(showsIndicators: false) {
                 PocketGlassContainer(spacing: 14) {
                     VStack(alignment: .leading, spacing: 16) {
-                        dashboardHeader
+                        dashboardDateHeader
+                        if !store.storageAvailable || !store.sharedStorageAvailable {
+                            storageNotice
+                        }
                         dashboardWidgets
 
                         if let status = store.lastActionStatus {
@@ -701,7 +739,21 @@ private struct DashboardView: View {
             .preferredColorScheme(
                 PocketLedgerAppearanceMode(rawValue: selectedAppearanceMode)?.preferredColorScheme
             )
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Pocket Ledger")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        presentedSheet = .customization
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                    .accessibilityLabel("Customize dashboard")
+                    .accessibilityHint("Choose which widgets appear and reorder them")
+                    .accessibilityIdentifier("dashboard-customize")
+                }
+            }
             .sheet(item: $presentedSheet) { sheet in
                 switch sheet {
                 case .customization:
@@ -711,35 +763,19 @@ private struct DashboardView: View {
                 }
             }
             .onAppear(perform: refreshSnapshot)
-            .onChange(of: store.ledgerRevision) { _, _ in refreshSnapshot() }
+            .onChange(of: store.ledgerRevision) { _, _ in
+                withAnimation(PocketLedgerMotion.expressive(reduceMotion: reduceMotion)) {
+                    refreshSnapshot()
+                }
+            }
             .onChange(of: dashboardPreferences) { _, preferences in preferences.save() }
         }
     }
 
-    private var dashboardHeader: some View {
-        HStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Pocket Ledger")
-                    .font(.largeTitle.weight(.semibold))
-                Text(Date.now, style: .date)
-                    .font(.subheadline)
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-            }
-
-            Spacer()
-
-            Button {
-                presentedSheet = .customization
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.body.weight(.semibold))
-                    .frame(width: 40, height: 40)
-            }
-            .buttonStyle(.glass)
-            .accessibilityLabel("Customize dashboard")
-            .accessibilityHint("Choose which widgets appear and reorder them")
-            .accessibilityIdentifier("dashboard-customize")
-        }
+    private var dashboardDateHeader: some View {
+        Text(Date.now, style: .date)
+            .font(.subheadline)
+            .foregroundStyle(PocketLedgerTheme.textSecondary)
     }
 
     @ViewBuilder
@@ -773,7 +809,9 @@ private struct DashboardView: View {
         case .budgetPulse:
             budgetSnapshot
         case .storageStatus:
-            storageNotice
+            if store.storageAvailable && store.sharedStorageAvailable {
+                storageNotice
+            }
         }
     }
 
@@ -840,11 +878,17 @@ private struct DashboardView: View {
 
             Spacer(minLength: 12)
 
-            Text((snapshot.availableBalances[currency] ?? Money(currency: currency, minorUnits: 0)).formatted)
+            let balance = snapshot.availableBalances[currency] ?? Money(currency: currency, minorUnits: 0)
+            Text(balance.formatted)
                 .font(.title3.weight(.bold).monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
                 .multilineTextAlignment(.trailing)
+                .contentTransition(.numericText(value: Double(balance.minorUnits)))
+                .animation(
+                    PocketLedgerMotion.expressive(reduceMotion: reduceMotion),
+                    value: balance.minorUnits
+                )
         }
         .padding(.vertical, 9)
     }
@@ -1253,10 +1297,12 @@ private struct DashboardView: View {
                 Text("Recent activity")
                     .font(.title3.weight(.bold))
                 Spacer()
-                NavigationLink("See all") {
-                    TransactionsView(store: store, onAddExpense: onAddExpense)
-                }
-                .font(.caption.weight(.semibold))
+                Button("See all", action: onShowTransactions)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(PocketLedgerTheme.accent)
+                    .accessibilityLabel("See all transactions")
+                    .accessibilityHint("Opens transaction history under More")
+                    .font(.caption.weight(.semibold))
             }
 
             if snapshot.recentTransactions.isEmpty {
@@ -1287,6 +1333,11 @@ private struct DashboardView: View {
                             onDelete: {},
                             onSaveTemplate: {},
                             allowsActions: false
+                        )
+                        .transition(
+                            reduceMotion
+                                ? .identity
+                                : .move(edge: .top).combined(with: .opacity)
                         )
                         Divider().overlay(PocketLedgerTheme.divider)
                     }
@@ -1450,6 +1501,7 @@ private struct DashboardCustomizationView: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .background(PocketLedgerTheme.background)
             .navigationTitle("Customize dashboard")
             .navigationBarTitleDisplayMode(.inline)
@@ -1813,6 +1865,7 @@ struct TransactionsView: View {
     @State private var transactionToDelete: LedgerTransaction?
     @State private var transactionToTemplate: LedgerTransaction?
     @State private var isPresentingBillScanner = false
+    @State private var isShowingFilters = false
     @State private var isSelectingTransactions = false
     @State private var selectedTransactionIDs: Set<UUID> = []
     @State private var isShowingBulkDeleteConfirmation = false
@@ -1852,58 +1905,33 @@ struct TransactionsView: View {
         ScrollView(showsIndicators: false) {
             PocketGlassContainer(spacing: 14) {
                 VStack(alignment: .leading, spacing: 18) {
-                    screenHeader
+                    screenSubtitle
 
                     if isSelectingTransactions {
                         selectionToolbar
                     }
 
-                    Picker("Filter", selection: $selectedFilter) {
-                        ForEach(TransactionFilter.allCases) { filter in
-                            Text(filter.rawValue).tag(filter)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    filtersButton
 
-                    Picker("Date range", selection: $selectedPeriod) {
-                        ForEach(TransactionPeriod.allCases) { period in
-                            Text(period.rawValue).tag(period)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Menu {
-                        ForEach(TransactionQuickFilter.allCases) { filter in
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(PocketLedgerTheme.textTertiary)
+                        TextField("Search transactions, categories, or accounts", text: $searchText)
+                            .textFieldStyle(.plain)
+                            .textInputAutocapitalization(.never)
+                        if !searchText.isEmpty {
                             Button {
-                                applyQuickFilter(filter)
+                                searchText = ""
                             } label: {
-                                if selectedQuickFilter == filter {
-                                    Label(filter.title, systemImage: "checkmark")
-                                } else {
-                                    Text(filter.title)
-                                }
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(PocketLedgerTheme.textTertiary)
                             }
+                            .accessibilityLabel("Clear search")
                         }
-                    } label: {
-                        Label("Saved filter: \(selectedQuickFilter.title)", systemImage: "line.3.horizontal.decrease.circle")
                     }
-                    .font(.subheadline.weight(.semibold))
-                    .accessibilityIdentifier("transaction-saved-filter")
-
-                    if selectedPeriod == .custom {
-                        VStack(alignment: .leading, spacing: 8) {
-                            DatePicker("From", selection: $customStartDate, displayedComponents: .date)
-                            DatePicker("To", selection: $customEndDate, displayedComponents: .date)
-                        }
-                        .font(.subheadline)
-                        .padding(12)
-                        .pocketGlassSurface(cornerRadius: 15)
-                    }
-
-                    TextField("Search transactions, categories, or accounts", text: $searchText)
-                        .textFieldStyle(.roundedBorder)
-                        .textInputAutocapitalization(.never)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 11)
+                    .pocketGlassSurface(cornerRadius: 13)
 
                     transactionsSummary
 
@@ -1952,6 +1980,34 @@ struct TransactionsView: View {
             }
         }
         .pocketScreen()
+        .navigationTitle("Transactions")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if isSelectingTransactions {
+                    Button("Done") {
+                        isSelectingTransactions = false
+                        selectedTransactionIDs.removeAll()
+                    }
+                } else {
+                    Button {
+                        isSelectingTransactions = true
+                    } label: {
+                        Image(systemName: "checklist")
+                    }
+                    .accessibilityLabel("Select transactions")
+                    .accessibilityIdentifier("select-transactions")
+                }
+
+                Button {
+                    isPresentingBillScanner = true
+                } label: {
+                    Image(systemName: "doc.viewfinder")
+                }
+                .accessibilityLabel("Scan bill")
+            }
+        }
         .overlay(alignment: .bottom) {
             if !deletedTransactionsForUndo.isEmpty {
                 undoBanner(for: deletedTransactionsForUndo)
@@ -2043,6 +2099,95 @@ struct TransactionsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This can be undone from the message at the bottom of the screen.")
+        }
+    }
+
+    private var activeFilterSummary: String {
+        let kind = selectedQuickFilter != .none && selectedQuickFilter != .thisMonth
+            ? selectedQuickFilter.title
+            : selectedFilter.rawValue
+        let period = selectedPeriod == .custom
+            ? "\(customStartDate.formatted(date: .abbreviated, time: .omitted))–\(customEndDate.formatted(date: .abbreviated, time: .omitted))"
+            : selectedPeriod.rawValue
+        return "\(kind) · \(period)"
+    }
+
+    private var filtersButton: some View {
+        Button {
+            isShowingFilters = true
+        } label: {
+            HStack(spacing: 10) {
+                Label("Filters", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 8)
+                Text(activeFilterSummary)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .pocketGlassSurface(cornerRadius: 13)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("transaction-filters")
+        .sheet(isPresented: $isShowingFilters) {
+            NavigationStack {
+                Form {
+                    Section("Type") {
+                        Picker("Transactions", selection: $selectedFilter) {
+                            ForEach(TransactionFilter.allCases) { filter in
+                                Text(filter.rawValue).tag(filter)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+
+                    Section("Date range") {
+                        Picker("Period", selection: $selectedPeriod) {
+                            ForEach(TransactionPeriod.allCases) { period in
+                                Text(period.rawValue).tag(period)
+                            }
+                        }
+
+                        if selectedPeriod == .custom {
+                            DatePicker("From", selection: $customStartDate, displayedComponents: .date)
+                            DatePicker("To", selection: $customEndDate, displayedComponents: .date)
+                        }
+                    }
+
+                    Section("Saved filter") {
+                        Menu {
+                            ForEach(TransactionQuickFilter.allCases) { filter in
+                                Button {
+                                    applyQuickFilter(filter)
+                                } label: {
+                                    if selectedQuickFilter == filter {
+                                        Label(filter.title, systemImage: "checkmark")
+                                    } else {
+                                        Text(filter.title)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Saved filter: \(selectedQuickFilter.title)", systemImage: "line.3.horizontal.decrease.circle")
+                        }
+                        .accessibilityIdentifier("transaction-saved-filter")
+                    }
+                }
+                .navigationTitle("Filters")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { isShowingFilters = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -2150,58 +2295,10 @@ struct TransactionsView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private var screenHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Transactions")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Every inflow and outflow, in one place")
-                    .font(.subheadline)
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-            }
-
-            Spacer()
-
-            if isSelectingTransactions {
-                Button("Done") {
-                    isSelectingTransactions = false
-                    selectedTransactionIDs.removeAll()
-                }
-                .font(.subheadline.weight(.semibold))
-            } else {
-                Button {
-                    isSelectingTransactions = true
-                } label: {
-                    Image(systemName: "checklist")
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(PocketLedgerTheme.accent)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .pocketGlassSurface(
-                            cornerRadius: 22,
-                            tint: PocketLedgerTheme.accent.opacity(0.18),
-                            interactive: true
-                        )
-                }
-                .accessibilityLabel("Select transactions")
-                .accessibilityIdentifier("select-transactions")
-            }
-
-            Button {
-                isPresentingBillScanner = true
-            } label: {
-                Image(systemName: "doc.viewfinder")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(PocketLedgerTheme.positive)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .pocketGlassSurface(
-                        cornerRadius: 22,
-                        tint: PocketLedgerTheme.positive.opacity(0.18),
-                        interactive: true
-                    )
-            }
-            .accessibilityLabel("Scan bill")
-
-        }
+    private var screenSubtitle: some View {
+        Text("Every inflow and outflow, in one place")
+            .font(.subheadline)
+            .foregroundStyle(PocketLedgerTheme.textSecondary)
     }
 
     private func toggleSelection(for transaction: LedgerTransaction) {
@@ -2540,7 +2637,7 @@ private struct AccountsView: View {
         ScrollView(showsIndicators: false) {
             PocketGlassContainer(spacing: 14) {
                 VStack(alignment: .leading, spacing: 18) {
-                    screenHeader
+                    screenSubtitle
                     globalPositionSummary
 
                     ForEach(AccountType.allCases) { accountType in
@@ -2570,7 +2667,18 @@ private struct AccountsView: View {
         }
         .pocketScreen()
         .navigationTitle("Accounts")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    presentAccount(nil)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add account")
+            }
+        }
         .sheet(isPresented: $isPresentingAccount, onDismiss: { editingAccount = nil }) {
             AccountEditor(store: store, account: editingAccount)
         }
@@ -2653,33 +2761,10 @@ private struct AccountsView: View {
         }
     }
 
-    private var screenHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Accounts")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Tap an account for activity; hold it to edit, archive, or reorder")
-                    .font(.subheadline)
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-            }
-
-            Spacer()
-
-            Button {
-                presentAccount(nil)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(PocketLedgerTheme.accent)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .pocketGlassSurface(
-                        cornerRadius: 22,
-                        tint: PocketLedgerTheme.accent.opacity(0.18),
-                        interactive: true
-                    )
-            }
-            .accessibilityLabel("Add account")
-        }
+    private var screenSubtitle: some View {
+        Text("Tap an account for activity; use its menu to manage or reorder it")
+            .font(.subheadline)
+            .foregroundStyle(PocketLedgerTheme.textSecondary)
     }
 
     private func accountSection(type: AccountType, accounts: [Account]) -> some View {
@@ -2702,43 +2787,53 @@ private struct AccountsView: View {
             VStack(spacing: 0) {
                 ForEach(accounts) { account in
                     let accountPosition = accounts.firstIndex(where: { $0.id == account.id }) ?? 0
-                    NavigationLink {
-                        AccountDetailView(store: store, accountID: account.id)
-                    } label: {
-                        AccountRow(account: account, balance: store.balance(for: account))
-                            .contentShape(Rectangle())
-                            .contextMenu {
-                                Button("Edit", systemImage: "pencil") {
-                                    presentAccount(account)
-                                }
-                                Button("Move up", systemImage: "chevron.up") {
-                                    _ = store.moveAccount(accountID: account.id, by: -1)
-                                }
-                                .disabled(accountPosition == 0)
-                                Button("Move down", systemImage: "chevron.down") {
-                                    _ = store.moveAccount(accountID: account.id, by: 1)
-                                }
-                                .disabled(accountPosition == accounts.count - 1)
-                                Button("Archive", systemImage: "archivebox") {
-                                    _ = store.setAccountArchived(
-                                        accountID: account.id,
-                                        isArchived: true
-                                    )
-                                }
+                    HStack(spacing: 4) {
+                        NavigationLink {
+                            AccountDetailView(store: store, accountID: account.id)
+                        } label: {
+                            AccountRow(account: account, balance: store.balance(for: account))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("Edit", systemImage: "pencil") {
+                                presentAccount(account)
                             }
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("Edit", systemImage: "pencil") {
-                            presentAccount(account)
+                            Button("Archive", systemImage: "archivebox") {
+                                _ = store.setAccountArchived(
+                                    accountID: account.id,
+                                    isArchived: true
+                                )
+                            }
+                            .tint(PocketLedgerTheme.warning)
                         }
-                        Button("Archive", systemImage: "archivebox") {
-                            _ = store.setAccountArchived(
-                                accountID: account.id,
-                                isArchived: true
-                            )
+
+                        Menu {
+                            Button("Edit", systemImage: "pencil") {
+                                presentAccount(account)
+                            }
+                            Button("Move up", systemImage: "chevron.up") {
+                                _ = store.moveAccount(accountID: account.id, by: -1)
+                            }
+                            .disabled(accountPosition == 0)
+                            Button("Move down", systemImage: "chevron.down") {
+                                _ = store.moveAccount(accountID: account.id, by: 1)
+                            }
+                            .disabled(accountPosition == accounts.count - 1)
+                            Button("Archive", systemImage: "archivebox") {
+                                _ = store.setAccountArchived(
+                                    accountID: account.id,
+                                    isArchived: true
+                                )
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.title3)
+                                .foregroundStyle(PocketLedgerTheme.textSecondary)
+                                .frame(width: 44, height: 44)
                         }
-                        .tint(PocketLedgerTheme.warning)
+                        .accessibilityLabel("Actions for \(account.name)")
                     }
                     Divider().overlay(PocketLedgerTheme.divider)
                 }
@@ -2864,7 +2959,7 @@ private struct CategoriesView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
-                    screenHeader
+                    screenSubtitle
 
                     ForEach(store.rootCategories) { parent in
                         categoryGroup(parent)
@@ -2903,39 +2998,27 @@ private struct CategoriesView: View {
         }
         .pocketScreen()
         .navigationTitle("Categories")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    presentCategory(nil)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add category")
+            }
+        }
         .sheet(isPresented: $isPresentingCategory, onDismiss: { editingCategory = nil }) {
             CategoryEditor(store: store, category: editingCategory)
         }
     }
 
-    private var screenHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Categories")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Make every expense easy to understand")
-                    .font(.subheadline)
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-            }
-
-            Spacer()
-
-            Button {
-                presentCategory(nil)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(PocketLedgerTheme.accent)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .pocketGlassSurface(
-                        cornerRadius: 22,
-                        tint: PocketLedgerTheme.accent.opacity(0.18),
-                        interactive: true
-                    )
-            }
-            .accessibilityLabel("Add category")
-        }
+    private var screenSubtitle: some View {
+        Text("Make every expense easy to understand")
+            .font(.subheadline)
+            .foregroundStyle(PocketLedgerTheme.textSecondary)
     }
 
     private func categoryGroup(_ parent: LedgerCategory) -> some View {
@@ -2965,6 +3048,8 @@ private struct CategoriesView: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Category actions")
                 .accessibilityHint("Opens actions for this category")
@@ -3011,24 +3096,37 @@ private struct CategoryTile: View {
     let onArchive: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: category.systemImage)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(PocketLedgerTheme.textSecondary)
+        VStack(spacing: 4) {
+            HStack {
+                Image(systemName: category.systemImage)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                Spacer()
+
+                Menu {
+                    Button("Edit", systemImage: "pencil", action: onEdit)
+                    Button("Archive", systemImage: "archivebox", action: onArchive)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Actions for \(category.name)")
+            }
+
             Text(category.name)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(PocketLedgerTheme.textPrimary)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, minHeight: 28)
         }
-        .frame(maxWidth: .infinity, minHeight: 70)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
         .pocketGroupedSurface(cornerRadius: 13)
-        .contextMenu {
-            Button("Edit", systemImage: "pencil", action: onEdit)
-            Button("Archive", systemImage: "archivebox", action: onArchive)
-        }
     }
 }
 
@@ -3300,6 +3398,8 @@ private struct MovementLineEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            CurrencyInputField(amountPlaceholder, text: $line.amount, currency: line.currency)
+
             HStack {
                 Picker("Account", selection: $line.accountID) {
                     ForEach(store.data.accounts.filter { account in
@@ -3320,8 +3420,6 @@ private struct MovementLineEditor: View {
                     Text(currency.rawValue).tag(currency)
                 }
             }
-
-            CurrencyInputField(amountPlaceholder, text: $line.amount, currency: line.currency)
         }
     }
 }
@@ -3359,6 +3457,8 @@ struct TransactionEditor: View {
     @State private var isShowingNewCategory = false
     @State private var accountCreationLineID: UUID?
     @State private var errorMessage: String?
+    @State private var isShowingMoreDetails = false
+    @State private var saveFeedbackTrigger = 0
     private let editingScheduleID: UUID?
     private let editingScheduleLastRunDate: Date?
     private let editingScheduleNextRunDate: Date?
@@ -3482,6 +3582,24 @@ struct TransactionEditor: View {
                 ]
                 : [])
         )
+        let initialOutflows = sourceTransaction?.outflows ?? scheduledTransaction?.outflows ?? []
+        let initialInflows = sourceTransaction?.inflows ?? scheduledTransaction?.inflows ?? []
+        let initialHasAttachments = !(transaction?.attachmentIDs ?? []).isEmpty
+            || initialAttachmentData != nil
+        _isShowingMoreDetails = State(initialValue:
+            resolvedInitialKind != .expense
+                || initialTiming == .scheduled
+                || scheduledTransaction != nil
+                || initialOutflows.count > 1
+                || !initialInflows.isEmpty
+                || sourceTransaction?.changeAdjustment != nil
+                || sourceTransaction?.exchangeRate != nil
+                || scheduledTransaction?.exchangeRate != nil
+                || amountDue != nil
+                || initialHasAttachments
+                || initialCurrencies.count > 1
+                || !initialReceiptItems.isEmpty
+        )
         _requestedChange = State(
             initialValue: (sourceTransaction?.changeAdjustment ?? scheduledTransaction?.changeAdjustment).map { Self.inputText(for: $0.requested) } ?? ""
         )
@@ -3535,13 +3653,19 @@ struct TransactionEditor: View {
                     Text("Transaction type")
                 }
 
-                timingSection
-                detailsSection
-                attachmentSection
-
-                outgoingMovementSection
-                receivingMovementSection
-                exchangeRateSection
+                if kind == .expense {
+                    primaryExpenseMovementSection
+                    detailsSection
+                    expenseDateSection
+                    moreDetailsSection
+                } else {
+                    timingSection
+                    detailsSection
+                    attachmentSection
+                    outgoingMovementSection
+                    receivingMovementSection
+                    exchangeRateSection
+                }
             }
             .onAppear {
                 if kind == .transfer && inflows.isEmpty {
@@ -3561,13 +3685,22 @@ struct TransactionEditor: View {
                 synchronizeAutomaticTransferAmount()
             }
             .onChange(of: selectedCurrencies) { _, _ in
+                if kind == .expense && selectedCurrencies.count > 1 {
+                    isShowingMoreDetails = true
+                }
                 synchronizeRatePair()
                 synchronizeAutomaticTransferAmount()
             }
-            .onChange(of: outflows) { _, _ in
+            .onChange(of: outflows) { _, newOutflows in
+                if kind == .expense && newOutflows.count > 1 {
+                    isShowingMoreDetails = true
+                }
                 synchronizeAutomaticTransferAmount()
             }
             .onChange(of: inflows) { oldInflows, newInflows in
+                if kind == .expense && !newInflows.isEmpty {
+                    isShowingMoreDetails = true
+                }
                 let amountWasEdited = oldInflows.first?.amount != newInflows.first?.amount
                 if amountWasEdited,
                    newInflows.first?.amount != automaticTransferDestinationAmount {
@@ -3594,6 +3727,7 @@ struct TransactionEditor: View {
             .tint(PocketLedgerTheme.accent)
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .sensoryFeedback(.success, trigger: saveFeedbackTrigger)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -3690,11 +3824,262 @@ struct TransactionEditor: View {
         }
     }
 
+    private var primaryExpenseMovementSection: some View {
+        Section("Amount and account") {
+            if outflows.isEmpty {
+                Button("Choose payment account", systemImage: "plus.circle") {
+                    outflows.append(newMovementDraft)
+                }
+            } else {
+                MovementLineEditor(
+                    store: store,
+                    line: $outflows[0],
+                    amountPlaceholder: "Amount",
+                    onCreateAccount: {
+                        accountCreationLineID = outflows[0].id
+                        isShowingNewAccount = true
+                    },
+                    allowsArchivedAccount: allowsArchivedMovementAccounts
+                )
+            }
+        }
+    }
+
+    private var expenseDateSection: some View {
+        Section("Date") {
+            DatePicker(
+                timing == .scheduled ? "First run" : "Date",
+                selection: $date,
+                displayedComponents: .date
+            )
+        }
+    }
+
+    private var moreDetailsSection: some View {
+        Section {
+            DisclosureGroup(isExpanded: $isShowingMoreDetails) {
+                VStack(alignment: .leading, spacing: 14) {
+                    expenseScheduleDetails
+                    Divider()
+                    expenseBillDetails
+                    Divider()
+                    expenseSplitDetails
+                    Divider()
+                    expenseReturnedMoneyDetails
+                    if !attachments.isEmpty || initialAttachmentFileName != nil {
+                        Divider()
+                        expenseAttachmentDetails
+                    }
+                    if selectedCurrencies.count > 1 {
+                        Divider()
+                        exchangeRateDetails
+                    }
+                }
+                .padding(.vertical, 6)
+            } label: {
+                Label("More details", systemImage: "slider.horizontal.3")
+            }
+        }
+    }
+
+    private var expenseScheduleDetails: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Schedule")
+                .font(.subheadline.weight(.semibold))
+
+            Picker("When", selection: $timing) {
+                ForEach(TransactionTiming.allCases) { option in
+                    Text(option.displayName).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(isEditingScheduledTransaction)
+
+            if timing == .scheduled {
+                Picker("Repeats", selection: $scheduleFrequency) {
+                    ForEach(ScheduleFrequency.allCases) { frequency in
+                        Text(frequency.displayName).tag(frequency)
+                    }
+                }
+
+                if scheduleFrequency == .monthly {
+                    Picker("Monthly rule", selection: $monthlyRule) {
+                        ForEach(ScheduleMonthlyRule.allCases) { rule in
+                            Text(rule.displayName).tag(rule)
+                        }
+                    }
+
+                    Text(monthlyScheduleDescription)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Toggle("Enabled", isOn: $scheduleEnabled)
+                    .disabled(completedOneTimeSchedule)
+
+                if completedOneTimeSchedule {
+                    Text("This one-time schedule has already been added to transactions.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var expenseBillDetails: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Bill total")
+                .font(.subheadline.weight(.semibold))
+
+            Picker("Currency", selection: $dueCurrency) {
+                ForEach(LedgerCurrency.allCases) { currency in
+                    Text(currency.rawValue).tag(currency)
+                }
+            }
+            CurrencyInputField("Total due (optional)", text: $amountDue, currency: dueCurrency)
+        }
+    }
+
+    private var expenseSplitDetails: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Split payment")
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(Array(outflows.dropFirst())) { movement in
+                if let index = outflows.firstIndex(where: { $0.id == movement.id }) {
+                    MovementLineEditor(
+                        store: store,
+                        line: $outflows[index],
+                        amountPlaceholder: "Amount leaving account",
+                        onCreateAccount: {
+                            accountCreationLineID = movement.id
+                            isShowingNewAccount = true
+                        },
+                        allowsArchivedAccount: allowsArchivedMovementAccounts
+                    )
+
+                    Button("Remove this payment", systemImage: "minus.circle", role: .destructive) {
+                        outflows.remove(at: index)
+                    }
+                    .font(.footnote)
+                }
+            }
+
+            Button {
+                outflows.append(newMovementDraft)
+            } label: {
+                Label("Add another account", systemImage: "plus.circle")
+            }
+            .font(.subheadline.weight(.semibold))
+
+            Text("Use one line for each account or currency used to pay.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var expenseReturnedMoneyDetails: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Returned money")
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(Array(inflows)) { movement in
+                if let index = inflows.firstIndex(where: { $0.id == movement.id }) {
+                    MovementLineEditor(
+                        store: store,
+                        line: $inflows[index],
+                        amountPlaceholder: "Amount returned",
+                        onCreateAccount: {
+                            accountCreationLineID = movement.id
+                            isShowingNewAccount = true
+                        },
+                        allowsArchivedAccount: allowsArchivedMovementAccounts
+                    )
+
+                    Button("Remove returned money", systemImage: "minus.circle", role: .destructive) {
+                        inflows.remove(at: index)
+                        if inflows.isEmpty { requestedChange = "" }
+                    }
+                    .font(.footnote)
+                }
+            }
+
+            Button {
+                inflows.append(newReceivingMovementDraft)
+            } label: {
+                Label(
+                    inflows.isEmpty ? "Add returned money" : "Add another receiving account",
+                    systemImage: "arrow.down.circle"
+                )
+            }
+            .font(.subheadline.weight(.semibold))
+
+            if inflows.count == 1 {
+                CurrencyInputField(
+                    "Requested change (optional)",
+                    text: $requestedChange,
+                    currency: inflows[0].currency
+                )
+                if let preview = shortfallPreview {
+                    Text(preview)
+                        .font(.footnote)
+                        .foregroundStyle(PocketLedgerTheme.warning)
+                }
+            }
+
+            Text("Returned money may go to a different account and currency than the payment.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var expenseAttachmentDetails: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Attachments")
+                .font(.subheadline.weight(.semibold))
+
+            ForEach(attachments) { attachment in
+                HStack {
+                    Button {
+                        previewAttachment = attachment
+                    } label: {
+                        Label(
+                            attachment.fileName,
+                            systemImage: attachment.contentType == "application/pdf" ? "doc.richtext" : "photo"
+                        )
+                    }
+                    .foregroundStyle(PocketLedgerTheme.textPrimary)
+
+                    Spacer()
+
+                    Button("Replace") {
+                        beginReplacingAttachment(attachment)
+                    }
+                    .font(.footnote.weight(.semibold))
+                }
+                .swipeActions {
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        deleteAttachment(attachment)
+                    }
+                }
+            }
+
+            if attachments.isEmpty, let initialAttachmentFileName {
+                Label(
+                    initialAttachmentFileName,
+                    systemImage: initialAttachmentContentType == "application/pdf" ? "doc.richtext" : "photo"
+                )
+                Text("This local file will be saved with the transaction.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     @ViewBuilder
     private var detailsSection: some View {
         Section("Details") {
-            TextField("What was this for?", text: $note)
-
             if kind == .expense {
                 HStack {
                     if selectableCategories.isEmpty {
@@ -3713,13 +4098,9 @@ struct TransactionEditor: View {
                     .labelStyle(.iconOnly)
                     .accessibilityLabel("New category")
                 }
-                Picker("Bill currency", selection: $dueCurrency) {
-                    ForEach(LedgerCurrency.allCases) { currency in
-                        Text(currency.rawValue).tag(currency)
-                    }
-                }
-                CurrencyInputField("Bill total (optional)", text: $amountDue, currency: dueCurrency)
             }
+
+            TextField("What was this for?", text: $note)
         }
     }
 
@@ -3912,6 +4293,57 @@ struct TransactionEditor: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+            }
+        }
+    }
+
+    private var exchangeRateDetails: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Exchange rate")
+                .font(.subheadline.weight(.semibold))
+
+            LabeledContent("Applied rate") {
+                Text(appliedExchangeRate?.summary ?? "Rate required")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(appliedExchangeRate == nil
+                        ? PocketLedgerTheme.warning
+                        : PocketLedgerTheme.textPrimary)
+                    .multilineTextAlignment(.trailing)
+            }
+
+            Toggle("Use a custom rate", isOn: $useCustomRate)
+
+            if !useCustomRate {
+                Text("The rate is calculated from the entered amounts, or uses the saved pair rate until both amounts are entered.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if useCustomRate {
+                Picker("Base", selection: $rateBase) {
+                    ForEach(selectedCurrencies) { currency in
+                        Text(currency.rawValue).tag(currency)
+                    }
+                }
+                Picker("Quote", selection: $rateQuote) {
+                    ForEach(selectedCurrencies) { currency in
+                        Text(currency.rawValue).tag(currency)
+                    }
+                }
+                TextField("Quote units per base unit", text: $rateText)
+                    .keyboardType(.decimalPad)
+
+                if let savedRate {
+                    Button {
+                        rateText = NSDecimalNumber(decimal: savedRate.quoteUnitsPerBaseUnit).stringValue
+                    } label: {
+                        Label("Use saved rate: \(savedRate.summary)", systemImage: "arrow.clockwise")
+                    }
+                }
+
+                Text("Enter how many \(rateQuote.rawValue) equal 1 \(rateBase.rawValue).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -4478,6 +4910,7 @@ struct TransactionEditor: View {
         if let categoryID, kind == .expense {
             UserDefaults.standard.set(categoryID.uuidString, forKey: Self.lastCategoryKey)
         }
+        saveFeedbackTrigger += 1
         dismiss()
     }
 

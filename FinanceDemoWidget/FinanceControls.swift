@@ -13,7 +13,7 @@ struct AddExpenseControl: ControlWidget {
             ControlWidgetButton(
                 action: AddConfiguredExpenseIntent(amount: configuration.amount)
             ) {
-                Label("Add \(configuration.amount)", systemImage: "minus.circle.fill")
+                Label("Add \(configuration.amount) USD expense", systemImage: "plus.circle.fill")
             }
         }
         .displayName("Add Pocket Ledger Expense")

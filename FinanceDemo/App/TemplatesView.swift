@@ -10,8 +10,6 @@ struct TemplatesView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                            Text("Templates")
-                                .font(.largeTitle.weight(.semibold))
                         Text("Reuse repeat expenses, income, and transfers")
                             .font(.subheadline)
                             .foregroundStyle(PocketLedgerTheme.textSecondary)
@@ -43,7 +41,8 @@ struct TemplatesView: View {
         }
         .pocketScreen()
         .navigationTitle("Templates")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
         .sheet(item: $templateToUse) { template in
             TransactionEditor(store: store, template: template)
         }

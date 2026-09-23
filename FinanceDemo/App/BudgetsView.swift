@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct BudgetsView: View {
     @ObservedObject var store: LedgerStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editingBudget: LedgerBudget?
     @State private var isPresentingEditor = false
     @State private var budgetToDelete: LedgerBudget?
@@ -11,29 +12,9 @@ struct BudgetsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Budgets")
-                                .font(.largeTitle.weight(.semibold))
-                            Text("Keep monthly spending intentional")
-                                .font(.subheadline)
-                                .foregroundStyle(PocketLedgerTheme.textSecondary)
-                        }
-                        Spacer()
-                        Button { presentNewBudget() } label: {
-                                Image(systemName: "plus")
-                                    .font(.body.weight(.bold))
-                                    .foregroundStyle(PocketLedgerTheme.accent)
-                                    .frame(minWidth: 44, minHeight: 44)
-                                .pocketGlassSurface(
-                                    cornerRadius: 22,
-                                    tint: PocketLedgerTheme.accent.opacity(0.18),
-                                    interactive: true
-                                )
-                        }
-                        .accessibilityLabel("Add budget")
-                        .accessibilityHint("Creates a new monthly budget")
-                    }
+                    Text("Keep monthly spending intentional")
+                        .font(.subheadline)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
 
                     if budgetSummaries.isEmpty {
                         VStack(spacing: 10) {
@@ -63,12 +44,26 @@ struct BudgetsView: View {
         }
         .pocketScreen()
         .navigationTitle("Budgets")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: presentNewBudget) {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add budget")
+                .accessibilityHint("Creates a new monthly budget")
+            }
+        }
         .sheet(isPresented: $isPresentingEditor, onDismiss: { editingBudget = nil }) {
             BudgetEditor(store: store, budget: editingBudget)
         }
         .onAppear(perform: refreshBudgetSummaries)
-        .onChange(of: store.ledgerRevision) { _, _ in refreshBudgetSummaries() }
+        .onChange(of: store.ledgerRevision) { _, _ in
+            withAnimation(PocketLedgerMotion.expressive(reduceMotion: reduceMotion)) {
+                refreshBudgetSummaries()
+            }
+        }
         .confirmationDialog("Delete budget?", isPresented: Binding(
             get: { budgetToDelete != nil },
             set: { if !$0 { budgetToDelete = nil } }
@@ -105,6 +100,7 @@ struct BudgetsView: View {
             }
             ProgressView(value: ratio)
                 .tint(projectedOver ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
+                .animation(PocketLedgerMotion.expressive(reduceMotion: reduceMotion), value: ratio)
             HStack {
                 Text(over
                      ? "Over by \(Money(currency: budget.currency, minorUnits: -remaining).formatted)"

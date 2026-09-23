@@ -39,7 +39,8 @@ struct DataTransferView: View {
         }
         .pocketScreen()
         .navigationTitle("Import & Backup")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
         .fileImporter(
             isPresented: $isShowingImporter,
             allowedContentTypes: [.data],

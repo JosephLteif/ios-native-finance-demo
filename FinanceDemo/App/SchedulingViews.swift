@@ -14,7 +14,9 @@ struct ScheduledTransactionsView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
-                screenHeader
+                Text("Plan bills, income, and recurring transfers")
+                    .font(.subheadline)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
 
                     Text("Due entries are added to Transactions when Pocket Ledger opens or returns to the foreground.")
                         .font(.footnote)
@@ -60,7 +62,16 @@ struct ScheduledTransactionsView: View {
         }
         .pocketScreen()
         .navigationTitle("Scheduled")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: presentNewSchedule) {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add scheduled transaction")
+            }
+        }
         .sheet(isPresented: $isPresentingEditor, onDismiss: { editingSchedule = nil }) {
             TransactionEditor(
                 store: store,
@@ -134,33 +145,6 @@ struct ScheduledTransactionsView: View {
                 }
             }
         )
-    }
-
-    private var screenHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Scheduled")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Plan bills, income, and recurring transfers")
-                    .font(.subheadline)
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-            }
-
-            Spacer()
-
-            Button(action: presentNewSchedule) {
-                Image(systemName: "plus")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(PocketLedgerTheme.accent)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .pocketGlassSurface(
-                        cornerRadius: 22,
-                        tint: PocketLedgerTheme.accent.opacity(0.18),
-                        interactive: true
-                    )
-            }
-            .accessibilityLabel("Add scheduled transaction")
-        }
     }
 
     private var emptyState: some View {

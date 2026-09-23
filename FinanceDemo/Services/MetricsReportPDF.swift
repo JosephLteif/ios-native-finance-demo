@@ -9,6 +9,20 @@ struct MetricsReportCategory {
     let percentage: Int
 }
 
+struct MetricsReportSeries {
+    let title: String
+    let amount: Money
+    let percentage: Int
+}
+
+struct MetricsReportTransaction {
+    let date: Date
+    let note: String
+    let kind: TransactionKind
+    let category: String
+    let amount: String
+}
+
 struct MetricsReportData {
     let periodTitle: String
     let dateRange: String
@@ -19,6 +33,10 @@ struct MetricsReportData {
     let entryCount: Int
     let activityCounts: [TransactionKind: Int]
     let categories: [MetricsReportCategory]
+    var currencyBreakdown: [MetricsReportSeries] = []
+    var transactions: [MetricsReportTransaction] = []
+    var totalTransactionCount = 0
+    var includesTransactions = false
     let generatedAt: Date
 }
 
@@ -152,20 +170,9 @@ private final class MetricsReportPDFCanvas {
             color: Palette.primary,
             spacingAfter: 18
         )
-        drawSectionTitle("Spending by category")
-
-        if report.categories.isEmpty {
-            drawText(
-                "No included expense activity was recorded in this range.",
-                font: .systemFont(ofSize: 11),
-                color: Palette.secondary,
-                spacingAfter: 12
-            )
-        } else {
-            for category in report.categories {
-                drawCategory(category)
-            }
-        }
+        drawCategoryChart(report.categories)
+        drawCurrencyChart(report.currencyBreakdown, currency: report.currency)
+        drawTransactions(report)
 
         drawText(
             "Excluded accounts are omitted from this report, matching the Metrics screen.",
@@ -206,14 +213,167 @@ private final class MetricsReportPDFCanvas {
         drawFixed(value, in: CGRect(x: x, y: y + 21, width: width, height: 24), font: .systemFont(ofSize: 16, weight: .bold), color: color)
     }
 
-    private func drawCategory(_ category: MetricsReportCategory) {
-        ensureSpace(42)
-        let row = CGRect(x: contentRect.minX, y: y, width: contentRect.width, height: 34)
-        drawFixed(category.title, in: CGRect(x: row.minX, y: row.minY, width: 300, height: 17), font: .systemFont(ofSize: 11, weight: .semibold), color: Palette.primary)
-        drawFixed("\(category.count) entr\(category.count == 1 ? "y" : "ies") - \(category.percentage)% of expenses", in: CGRect(x: row.minX, y: row.minY + 18, width: 300, height: 14), font: .systemFont(ofSize: 9), color: Palette.secondary)
-        drawFixed(category.amount.formatted, in: CGRect(x: row.maxX - 150, y: row.minY + 5, width: 150, height: 18), font: .systemFont(ofSize: 11, weight: .semibold), color: Palette.primary, alignment: .right)
-        drawLine(at: row.maxY + 5)
-        y = row.maxY + 12
+    private func drawCategoryChart(_ categories: [MetricsReportCategory]) {
+        drawSectionTitle("Top spending categories")
+        guard let maximum = categories.map(\.amount.minorUnits).max(), maximum > 0 else {
+            drawText(
+                "No included expense activity was recorded in this range.",
+                font: .systemFont(ofSize: 11),
+                color: Palette.secondary,
+                spacingAfter: 12
+            )
+            return
+        }
+
+        for category in categories {
+            drawChartRow(
+                title: category.title,
+                detail: "\(category.count) entr\(category.count == 1 ? "y" : "ies") · \(category.percentage)%",
+                amount: category.amount,
+                maximum: maximum
+            )
+        }
+    }
+
+    private func drawCurrencyChart(_ series: [MetricsReportSeries], currency: LedgerCurrency) {
+        drawSectionTitle("Spending by transaction currency")
+        guard let maximum = series.map(\.amount.minorUnits).max(), maximum > 0 else {
+            drawText(
+                "No included expense activity was recorded in this range.",
+                font: .systemFont(ofSize: 11),
+                color: Palette.secondary,
+                spacingAfter: 12
+            )
+            return
+        }
+
+        drawText(
+            "Amounts are converted to \(currency.rawValue) using saved transaction exchange rates.",
+            font: .systemFont(ofSize: 9),
+            color: Palette.secondary,
+            spacingAfter: 8
+        )
+        for entry in series {
+            drawChartRow(
+                title: entry.title,
+                detail: "\(entry.percentage)% of converted spending",
+                amount: entry.amount,
+                maximum: maximum
+            )
+        }
+    }
+
+    private func drawChartRow(title: String, detail: String, amount: Money, maximum: Int64) {
+        ensureSpace(48)
+        let rowY = y
+        drawFixed(
+            title,
+            in: CGRect(x: contentRect.minX, y: rowY, width: 320, height: 15),
+            font: .systemFont(ofSize: 11, weight: .semibold),
+            color: Palette.primary
+        )
+        drawFixed(
+            amount.formatted,
+            in: CGRect(x: contentRect.maxX - 160, y: rowY, width: 160, height: 15),
+            font: .systemFont(ofSize: 10, weight: .semibold),
+            color: Palette.primary,
+            alignment: .right
+        )
+        drawFixed(
+            detail,
+            in: CGRect(x: contentRect.minX, y: rowY + 15, width: contentRect.width, height: 12),
+            font: .systemFont(ofSize: 8),
+            color: Palette.secondary
+        )
+
+        let track = CGRect(x: contentRect.minX, y: rowY + 31, width: contentRect.width, height: 7)
+        UIColor(red: 0.91, green: 0.93, blue: 0.96, alpha: 1).setFill()
+        UIBezierPath(roundedRect: track, cornerRadius: 3.5).fill()
+        let ratio = min(1, max(0, CGFloat(Double(amount.minorUnits) / Double(maximum))))
+        let bar = CGRect(x: track.minX, y: track.minY, width: max(1, track.width * ratio), height: track.height)
+        Palette.accent.setFill()
+        UIBezierPath(roundedRect: bar, cornerRadius: 3.5).fill()
+        y = rowY + 46
+    }
+
+    private func drawTransactions(_ report: MetricsReportData) {
+        drawSectionTitle("Transactions")
+        guard report.includesTransactions else {
+            drawText(
+                "Transaction details were excluded from this export.",
+                font: .systemFont(ofSize: 10),
+                color: Palette.secondary,
+                spacingAfter: 12
+            )
+            return
+        }
+        guard !report.transactions.isEmpty else {
+            drawText(
+                "No transactions were recorded in this range.",
+                font: .systemFont(ofSize: 10),
+                color: Palette.secondary,
+                spacingAfter: 12
+            )
+            return
+        }
+
+        let shownCount = report.transactions.count
+        let shownDescription = shownCount == report.totalTransactionCount
+            ? "All \(shownCount) transactions"
+            : "Latest \(shownCount) of \(report.totalTransactionCount) transactions"
+        drawText(
+            "\(shownDescription), newest first.",
+            font: .systemFont(ofSize: 9),
+            color: Palette.secondary,
+            spacingAfter: 8
+        )
+        for transaction in report.transactions {
+            drawTransaction(transaction)
+        }
+    }
+
+    private func drawTransaction(_ transaction: MetricsReportTransaction) {
+        let note = transaction.note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = note.isEmpty ? "No description" : note.replacingOccurrences(of: "\n", with: " ")
+        let noteAttributes: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 10, weight: .semibold)]
+        let noteBounds = (description as NSString).boundingRect(
+            with: CGSize(width: contentRect.width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: noteAttributes,
+            context: nil
+        )
+        let noteHeight = max(12, ceil(noteBounds.height))
+        ensureSpace(42 + noteHeight)
+        let rowY = y
+        let dateAndKind = "\(transaction.date.formatted(date: .abbreviated, time: .omitted)) · \(transaction.kind.displayName)"
+        drawFixed(
+            dateAndKind,
+            in: CGRect(x: contentRect.minX, y: rowY, width: 330, height: 13),
+            font: .systemFont(ofSize: 8),
+            color: Palette.secondary
+        )
+        drawFixed(
+            transaction.amount,
+            in: CGRect(x: contentRect.maxX - 170, y: rowY, width: 170, height: 15),
+            font: .systemFont(ofSize: 10, weight: .semibold),
+            color: Palette.primary,
+            alignment: .right
+        )
+        y = rowY + 15
+        drawText(
+            description,
+            font: .systemFont(ofSize: 10, weight: .semibold),
+            color: Palette.primary,
+            spacingAfter: 2
+        )
+        drawFixed(
+            transaction.category,
+            in: CGRect(x: contentRect.minX, y: y, width: contentRect.width, height: 12),
+            font: .systemFont(ofSize: 8),
+            color: Palette.secondary
+        )
+        drawLine(at: y + 15)
+        y += 20
     }
 
     private func drawSectionTitle(_ title: String) {

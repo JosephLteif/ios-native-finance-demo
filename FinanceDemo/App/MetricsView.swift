@@ -131,6 +131,7 @@ private struct CategoryMetricsDetailSnapshot {
 @MainActor
 struct MetricsView: View {
     @ObservedObject var store: LedgerStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var period: MetricsPeriod = .month
     @State private var selectedCurrency: LedgerCurrency = .usd
@@ -139,6 +140,8 @@ struct MetricsView: View {
     @State private var customEnd = Date.now
     @State private var selectedCategoryID: UUID?
     @State private var breakdown: MetricsBreakdown = .category
+    @State private var isShowingBreakdownFilters = false
+    @State private var isExportOptionsPresented = false
     @State private var reportToShare: MetricsReportShareItem?
     @State private var reportError: String?
     @State private var snapshot = MetricsSnapshot.empty
@@ -168,7 +171,7 @@ struct MetricsView: View {
             ScrollView(showsIndicators: false) {
                 PocketGlassContainer(spacing: 14) {
                     VStack(alignment: .leading, spacing: 0) {
-                        screenHeader
+                        screenSubtitle
                         periodControls
                         periodNavigator
                         totalsHeader(snapshot)
@@ -182,7 +185,20 @@ struct MetricsView: View {
                 }
             }
             .pocketScreen()
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Metrics")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        isExportOptionsPresented = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Share metrics PDF report")
+                    .accessibilityHint("Creates a shareable PDF report")
+                }
+            }
             .onAppear(perform: refreshSnapshot)
             .onChange(of: period) { _, _ in refreshSnapshot() }
             .onChange(of: selectedCurrency) { _, _ in refreshSnapshot() }
@@ -194,6 +210,31 @@ struct MetricsView: View {
             .sheet(item: $reportToShare) { report in
                 MetricsReportShareSheet(url: report.url)
             }
+            .confirmationDialog(
+                "Export Metrics PDF",
+                isPresented: $isExportOptionsPresented,
+                titleVisibility: .visible
+            ) {
+                Button("All \(snapshot.filteredTransactions.count) transactions") {
+                    generateReport(transactionLimit: nil)
+                }
+                if snapshot.filteredTransactions.count > 500 {
+                    Button("Latest 500 transactions") {
+                        generateReport(transactionLimit: 500)
+                    }
+                }
+                if snapshot.filteredTransactions.count > 100 {
+                    Button("Latest 100 transactions") {
+                        generateReport(transactionLimit: 100)
+                    }
+                }
+                Button("Summary only") {
+                    generateReport(transactionLimit: 0)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The report uses the current period and filters. Transaction details are listed newest first.")
+            }
             .alert("Report not created", isPresented: reportErrorPresented) {
                 Button("OK") { reportError = nil }
             } message: {
@@ -202,33 +243,12 @@ struct MetricsView: View {
         }
     }
 
-    private var screenHeader: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Metrics")
-                    .font(.largeTitle.weight(.semibold))
-                Text("See how your money moves")
-                    .font(.subheadline)
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-            }
-
-            Spacer(minLength: 8)
-
-            Button(action: generateReport) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.headline.weight(.semibold))
-                    .frame(minWidth: 44, minHeight: 44)
-                    .pocketGlassSurface(cornerRadius: 22, tint: PocketLedgerTheme.accent.opacity(0.14), interactive: true)
-                    .overlay {
-                        Circle().stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                    }
-            }
-            .foregroundStyle(PocketLedgerTheme.accent)
-            .accessibilityLabel("Share metrics PDF report")
-            .accessibilityHint("Creates a shareable PDF report")
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 14)
+    private var screenSubtitle: some View {
+        Text("See how your money moves")
+            .font(.subheadline)
+            .foregroundStyle(PocketLedgerTheme.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 14)
     }
 
     private var periodControls: some View {
@@ -253,24 +273,62 @@ struct MetricsView: View {
                 .pocketGlassSurface(cornerRadius: 10, tint: PocketLedgerTheme.surfaceElevated.opacity(0.22))
             }
 
-            Picker("Breakdown", selection: $breakdown) {
-                ForEach(MetricsBreakdown.allCases) { option in
-                    Text(option.rawValue).tag(option)
+            Button {
+                isShowingBreakdownFilters = true
+            } label: {
+                HStack {
+                    Label("Refine", systemImage: "slider.horizontal.3")
+                    Spacer()
+                    Text("\(breakdown.rawValue) · \(selectedCategoryTitle)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
                 }
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .pocketGlassSurface(cornerRadius: 11)
             }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("metrics-breakdown-picker")
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("metrics-secondary-filters")
+            .sheet(isPresented: $isShowingBreakdownFilters) {
+                NavigationStack {
+                    Form {
+                        Section("Breakdown") {
+                            Picker("Show spending by", selection: $breakdown) {
+                                ForEach(MetricsBreakdown.allCases) { option in
+                                    Text(option.rawValue).tag(option)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .accessibilityIdentifier("metrics-breakdown-picker")
+                        }
 
-            Picker("Category", selection: $selectedCategoryID) {
-                Text("All categories").tag(UUID?.none)
-                CategoryPickerContent(
-                    categories: store.activeCategories,
-                    includeUncategorized: false
-                )
+                        Section("Category") {
+                            Picker("Include", selection: $selectedCategoryID) {
+                                Text("All categories").tag(UUID?.none)
+                                CategoryPickerContent(
+                                    categories: store.activeCategories,
+                                    includeUncategorized: false
+                                )
+                            }
+                            .pickerStyle(.menu)
+                        }
+                    }
+                    .navigationTitle("Breakdown")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { isShowingBreakdownFilters = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .tint(PocketLedgerTheme.textPrimary)
         }
         .padding(4)
         .pocketGlassSurface(cornerRadius: 13)
@@ -278,6 +336,11 @@ struct MetricsView: View {
             RoundedRectangle(cornerRadius: 13)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
         }
+    }
+
+    private var selectedCategoryTitle: String {
+        guard let selectedCategoryID else { return "All categories" }
+        return store.categoryPath(for: selectedCategoryID)
     }
 
     private var periodNavigator: some View {
@@ -334,6 +397,8 @@ struct MetricsView: View {
                 Text(Money(currency: selectedCurrency, minorUnits: snapshot.income).formatted)
                     .font(.title3.weight(.semibold).monospacedDigit())
                     .foregroundStyle(PocketLedgerTheme.income)
+                    .contentTransition(.numericText(value: Double(snapshot.income)))
+                    .animation(PocketLedgerMotion.quick(reduceMotion: reduceMotion), value: snapshot.income)
             }
 
             Spacer()
@@ -345,6 +410,8 @@ struct MetricsView: View {
                 Text(Money(currency: selectedCurrency, minorUnits: snapshot.expenses).formatted)
                     .font(.title3.weight(.semibold).monospacedDigit())
                     .foregroundStyle(PocketLedgerTheme.warning)
+                    .contentTransition(.numericText(value: Double(snapshot.expenses)))
+                    .animation(PocketLedgerMotion.quick(reduceMotion: reduceMotion), value: snapshot.expenses)
             }
         }
         .padding(.bottom, 12)
@@ -446,6 +513,8 @@ struct MetricsView: View {
                 .font(.headline.weight(.bold).monospacedDigit())
                 .minimumScaleFactor(0.8)
                 .lineLimit(1)
+                .contentTransition(.numericText(value: Double(total)))
+                .animation(PocketLedgerMotion.quick(reduceMotion: reduceMotion), value: total)
             Text("TOTAL SPENT")
                 .font(.caption2.weight(.bold))
                 .tracking(0.8)
@@ -632,21 +701,91 @@ struct MetricsView: View {
     }
 
     private func refreshSnapshot() {
-        snapshot = MetricsSnapshot.make(
-            index: store.ledgerIndex,
-            interval: interval,
-            selectedCurrency: selectedCurrency,
-            selectedCategoryID: selectedCategoryID
-        )
+        withAnimation(PocketLedgerMotion.expressive(reduceMotion: reduceMotion)) {
+            snapshot = MetricsSnapshot.make(
+                index: store.ledgerIndex,
+                interval: interval,
+                selectedCurrency: selectedCurrency,
+                selectedCategoryID: selectedCategoryID
+            )
+        }
     }
 
-    private func generateReport() {
+    private func generateReport(transactionLimit: Int?) {
         let currentSnapshot = MetricsSnapshot.make(
             index: store.ledgerIndex,
             interval: interval,
             selectedCurrency: selectedCurrency,
             selectedCategoryID: selectedCategoryID
         )
+
+        var spendingByCurrency: [LedgerCurrency: Int64] = [:]
+        for transaction in currentSnapshot.filteredTransactions where transaction.kind == .expense {
+            for movement in transaction.outflows {
+                guard store.ledgerIndex.includesInTotals(accountID: movement.accountID),
+                      let amount = financeConvertedMinorUnits(
+                          movement.money,
+                          to: selectedCurrency,
+                          using: transaction.exchangeRate
+                      ) else {
+                    continue
+                }
+                spendingByCurrency[movement.money.currency, default: 0] += amount
+            }
+            for movement in transaction.inflows {
+                guard store.ledgerIndex.includesInTotals(accountID: movement.accountID),
+                      let amount = financeConvertedMinorUnits(
+                          movement.money,
+                          to: selectedCurrency,
+                          using: transaction.exchangeRate
+                      ) else {
+                    continue
+                }
+                spendingByCurrency[movement.money.currency, default: 0] -= amount
+            }
+        }
+        let positiveCurrencyTotals = spendingByCurrency
+            .filter { $0.value > 0 }
+            .sorted {
+                $0.value == $1.value
+                    ? $0.key.rawValue < $1.key.rawValue
+                    : $0.value > $1.value
+            }
+        let currencyTotal = positiveCurrencyTotals.reduce(Int64.zero) { $0 + $1.value }
+        let allTransactions = currentSnapshot.filteredTransactions
+        let selectedTransactions = transactionLimit.map { Array(allTransactions.prefix(max(0, $0))) }
+            ?? allTransactions
+        let reportTransactions = selectedTransactions.map { transaction in
+            let outflow = store.ledgerIndex.movementTotal(
+                transaction.outflows,
+                currency: selectedCurrency,
+                exchangeRate: transaction.exchangeRate
+            )
+            let inflow = store.ledgerIndex.movementTotal(
+                transaction.inflows,
+                currency: selectedCurrency,
+                exchangeRate: transaction.exchangeRate
+            )
+            let amount: String
+            switch transaction.kind {
+            case .expense:
+                amount = Money(
+                    currency: selectedCurrency,
+                    minorUnits: store.ledgerIndex.netExpenseAmount(transaction, currency: selectedCurrency)
+                ).formatted
+            case .income:
+                amount = Money(currency: selectedCurrency, minorUnits: inflow).formatted
+            case .transfer:
+                amount = "\(Money(currency: selectedCurrency, minorUnits: outflow).formatted) → \(Money(currency: selectedCurrency, minorUnits: inflow).formatted)"
+            }
+            return MetricsReportTransaction(
+                date: transaction.date,
+                note: transaction.note,
+                kind: transaction.kind,
+                category: store.ledgerIndex.categoryPath(for: transaction.categoryID),
+                amount: amount
+            )
+        }
         let report = MetricsReportData(
             periodTitle: periodTitle,
             dateRange: intervalLabel,
@@ -664,6 +803,16 @@ struct MetricsView: View {
                     percentage: percentage(for: $0, total: currentSnapshot.expenses)
                 )
             },
+            currencyBreakdown: positiveCurrencyTotals.map { currency, amount in
+                MetricsReportSeries(
+                    title: currency.rawValue,
+                    amount: Money(currency: selectedCurrency, minorUnits: amount),
+                    percentage: currencyTotal > 0 ? Int((Double(amount) / Double(currencyTotal) * 100).rounded()) : 0
+                )
+            },
+            transactions: reportTransactions,
+            totalTransactionCount: allTransactions.count,
+            includesTransactions: transactionLimit != 0,
             generatedAt: .now
         )
 

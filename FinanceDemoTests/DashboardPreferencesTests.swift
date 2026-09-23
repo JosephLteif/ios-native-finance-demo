@@ -2,15 +2,15 @@ import XCTest
 @testable import FinanceDemo
 
 final class DashboardPreferencesTests: XCTestCase {
-    func testDefaultsMatchTheCurrentDashboardOrder() {
+    func testDefaultsPrioritizeDailySummaryWidgets() {
         XCTAssertEqual(
             DashboardPreferences.defaultPreferences.order,
             [
                 .balance,
                 .attention,
-                .accounts,
                 .monthSummary,
                 .recentActivity,
+                .accounts,
                 .upcoming,
                 .cashFlow,
                 .budgetPulse,
@@ -19,7 +19,7 @@ final class DashboardPreferencesTests: XCTestCase {
         )
         XCTAssertEqual(
             DashboardPreferences.defaultPreferences.enabledWidgets,
-            DashboardPreferences.defaultPreferences.order
+            [.balance, .attention, .monthSummary, .recentActivity]
         )
     }
 

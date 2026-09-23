@@ -1357,8 +1357,8 @@ private struct ImportWizardReviewStep: View {
     var body: some View {
         if let data = draft.importedData {
             List {
-                summarySection(data: data)
                 exceptionsSection(data: data)
+                summarySection(data: data)
                 transactionSection(data: data)
                 Section("Remembered decisions") {
                     Toggle("Remember explicit mappings and account edits", isOn: $rememberRules)
@@ -1379,14 +1379,24 @@ private struct ImportWizardReviewStep: View {
     private func summarySection(data: FinanceData) -> some View {
         Section("Final summary") {
             if let summary = draft.finalSummary {
-                LabeledContent("Transactions to import", value: "\(summary.transactionCount)")
-                LabeledContent("New active accounts", value: "\(summary.activeAccountCount)")
-                LabeledContent("New archived accounts", value: "\(summary.archivedAccountCount)")
-                LabeledContent("New categories", value: "\(summary.categoryCount)")
-                LabeledContent("Accounts remapped", value: "\(summary.remappedAccountCount)")
-                LabeledContent("Rows skipped", value: "\(summary.skippedRowCount)")
+                LabeledContent("Transactions", value: "\(summary.transactionCount)")
+                if summary.skippedRowCount > 0 {
+                    LabeledContent("Rows skipped", value: "\(summary.skippedRowCount)")
+                }
+                DisclosureGroup("Import details") {
+                    LabeledContent("New active accounts", value: "\(summary.activeAccountCount)")
+                    LabeledContent("New archived accounts", value: "\(summary.archivedAccountCount)")
+                    LabeledContent("New categories", value: "\(summary.categoryCount)")
+                    LabeledContent("Accounts remapped", value: "\(summary.remappedAccountCount)")
+                    if summary.skippedRowCount == 0 {
+                        LabeledContent("Rows skipped", value: "0")
+                    }
+                    Text("Archived accounts remain valid for historical rows, but they are excluded from active account choices.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
-            Text("Archived accounts are listed separately and remain valid for historical rows, but they are excluded from active account choices.")
+            Text("Review highlighted exceptions before importing.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

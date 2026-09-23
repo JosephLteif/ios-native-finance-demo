@@ -173,6 +173,16 @@ fileprivate func adaptiveColor(light: UInt32, dark: UInt32) -> Color {
     })
 }
 
+enum PocketLedgerMotion {
+    static func quick(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .snappy(duration: 0.28)
+    }
+
+    static func expressive(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .spring(duration: 0.42, bounce: 0.16)
+    }
+}
+
 enum PocketLedgerTheme {
     static let colorThemeKey = "pocketLedger.colorTheme"
     static let appearanceModeKey = "pocketLedger.appearanceMode"
@@ -295,6 +305,7 @@ struct PocketGlassContainer<Content: View>: View {
 extension View {
     func pocketScreen() -> some View {
         self
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .background {
                 LinearGradient(
                     colors: [
