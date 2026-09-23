@@ -37,6 +37,12 @@ struct ContentView: View {
                 security.refresh()
                 store.reload()
                 store.processDueScheduledTransactions()
+                let schedules = store.data.scheduledTransactions
+                Task {
+                    await NotificationService.refreshScheduledTransactionNotifications(
+                        schedules: schedules
+                    )
+                }
             } else if phase == .inactive {
                 if security.isPasscodeEnabled && !security.isBiometricPromptActive {
                     isUnlocked = false
@@ -58,6 +64,9 @@ struct ContentView: View {
                 return
             }
             store.processDueScheduledTransactions()
+            await NotificationService.refreshScheduledTransactionNotifications(
+                schedules: store.data.scheduledTransactions
+            )
             await FinanceIntentIndexing.shared.refresh()
             if !setupCompleted && store.data.accounts.isEmpty && store.data.categories.isEmpty {
                 isShowingSetup = true
@@ -1755,9 +1764,16 @@ struct TransactionsView: View {
                     Section {
                         ForEach(day.transactions) { transaction in
                             transactionRow(for: transaction)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                                .listRowBackground(PocketLedgerTheme.surface)
-                                .listRowSeparatorTint(PocketLedgerTheme.divider)
+                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                                .listRowBackground(
+                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                        .fill(PocketLedgerTheme.surface)
+                                        .overlay {
+                                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                                        }
+                                )
+                                .listRowSeparator(.hidden)
                         }
                     } header: {
                         dayHeader(day)
@@ -2440,10 +2456,12 @@ private struct AccountsView: View {
     var body: some View {
         List {
             screenSubtitle
+                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
             globalPositionSummary
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
@@ -2465,10 +2483,11 @@ private struct AccountsView: View {
                  : "Persistent storage is unavailable; changes cannot be saved.")
                 .font(.caption)
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 20, trailing: 16))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
         .pocketScreen()
@@ -2640,8 +2659,16 @@ private struct AccountsView: View {
                     }
                     .tint(account.includeInTotals ? PocketLedgerTheme.textSecondary : PocketLedgerTheme.positive)
                 }
-                .listRowBackground(PocketLedgerTheme.surface)
-                .listRowSeparatorTint(PocketLedgerTheme.divider)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowBackground(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(PocketLedgerTheme.surface)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                        }
+                )
+                .listRowSeparator(.hidden)
             }
         } header: {
             HStack(spacing: 8) {
@@ -2693,7 +2720,16 @@ private struct AccountsView: View {
                     }
                     .tint(PocketLedgerTheme.accent)
                 }
-                .listRowBackground(PocketLedgerTheme.surface)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowBackground(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(PocketLedgerTheme.surface)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                        }
+                )
+                .listRowSeparator(.hidden)
             }
         } header: {
             Text("Archived")

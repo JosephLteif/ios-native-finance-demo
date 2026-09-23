@@ -7,7 +7,7 @@ actor ScheduledTransactionLiveActivityService {
     private let maximumDuration: TimeInterval = 8 * 60 * 60
     private let processingGracePeriod: TimeInterval = 30 * 60
 
-    func refresh(schedules: [ScheduledTransaction], isEnabled: Bool) async -> Set<UUID> {
+    func refresh(schedules: [ScheduledTransaction], isEnabled: Bool) async {
         let now = Date.now
         let existingActivities = Activity<ScheduledTransactionActivityAttributes>.activities
 
@@ -17,30 +17,21 @@ actor ScheduledTransactionLiveActivityService {
                 .filter({
                     $0.isEnabled
                         && $0.nextRunDate > now
-                        && ($0.reminderTiming ?? NotificationService.globalReminderTiming) != .none
                 })
                 .min(by: { $0.nextRunDate < $1.nextRunDate }) else {
             await end(existingActivities)
-            return []
+            return
         }
 
-        let reminderTiming = schedule.reminderTiming ?? NotificationService.globalReminderTiming
-        let reminderDate = schedule.nextRunDate.addingTimeInterval(-reminderTiming.leadTime)
-        let notificationStartDate = reminderDate.timeIntervalSince(now) > 1
-            ? reminderDate
-            : now.addingTimeInterval(1)
         let activityStartDate = max(
-            notificationStartDate,
-            schedule.nextRunDate.addingTimeInterval(-(maximumDuration - processingGracePeriod))
+            now.addingTimeInterval(1),
+            schedule.nextRunDate.addingTimeInterval(-maximumDuration)
         )
         let groupedSchedules = schedules
             .filter {
                 $0.isEnabled
                     && $0.nextRunDate >= schedule.nextRunDate
-                    && $0.nextRunDate <= activityStartDate.addingTimeInterval(
-                        maximumDuration - processingGracePeriod
-                    )
-                    && ($0.reminderTiming ?? NotificationService.globalReminderTiming) != .none
+                    && $0.nextRunDate <= schedule.nextRunDate.addingTimeInterval(maximumDuration)
             }
             .sorted { $0.nextRunDate < $1.nextRunDate }
         let items = groupedSchedules.prefix(3).map {
@@ -73,11 +64,7 @@ actor ScheduledTransactionLiveActivityService {
                 await matchingActivity.update(content)
             }
             await end(existingActivities.filter { $0.id != matchingActivity.id })
-            return notificationIDsReplacedByActivity(
-                schedules: groupedSchedules,
-                activityStartDate: activityStartDate,
-                now: now
-            )
+            return
         }
 
         await end(existingActivities)
@@ -96,31 +83,7 @@ actor ScheduledTransactionLiveActivityService {
                 alertConfiguration: alert,
                 start: activityStartDate
             )
-            return notificationIDsReplacedByActivity(
-                schedules: groupedSchedules,
-                activityStartDate: activityStartDate,
-                now: now
-            )
-        } catch {
-            return []
-        }
-    }
-
-    private func notificationIDsReplacedByActivity(
-        schedules: [ScheduledTransaction],
-        activityStartDate: Date,
-        now: Date
-    ) -> Set<UUID> {
-        Set(schedules.compactMap { schedule in
-            let timing = schedule.reminderTiming ?? NotificationService.globalReminderTiming
-            let reminderDate = schedule.nextRunDate.addingTimeInterval(-timing.leadTime)
-            let notificationStartDate = reminderDate.timeIntervalSince(now) > 1
-                ? reminderDate
-                : now.addingTimeInterval(1)
-            return abs(activityStartDate.timeIntervalSince(notificationStartDate)) <= 1
-                ? schedule.id
-                : nil
-        })
+        } catch {}
     }
 
     private func end(

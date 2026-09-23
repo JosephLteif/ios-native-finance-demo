@@ -10,6 +10,11 @@ enum NotificationService {
     static let dailyTransactionReminderMinutesKey = "pocketLedger.dailyTransactionReminderMinutes"
     static let dailyTransactionReminderDefaultMinutes = 20 * 60
 
+    @MainActor
+    static func configureForegroundPresentation() {
+        UNUserNotificationCenter.current().delegate = ScheduledNotificationDelegate.shared
+    }
+
     static var globalReminderTiming: ScheduledReminderTiming {
         ScheduledReminderTiming(
             rawValue: UserDefaults.standard.string(forKey: globalReminderKey) ?? ""
@@ -137,7 +142,7 @@ enum NotificationService {
     static func refreshScheduledTransactionNotifications(
         schedules: [ScheduledTransaction]
     ) async {
-        let liveActivityReminderIDs = await ScheduledTransactionLiveActivityService.shared.refresh(
+        await ScheduledTransactionLiveActivityService.shared.refresh(
             schedules: schedules,
             isEnabled: UserDefaults.standard.bool(forKey: scheduledLiveActivityEnabledKey)
         )
@@ -153,17 +158,18 @@ enum NotificationService {
         for schedule in schedules where schedule.isEnabled && schedule.nextRunDate > now {
             let timing = schedule.reminderTiming ?? globalReminderTiming
             guard timing != .none else { continue }
-            if liveActivityReminderIDs.contains(schedule.id) { continue }
 
             let content = UNMutableNotificationContent()
             content.title = "Pocket Ledger"
             let title = schedule.note.isEmpty ? schedule.kind.displayName : schedule.note
-            let dueDate = schedule.nextRunDate.formatted(.dateTime.month(.abbreviated).day())
+            let dueDate = schedule.nextRunDate.formatted(date: .abbreviated, time: .shortened)
             content.body = "\(title) is scheduled for \(dueDate)."
             content.sound = .default
             content.userInfo = ["scheduledTransactionID": schedule.id.uuidString]
 
-            let reminderDate = schedule.nextRunDate.addingTimeInterval(-timing.leadTime)
+            let reminderDate = timing == .atDue
+                ? schedule.nextRunDate
+                : schedule.nextRunDate.addingTimeInterval(-timing.leadTime)
             let trigger: UNNotificationTrigger
             if reminderDate.timeIntervalSince(now) > 1 {
                 let components = calendar.dateComponents(
@@ -185,9 +191,7 @@ enum NotificationService {
 
             do {
                 try await center.add(request)
-            } catch {
-                continue
-            }
+            } catch { continue }
         }
     }
 
@@ -203,5 +207,17 @@ enum NotificationService {
                 return "Notification permission is unavailable right now."
             }
         }
+    }
+}
+
+@MainActor
+private final class ScheduledNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = ScheduledNotificationDelegate()
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
     }
 }
