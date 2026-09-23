@@ -210,8 +210,11 @@ enum NotificationService {
     }
 }
 
-@MainActor
-private final class ScheduledNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+private final class ScheduledNotificationDelegate:
+    NSObject,
+    UNUserNotificationCenterDelegate,
+    @unchecked Sendable
+{
     static let shared = ScheduledNotificationDelegate()
 
     func userNotificationCenter(
