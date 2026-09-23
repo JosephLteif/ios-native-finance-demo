@@ -538,7 +538,6 @@ struct BillScannerView: View {
             .sheet(isPresented: $isPresentingTransactionEditor) {
                 TransactionEditor(
                     store: store,
-                    initialAmount: pendingTotal,
                     initialBillTotal: pendingTotal,
                     initialNote: transactionNote,
                     initialAttachmentData: attachmentData,
