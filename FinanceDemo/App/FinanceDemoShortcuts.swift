@@ -173,16 +173,30 @@ struct FinanceDemoShortcuts: AppShortcutsProvider {
             shortTitle: "Check Budgets",
             systemImageName: "chart.bar.doc.horizontal"
         )
+#if compiler(>=6.4)
         if #available(iOS 27.0, *) {
             AppShortcut(
                 intent: SearchPocketLedgerIntent(),
                 phrases: [
-                    "Search for \(\.$criteria) in \(.applicationName)",
-                    "Find \(\.$criteria) in \(.applicationName)"
+                    "Search in \(.applicationName)",
+                    "Find something in \(.applicationName)"
                 ],
                 shortTitle: "Search Pocket Ledger",
                 systemImageName: "magnifyingglass"
             )
         }
+#else
+        if #available(iOS 17.0, *) {
+            AppShortcut(
+                intent: SearchPocketLedgerIntent(),
+                phrases: [
+                    "Search in \(.applicationName)",
+                    "Find something in \(.applicationName)"
+                ],
+                shortTitle: "Search Pocket Ledger",
+                systemImageName: "magnifyingglass"
+            )
+        }
+#endif
     }
 }

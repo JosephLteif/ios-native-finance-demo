@@ -1,3 +1,4 @@
+import AppIntents
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -3479,14 +3480,7 @@ struct TransactionEditor: View {
                 synchronizeAutomaticTransferAmount()
             }
             .onChange(of: kind) { _, newKind in
-                if newKind == .transfer && inflows.isEmpty {
-                    inflows.append(newReceivingMovementDraft)
-                }
-                if newKind != .transfer {
-                    automaticTransferDestinationAmount = nil
-                }
-                synchronizeRatePair()
-                synchronizeAutomaticTransferAmount()
+                handleKindChange(newKind)
             }
             .onChange(of: selectedCurrencies) { _, _ in
                 if kind == .expense && selectedCurrencies.count > 1 {
@@ -4491,6 +4485,17 @@ struct TransactionEditor: View {
         if let savedRate {
             rateText = NSDecimalNumber(decimal: savedRate.quoteUnitsPerBaseUnit).stringValue
         }
+    }
+
+    private func handleKindChange(_ newKind: TransactionKind) {
+        if newKind == .transfer && inflows.isEmpty {
+            inflows.append(newReceivingMovementDraft)
+        }
+        if newKind != .transfer {
+            automaticTransferDestinationAmount = nil
+        }
+        synchronizeRatePair()
+        synchronizeAutomaticTransferAmount()
     }
 
     private func prepareCustomRate() {

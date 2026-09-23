@@ -75,12 +75,18 @@ struct FinanceAccountIntentValueQuery: IntentValueQuery {
     }
 }
 
+#if compiler(>=6.4)
 @available(iOS 27.0, *)
 @AppIntent(schema: .system.searchInApp)
+#else
+@available(iOS 17.0, *)
+@AssistantIntent(schema: .system.search)
+#endif
 struct SearchPocketLedgerIntent: ShowInAppSearchResultsIntent {
     static let title: LocalizedStringResource = "Search Pocket Ledger"
     static let description = IntentDescription("Search saved accounts, categories, and transactions in Pocket Ledger.")
     static let searchScopes: [StringSearchScope] = [.general]
+    static let openAppWhenRun = true
 
     var criteria: StringSearchCriteria
 
