@@ -201,10 +201,14 @@ private final class PocketLedgerTabBarController: UITabBarController {
         )
         visibleTabBar.frame = tabBarFrame
 
-        visibleTabBar.layoutIfNeeded()
+        let contentBottom = min(
+            tabBarFrame.maxY,
+            view.bounds.maxY - (view.window?.safeAreaInsets.bottom ?? view.safeAreaInsets.bottom)
+        )
+        let contentCenterY = (tabBarFrame.minY + contentBottom) / 2
         let buttonFrame = CGRect(
             x: buttonTrailing - buttonSize,
-            y: tabBarFrame.midY - buttonSize / 2,
+            y: contentCenterY - buttonSize / 2,
             width: buttonSize,
             height: buttonSize
         )
