@@ -80,7 +80,7 @@ struct FinanceAccountIntentValueQuery: IntentValueQuery {
 @AppIntent(schema: .system.searchInApp)
 #else
 @available(iOS 17.0, *)
-@AssistantIntent(schema: .system.search)
+@AppIntent(schema: .system.search)
 #endif
 struct SearchPocketLedgerIntent: ShowInAppSearchResultsIntent {
     static let title: LocalizedStringResource = "Search Pocket Ledger"
