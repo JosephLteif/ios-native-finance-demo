@@ -101,6 +101,7 @@ struct GlobalSearchView: View {
     @Binding var searchText: String
     @State private var results = GlobalSearchSnapshot.empty
     @State private var editingTransaction: LedgerTransaction?
+    @FocusState private var isSearchFieldFocused: Bool
 
     private var query: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -197,15 +198,52 @@ struct GlobalSearchView: View {
                 .padding(.bottom, 24)
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            searchField
+        }
         .pocketScreen()
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
-        .onAppear(perform: refreshResults)
+        .onAppear {
+            refreshResults()
+            isSearchFieldFocused = true
+        }
+        .onDisappear { isSearchFieldFocused = false }
         .onChange(of: searchText) { _, _ in refreshResults() }
         .onChange(of: store.ledgerRevision) { _, _ in refreshResults() }
         .sheet(item: $editingTransaction) { transaction in
             TransactionEditor(store: store, transaction: transaction)
         }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+            TextField("Search accounts, transactions, descriptions…", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($isSearchFieldFocused)
+                .accessibilityIdentifier("global-search-field")
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                    isSearchFieldFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(PocketLedgerTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, PocketLedgerTheme.screenHorizontalPadding)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
     }
 
     private func resultsSection<Content: View>(

@@ -3,7 +3,11 @@ import UserNotifications
 
 enum NotificationService {
     private static let scheduledPrefix = "pocket-ledger-scheduled-"
+    private static let dailyTransactionReminderIdentifier = "pocket-ledger-daily-transaction-reminder"
     static let globalReminderKey = "pocketLedger.scheduledReminderTiming"
+    static let dailyTransactionReminderEnabledKey = "pocketLedger.dailyTransactionReminderEnabled"
+    static let dailyTransactionReminderMinutesKey = "pocketLedger.dailyTransactionReminderMinutes"
+    static let dailyTransactionReminderDefaultMinutes = 20 * 60
 
     static var globalReminderTiming: ScheduledReminderTiming {
         ScheduledReminderTiming(
@@ -13,6 +17,50 @@ enum NotificationService {
 
     static func setGlobalReminderTiming(_ timing: ScheduledReminderTiming) {
         UserDefaults.standard.set(timing.rawValue, forKey: globalReminderKey)
+    }
+
+    static func enableDailyTransactionReminder(minutesAfterMidnight: Int) async throws {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+
+        switch settings.authorizationStatus {
+        case .notDetermined:
+            let granted = try await center.requestAuthorization(options: [.alert, .sound])
+            guard granted else { throw DailyReminderError.permissionDenied }
+        case .denied:
+            throw DailyReminderError.permissionDenied
+        case .authorized, .provisional, .ephemeral:
+            break
+        @unknown default:
+            throw DailyReminderError.authorizationUnavailable
+        }
+
+        let minutes = min(max(minutesAfterMidnight, 0), 23 * 60 + 59)
+        let content = UNMutableNotificationContent()
+        content.title = "Time to log today’s transactions"
+        content.body = "Take a moment to add today’s transactions to Pocket Ledger."
+        content.sound = .default
+
+        var dateComponents = DateComponents()
+        dateComponents.calendar = Calendar.current
+        dateComponents.hour = minutes / 60
+        dateComponents.minute = minutes % 60
+        let trigger = UNCalendarNotificationTrigger(
+            dateMatching: dateComponents,
+            repeats: true
+        )
+        let request = UNNotificationRequest(
+            identifier: dailyTransactionReminderIdentifier,
+            content: content,
+            trigger: trigger
+        )
+        try await center.add(request)
+    }
+
+    static func disableDailyTransactionReminder() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: [dailyTransactionReminderIdentifier]
+        )
     }
 
     static func scheduleDemoNotification() async -> String {
@@ -133,6 +181,20 @@ enum NotificationService {
                 try await center.add(request)
             } catch {
                 continue
+            }
+        }
+    }
+
+    private enum DailyReminderError: LocalizedError {
+        case permissionDenied
+        case authorizationUnavailable
+
+        var errorDescription: String? {
+            switch self {
+            case .permissionDenied:
+                return "Allow notifications for Pocket Ledger in iPhone Settings to enable this reminder."
+            case .authorizationUnavailable:
+                return "Notification permission is unavailable right now."
             }
         }
     }

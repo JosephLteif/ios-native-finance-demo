@@ -31,8 +31,14 @@ struct SecuritySettingsView: View {
     @State private var isShowingRemoveConfirmation = false
     @State private var isUpdatingBiometrics = false
     @State private var errorMessage: String?
+    @State private var dailyReminderStatus: String?
+    @State private var isUpdatingDailyReminder = false
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
+    @AppStorage(NotificationService.dailyTransactionReminderEnabledKey)
+    private var isDailyTransactionReminderEnabled = false
+    @AppStorage(NotificationService.dailyTransactionReminderMinutesKey)
+    private var dailyTransactionReminderMinutes = NotificationService.dailyTransactionReminderDefaultMinutes
 
     var body: some View {
         Form {
@@ -81,6 +87,36 @@ struct SecuritySettingsView: View {
                     Text("Choose a palette and decide whether Pocket Ledger follows the device appearance or stays light or dark.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                Section("Reminders") {
+                    Toggle(isOn: dailyReminderEnabledBinding) {
+                        Label("Daily transaction reminder", systemImage: "bell.badge")
+                    }
+                    .disabled(isUpdatingDailyReminder)
+                    .accessibilityIdentifier("daily-transaction-reminder-toggle")
+
+                    DatePicker(
+                        "Reminder time",
+                        selection: dailyReminderTimeBinding,
+                        displayedComponents: .hourAndMinute
+                    )
+                    .disabled(isUpdatingDailyReminder)
+                    .accessibilityIdentifier("daily-transaction-reminder-time")
+
+                    Text("Get a daily notification to add today’s transactions. Notification access is requested when you enable this reminder.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    if let dailyReminderStatus {
+                        Text(dailyReminderStatus)
+                            .font(.footnote)
+                            .foregroundStyle(
+                                dailyReminderStatus.contains("Allow notifications")
+                                    ? PocketLedgerTheme.warning
+                                    : PocketLedgerTheme.textSecondary
+                            )
+                    }
                 }
 
                 Section("App lock") {
@@ -177,6 +213,58 @@ struct SecuritySettingsView: View {
             } message: {
                 Text(errorMessage ?? "")
             }
+    }
+
+    private var dailyReminderEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { isDailyTransactionReminderEnabled },
+            set: { updateDailyTransactionReminder(isEnabled: $0) }
+        )
+    }
+
+    private var dailyReminderTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(
+                    bySettingHour: dailyTransactionReminderMinutes / 60,
+                    minute: dailyTransactionReminderMinutes % 60,
+                    second: 0,
+                    of: .now
+                ) ?? .now
+            },
+            set: { date in
+                let components = Calendar.current.dateComponents([.hour, .minute], from: date)
+                dailyTransactionReminderMinutes = (components.hour ?? 20) * 60
+                    + (components.minute ?? 0)
+                if isDailyTransactionReminderEnabled {
+                    updateDailyTransactionReminder(isEnabled: true)
+                }
+            }
+        )
+    }
+
+    private func updateDailyTransactionReminder(isEnabled: Bool) {
+        guard !isUpdatingDailyReminder else { return }
+        isDailyTransactionReminderEnabled = isEnabled
+        isUpdatingDailyReminder = true
+
+        Task {
+            defer { isUpdatingDailyReminder = false }
+            if isEnabled {
+                do {
+                    try await NotificationService.enableDailyTransactionReminder(
+                        minutesAfterMidnight: dailyTransactionReminderMinutes
+                    )
+                    dailyReminderStatus = "Daily transaction reminder is enabled."
+                } catch {
+                    isDailyTransactionReminderEnabled = false
+                    dailyReminderStatus = error.localizedDescription
+                }
+            } else {
+                NotificationService.disableDailyTransactionReminder()
+                dailyReminderStatus = "Daily transaction reminder is off."
+            }
+        }
     }
 
     private var biometricsBinding: Binding<Bool> {
