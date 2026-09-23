@@ -150,17 +150,19 @@ struct ContentView: View {
 @MainActor
 private final class PocketLedgerTabBarController: UITabBarController {
     private let visibleTabBar = UITabBar()
+    private weak var addButton: UIButton?
+
     private let addButtonSize: CGFloat = 52
+    private let horizontalInset: CGFloat = 16
+    private let controlSpacing: CGFloat = 10
 
     func installAddButton(_ button: UIButton) {
-        button.translatesAutoresizingMaskIntoConstraints = false
+        // Keep both controls frame-based. Mixing Auto Layout for the button with
+        // a manually framed UITabBar causes the button to use stale bar geometry
+        // during layout, which is especially visible with the iOS 26 tab bar.
+        addButton = button
+        button.translatesAutoresizingMaskIntoConstraints = true
         view.addSubview(button)
-        NSLayoutConstraint.activate([
-            button.centerYAnchor.constraint(equalTo: visibleTabBar.centerYAnchor),
-            button.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            button.widthAnchor.constraint(equalToConstant: addButtonSize),
-            button.heightAnchor.constraint(equalToConstant: addButtonSize)
-        ])
     }
 
     func installVisibleTabBar(items: [UITabBarItem], delegate: any UITabBarDelegate) {
@@ -168,12 +170,15 @@ private final class PocketLedgerTabBarController: UITabBarController {
         tabBar.alpha = 0
         tabBar.isUserInteractionEnabled = false
         tabBar.accessibilityElementsHidden = true
+
         visibleTabBar.items = items
         visibleTabBar.delegate = delegate
         visibleTabBar.tintColor = UIColor(PocketLedgerTheme.accent)
         visibleTabBar.unselectedItemTintColor = UIColor(PocketLedgerTheme.textSecondary)
         visibleTabBar.isTranslucent = true
         visibleTabBar.accessibilityIdentifier = "main-tab-bar"
+        visibleTabBar.translatesAutoresizingMaskIntoConstraints = true
+
         if visibleTabBar.superview == nil {
             view.addSubview(visibleTabBar)
         }
@@ -189,19 +194,42 @@ private final class PocketLedgerTabBarController: UITabBarController {
 
         guard visibleTabBar.superview != nil else { return }
 
+        let safeFrame = view.safeAreaLayoutGuide.layoutFrame
         let systemTabBarFrame = tabBar.frame
-        // The visible bar and Add control share the same row. The tab bar's
-        // own horizontal inset leaves visual separation at the trailing edge.
-        let tabBarHeight = max(49, visibleTabBar.sizeThatFits(view.bounds.size).height)
-        let buttonTrailing = view.safeAreaLayoutGuide.layoutFrame.maxX - 16
-        let tabBarLeading = max(view.safeAreaLayoutGuide.layoutFrame.minX, 16)
-        let tabBarFrame = CGRect(
-            x: tabBarLeading,
+
+        // Match the native tab bar's vertical geometry instead of asking the
+        // standalone bar for a second, potentially different, fitted height.
+        let tabBarHeight = max(49, systemTabBarFrame.height)
+
+        let trailingEdge = safeFrame.maxX - horizontalInset
+        let leadingEdge = max(safeFrame.minX, horizontalInset)
+        let addButtonX = trailingEdge - addButtonSize
+        let tabBarTrailingEdge = addButtonX - controlSpacing
+
+        visibleTabBar.frame = CGRect(
+            x: leadingEdge,
             y: systemTabBarFrame.minY,
-            width: max(0, buttonTrailing - addButtonSize - tabBarLeading),
+            width: max(0, tabBarTrailingEdge - leadingEdge),
             height: tabBarHeight
         )
-        visibleTabBar.frame = tabBarFrame
+
+        guard let addButton else { return }
+
+        // UITabBar's frame includes the bottom safe-area inset on iPhones with a
+        // home indicator. Its items live in the content row above that inset, so
+        // centering the Add button in the full frame makes it visibly too low.
+        let bottomSafeInset = max(0, view.bounds.maxY - safeFrame.maxY)
+        let tabBarContentHeight = max(49, tabBarHeight - bottomSafeInset)
+        let rowCenterY = systemTabBarFrame.minY + tabBarContentHeight / 2
+
+        addButton.bounds = CGRect(
+            origin: .zero,
+            size: CGSize(width: addButtonSize, height: addButtonSize)
+        )
+        addButton.center = CGPoint(
+            x: addButtonX + addButtonSize / 2,
+            y: rowCenterY
+        )
     }
 }
 
