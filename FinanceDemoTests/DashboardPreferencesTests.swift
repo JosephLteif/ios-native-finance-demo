@@ -36,7 +36,7 @@ final class DashboardPreferencesTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        var preferences = DashboardPreferences.defaultPreferences
+        var preferences = DashboardPreferences()
         preferences.setEnabled(false, for: .cashFlow)
         preferences.move(from: IndexSet(integer: 0), to: preferences.order.count)
         preferences.save(to: defaults)
