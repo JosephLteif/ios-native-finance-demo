@@ -80,7 +80,6 @@ struct FinanceAccountIntentValueQuery: IntentValueQuery {
 @AppIntent(schema: .system.searchInApp)
 #else
 @available(iOS 17.0, *)
-@AppIntent(schema: .system.search)
 #endif
 struct SearchPocketLedgerIntent: ShowInAppSearchResultsIntent {
     static let title: LocalizedStringResource = "Search Pocket Ledger"
@@ -88,7 +87,11 @@ struct SearchPocketLedgerIntent: ShowInAppSearchResultsIntent {
     static let searchScopes: [StringSearchScope] = [.general]
     static let openAppWhenRun = true
 
+#if compiler(>=6.4)
     var criteria: StringSearchCriteria
+#else
+    @Parameter var criteria: StringSearchCriteria
+#endif
 
     func perform() async throws -> some IntentResult {
         await MainActor.run {
