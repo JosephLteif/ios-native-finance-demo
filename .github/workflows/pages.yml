@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - codex/fix-ios-widget-bundle-version
     paths:
       - 'docs/**'
       - '.github/workflows/pages.yml'
