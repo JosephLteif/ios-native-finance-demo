@@ -146,6 +146,9 @@ struct ContentView: View {
                             prompt: "Search accounts, transactions, descriptions…"
                         )
                         .searchFocused($isSearchFieldFocused)
+                        .toolbar {
+                            AddTransactionToolbar(store: store, onAction: { addAction = $0 })
+                        }
                 }
             }
             .accessibilityIdentifier("tab-search")
@@ -172,6 +175,13 @@ struct ContentView: View {
             ) {
                 NavigationStack {
                     AccountsView(store: store)
+                        .toolbar {
+                            AddTransactionToolbar(
+                                store: store,
+                                onAction: { addAction = $0 },
+                                systemImage: "plus.circle"
+                            )
+                        }
                 }
             }
             .accessibilityIdentifier("tab-accounts")
@@ -184,7 +194,8 @@ struct ContentView: View {
                 MoreView(
                     store: store,
                     security: security,
-                    onAddExpense: { addAction = .expense }
+                    onAddExpense: { addAction = .expense },
+                    onAddAction: { addAction = $0 }
                 )
             }
             .accessibilityIdentifier("tab-more")
@@ -284,6 +295,7 @@ enum AddAction: Identifiable {
 private struct AddTransactionToolbar: ToolbarContent {
     @ObservedObject var store: LedgerStore
     let onAction: (AddAction) -> Void
+    var systemImage = "plus"
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
@@ -319,7 +331,7 @@ private struct AddTransactionToolbar: ToolbarContent {
                     }
                 }
             } label: {
-                Image(systemName: "plus")
+                Image(systemName: systemImage)
             }
             .accessibilityLabel("Add")
             .accessibilityHint("Choose what to add")
@@ -389,6 +401,7 @@ private struct MoreView: View {
     @ObservedObject var store: LedgerStore
     @ObservedObject var security: AppSecurityService
     let onAddExpense: () -> Void
+    let onAddAction: (AddAction) -> Void
     @State private var isShowingSetup = false
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
@@ -496,6 +509,9 @@ private struct MoreView: View {
             }
             .navigationTitle("More")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                AddTransactionToolbar(store: store, onAction: onAddAction)
+            }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .foregroundStyle(PocketLedgerTheme.textPrimary)
