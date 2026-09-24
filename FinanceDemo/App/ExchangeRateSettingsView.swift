@@ -136,13 +136,29 @@ private struct ExchangeRateEditor: View {
                         }
                     }
 
+                    Button(action: swapCurrencies) {
+                        Label("Swap currencies", systemImage: "arrow.up.arrow.down")
+                    }
+
                     TextField("Quote units per base unit", text: $rateText)
                         .keyboardType(.decimalPad)
 
-                    if let rate = parsedRate, baseCurrency != quoteCurrency {
-                        Text("1 \(baseCurrency.rawValue) = \(NSDecimalNumber(decimal: rate).stringValue) \(quoteCurrency.rawValue)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    if let rate = parsedRate, rate > 0, baseCurrency != quoteCurrency {
+                        VStack(spacing: 8) {
+                            exchangeMapping(
+                                from: baseCurrency,
+                                to: quoteCurrency,
+                                amount: rate
+                            )
+                            Divider()
+                            exchangeMapping(
+                                from: quoteCurrency,
+                                to: baseCurrency,
+                                amount: reciprocal(of: rate)
+                            )
+                        }
+                        .padding(12)
+                        .pocketGroupedSurface(cornerRadius: 14)
                     }
                 }
 
@@ -181,6 +197,40 @@ private struct ExchangeRateEditor: View {
 
     private var canSave: Bool {
         baseCurrency != quoteCurrency && (parsedRate ?? 0) > 0
+    }
+
+    private func exchangeMapping(
+        from: LedgerCurrency,
+        to: LedgerCurrency,
+        amount: Decimal
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text("1 \(from.rawValue)")
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+            Spacer(minLength: 6)
+            Text("= \(NSDecimalNumber(decimal: amount).stringValue) \(to.rawValue)")
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .font(.footnote)
+    }
+
+    private func reciprocal(of value: Decimal) -> Decimal {
+        NSDecimalNumber(decimal: 1)
+            .dividing(by: NSDecimalNumber(decimal: value))
+            .decimalValue
+    }
+
+    private func swapCurrencies() {
+        let previousBase = baseCurrency
+        baseCurrency = quoteCurrency
+        quoteCurrency = previousBase
+        if let rate = parsedRate, rate > 0 {
+            rateText = NSDecimalNumber(decimal: reciprocal(of: rate)).stringValue
+        }
     }
 
     private var errorPresented: Binding<Bool> {

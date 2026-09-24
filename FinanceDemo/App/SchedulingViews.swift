@@ -1,13 +1,32 @@
 import SwiftUI
 
+private enum ScheduledEditorRoute: Identifiable {
+    case new
+    case edit(ScheduledTransaction)
+
+    var id: String {
+        switch self {
+        case .new:
+            return "new"
+        case .edit(let schedule):
+            return "edit-\(schedule.id)"
+        }
+    }
+
+    var schedule: ScheduledTransaction? {
+        guard case .edit(let schedule) = self else { return nil }
+        return schedule
+    }
+}
+
 @MainActor
 struct ScheduledTransactionsView: View {
     @ObservedObject var store: LedgerStore
 
-    @State private var isPresentingEditor = false
-    @State private var editingSchedule: ScheduledTransaction?
+    @State private var editorRoute: ScheduledEditorRoute?
     @State private var scheduleToDelete: ScheduledTransaction?
     @State private var reminderStatus: String?
+    @State private var isRequestingReminderPermission = false
     @AppStorage(NotificationService.globalReminderKey)
     private var globalReminderRawValue = ScheduledReminderTiming.oneDayBefore.rawValue
 
@@ -30,20 +49,9 @@ struct ScheduledTransactionsView: View {
                 .listRowSeparator(.hidden)
 
             if !schedules.isEmpty {
-                Button {
-                    Task {
-                        reminderStatus = await NotificationService
-                            .requestScheduledTransactionNotifications(
-                                schedules: schedules
-                            )
-                    }
-                } label: {
-                    Label("Enable scheduled reminders", systemImage: "bell.badge")
-                }
-                .buttonStyle(.glass)
-                .tint(PocketLedgerTheme.accent)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+                scheduledReminderSettings
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             if let reminderStatus {
@@ -81,11 +89,11 @@ struct ScheduledTransactionsView: View {
                 .accessibilityLabel("Add scheduled transaction")
             }
         }
-        .sheet(isPresented: $isPresentingEditor, onDismiss: { editingSchedule = nil }) {
+        .sheet(item: $editorRoute) { route in
             TransactionEditor(
                 store: store,
                 initialTiming: .scheduled,
-                scheduledTransaction: editingSchedule
+                scheduledTransaction: route.schedule
             )
         }
         .onChange(of: globalReminderRawValue) { _, _ in
@@ -103,21 +111,92 @@ struct ScheduledTransactionsView: View {
 
     private var globalReminderSettings: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Reminder defaults", systemImage: "bell.badge")
+            Label("Reminder timing", systemImage: "bell.badge")
                 .font(.headline)
                 .foregroundStyle(PocketLedgerTheme.textPrimary)
 
-            Picker("Default reminder", selection: $globalReminderRawValue) {
+            Menu {
                 ForEach(ScheduledReminderTiming.allCases) { timing in
-                    Text(timing.title).tag(timing.rawValue)
+                    Button {
+                        globalReminderRawValue = timing.rawValue
+                    } label: {
+                        if timing == globalReminderTiming {
+                            Label(timing.title, systemImage: "checkmark")
+                        } else {
+                            Text(timing.title)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Default")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(PocketLedgerTheme.textPrimary)
+                        Text("Used when a schedule has no override")
+                            .font(.caption)
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    }
+                    Spacer(minLength: 8)
+                    Text(globalReminderTiming.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PocketLedgerTheme.accent)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+        }
+        .padding(14)
+        .pocketGroupedSurface(cornerRadius: 18)
+    }
+
+    private var scheduledReminderSettings: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "bell.badge.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(PocketLedgerTheme.accent)
+                    .frame(width: 42, height: 42)
+                    .background(PocketLedgerTheme.accent.opacity(0.14), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Scheduled reminders")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PocketLedgerTheme.textPrimary)
+                    Text("Get notified before enabled entries are due.")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
                 }
             }
-            .pickerStyle(.menu)
-            .tint(PocketLedgerTheme.accent)
 
-            Text("Schedules set to Default use this timing. Each schedule can override it below.")
-                .font(.caption)
-                .foregroundStyle(PocketLedgerTheme.textSecondary)
+            Button {
+                Task {
+                    isRequestingReminderPermission = true
+                    defer { isRequestingReminderPermission = false }
+                    reminderStatus = await NotificationService
+                        .requestScheduledTransactionNotifications(schedules: schedules)
+                }
+            } label: {
+                Group {
+                    if isRequestingReminderPermission {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Requesting access…")
+                        }
+                    } else {
+                        Label("Enable scheduled reminders", systemImage: "bell.badge")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(PocketLedgerTheme.accent)
+            .disabled(isRequestingReminderPermission)
         }
         .padding(14)
         .pocketGroupedSurface(cornerRadius: 18)
@@ -168,8 +247,16 @@ struct ScheduledTransactionsView: View {
 
                 Spacer(minLength: 8)
 
+                Label(
+                    schedule.isEnabled ? "Enabled" : "Paused",
+                    systemImage: schedule.isEnabled ? "checkmark.circle.fill" : "pause.circle"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(schedule.isEnabled ? PocketLedgerTheme.positive : PocketLedgerTheme.textTertiary)
+                .labelStyle(.titleAndIcon)
+
                 Toggle(
-                    "Enable \(schedule.note.isEmpty ? schedule.kind.displayName : schedule.note)",
+                    "Enable schedule",
                     isOn: enabledBinding(for: schedule)
                 )
                 .labelsHidden()
@@ -215,43 +302,65 @@ struct ScheduledTransactionsView: View {
                     }
                 }
             } label: {
-                Label("Reminder: \(reminderLabel(for: schedule))", systemImage: "bell")
-            }
-            .font(.caption.weight(.semibold))
-            .buttonStyle(.glass)
-            .tint(PocketLedgerTheme.accent)
-
-            HStack {
-                if schedule.isEnabled {
-                    Menu {
-                        Button("Record now", systemImage: "checkmark.circle") {
-                            _ = store.recordScheduledTransactionNow(id: schedule.id)
-                        }
-                        Button("Skip next", systemImage: "forward.end") {
-                            _ = store.skipNextScheduledTransaction(id: schedule.id)
-                        }
-                    } label: {
-                        Label("Actions", systemImage: "ellipsis.circle")
+                HStack(spacing: 10) {
+                    Image(systemName: "bell")
+                        .foregroundStyle(PocketLedgerTheme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Reminder")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        Text(reminderLabel(for: schedule))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(PocketLedgerTheme.textPrimary)
                     }
-                    .buttonStyle(.glass)
-                    .tint(PocketLedgerTheme.accent)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                }
+                .padding(11)
+                .contentShape(Rectangle())
+                .pocketGroupedSurface(cornerRadius: 14)
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 10) {
+                if schedule.isEnabled {
+                    Button {
+                        _ = store.recordScheduledTransactionNow(id: schedule.id)
+                    } label: {
+                        Label("Record now", systemImage: "checkmark.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(PocketLedgerTheme.positive)
                 }
 
-                Button("Edit") {
-                    editingSchedule = schedule
-                    isPresentingEditor = true
+                Button {
+                    editorRoute = .edit(schedule)
+                } label: {
+                    Label("Edit", systemImage: "pencil")
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
                 .tint(PocketLedgerTheme.accent)
 
                 Spacer()
 
-                Button(role: .destructive) {
-                    scheduleToDelete = schedule
+                Menu {
+                    if schedule.isEnabled {
+                        Button("Skip next", systemImage: "forward.end") {
+                            _ = store.skipNextScheduledTransaction(id: schedule.id)
+                        }
+                    }
+                    Button("Delete schedule", systemImage: "trash", role: .destructive) {
+                        scheduleToDelete = schedule
+                    }
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label("More", systemImage: "ellipsis")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
         }
         .padding(16)
@@ -280,8 +389,7 @@ struct ScheduledTransactionsView: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button("Edit", systemImage: "pencil") {
-                editingSchedule = schedule
-                isPresentingEditor = true
+                editorRoute = .edit(schedule)
             }
             .tint(PocketLedgerTheme.accent)
 
@@ -370,7 +478,6 @@ struct ScheduledTransactionsView: View {
     }
 
     private func presentNewSchedule() {
-        editingSchedule = nil
-        isPresentingEditor = true
+        editorRoute = .new
     }
 }

@@ -639,6 +639,38 @@ final class LedgerStore: ObservableObject {
     }
 
     @discardableResult
+    func moveAccount(accountID: UUID, beforeAccountID: UUID) -> Bool {
+        guard accountID != beforeAccountID,
+              let sourceIndex = data.accounts.firstIndex(where: { $0.id == accountID }),
+              let targetIndex = data.accounts.firstIndex(where: { $0.id == beforeAccountID }),
+              !data.accounts[sourceIndex].isArchived,
+              !data.accounts[targetIndex].isArchived,
+              data.accounts[sourceIndex].type == data.accounts[targetIndex].type else {
+            return false
+        }
+
+        let sectionIndices = data.accounts.indices.filter { index in
+            let account = data.accounts[index]
+            return !account.isArchived && account.type == data.accounts[sourceIndex].type
+        }
+        var sectionAccounts = sectionIndices.map { data.accounts[$0] }
+        guard let sourcePosition = sectionAccounts.firstIndex(where: { $0.id == accountID }) else {
+            return false
+        }
+        let movingAccount = sectionAccounts.remove(at: sourcePosition)
+        guard let targetPosition = sectionAccounts.firstIndex(where: { $0.id == beforeAccountID }) else {
+            return false
+        }
+        sectionAccounts.insert(movingAccount, at: targetPosition)
+
+        var updated = data
+        for (index, account) in zip(sectionIndices, sectionAccounts) {
+            updated.accounts[index] = account
+        }
+        return persist(updated, successMessage: "Account order updated")
+    }
+
+    @discardableResult
     func setAccountIncludedInTotals(accountID: UUID, included: Bool) -> Bool {
         guard let accountIndex = data.accounts.firstIndex(where: { $0.id == accountID }) else {
             lastActionStatus = "Account not found"

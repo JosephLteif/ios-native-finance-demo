@@ -552,6 +552,7 @@ private struct DashboardView: View {
     @State private var presentedSheet: DashboardSheet?
     @State private var snapshot = DashboardSnapshot.empty
     @State private var dashboardPreferences = DashboardPreferences.load()
+    @State private var isBalanceScopeExpanded = false
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
@@ -782,6 +783,9 @@ private struct DashboardView: View {
         let activeAccounts = snapshot.activeAccounts
         let includedCount = snapshot.includedAccountCount
         let excludedCount = snapshot.excludedAccountCount
+        let hiddenAccountCount = AccountType.allCases.reduce(0) { total, type in
+            total + max(0, activeAccounts.filter { $0.type == type }.count - 3)
+        }
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
@@ -827,7 +831,7 @@ private struct DashboardView: View {
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(PocketLedgerTheme.textSecondary)
 
-                            ForEach(accounts.prefix(3)) { account in
+                            ForEach(isBalanceScopeExpanded ? accounts : Array(accounts.prefix(3))) { account in
                                 HStack(spacing: 9) {
                                     Circle()
                                         .fill(account.includeInTotals ? PocketLedgerTheme.accent : PocketLedgerTheme.textTertiary)
@@ -841,13 +845,20 @@ private struct DashboardView: View {
                                         .foregroundStyle(account.includeInTotals ? PocketLedgerTheme.textPrimary : PocketLedgerTheme.textTertiary)
                                 }
                             }
-                            if accounts.count > 3 {
-                                Text("+\(accounts.count - 3) more")
-                                    .font(.caption)
-                                    .foregroundStyle(PocketLedgerTheme.textTertiary)
-                            }
                         }
                     }
+                }
+
+                if hiddenAccountCount > 0 {
+                    Button(isBalanceScopeExpanded ? "Show fewer accounts" : "+\(hiddenAccountCount) more") {
+                        withAnimation(.snappy(duration: 0.2)) {
+                            isBalanceScopeExpanded.toggle()
+                        }
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(PocketLedgerTheme.accent)
+                    .buttonStyle(.plain)
+                    .accessibilityHint(isBalanceScopeExpanded ? "Collapses the account list" : "Shows every account")
                 }
             }
         }
@@ -2233,10 +2244,7 @@ struct TransactionsView: View {
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
 
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: LedgerCurrency.allCases.count),
-                spacing: 10
-            ) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
                 ForEach(LedgerCurrency.allCases) { currency in
                     transactionSummaryMetric(
                         title: "\(currency.rawValue) spent",
@@ -2250,17 +2258,19 @@ struct TransactionsView: View {
 
     private func transactionSummaryMetric(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(.headline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(PocketLedgerTheme.warning)
-                .minimumScaleFactor(0.75)
-                .lineLimit(1)
             Text(title.uppercased())
                 .font(.caption2.weight(.bold))
                 .tracking(0.5)
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
+            Text(value)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(PocketLedgerTheme.warning)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(11)
+        .pocketGroupedSurface(cornerRadius: 14)
     }
 
     private func dayHeader(_ day: TransactionDay) -> some View {
@@ -2633,7 +2643,7 @@ private struct AccountsView: View {
     }
 
     private var screenSubtitle: some View {
-        Text("Tap an account for activity; use its menu to manage or reorder it")
+        Text("Tap for activity. Hold for options or drag to reorder within its type.")
             .font(.subheadline)
             .foregroundStyle(PocketLedgerTheme.textSecondary)
     }
@@ -2642,7 +2652,6 @@ private struct AccountsView: View {
         Section {
             ForEach(Array(accounts.enumerated()), id: \.element.id) { entry in
                 let account = entry.element
-                let accountPosition = entry.offset
                 HStack(spacing: 4) {
                     NavigationLink {
                         AccountDetailView(store: store, accountID: account.id)
@@ -2652,38 +2661,28 @@ private struct AccountsView: View {
                     }
                     .buttonStyle(.plain)
                     .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Menu {
-                        Button("Edit", systemImage: "pencil") {
-                            presentAccount(account)
-                        }
-                        Button(
-                            account.includeInTotals ? "Exclude from totals" : "Include in totals",
-                            systemImage: account.includeInTotals ? "eye.slash" : "eye"
-                        ) {
-                            _ = store.setAccountIncludedInTotals(
-                                accountID: account.id,
-                                included: !account.includeInTotals
-                            )
-                        }
-                        Button("Move up", systemImage: "chevron.up") {
-                            _ = store.moveAccount(accountID: account.id, by: -1)
-                        }
-                        .disabled(accountPosition == 0)
-                        Button("Move down", systemImage: "chevron.down") {
-                            _ = store.moveAccount(accountID: account.id, by: 1)
-                        }
-                        .disabled(accountPosition == accounts.count - 1)
-                        Button("Archive", systemImage: "archivebox") {
-                            _ = store.setAccountArchived(accountID: account.id, isArchived: true)
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.title3)
-                            .foregroundStyle(PocketLedgerTheme.textSecondary)
-                            .frame(width: 44, height: 44)
+                }
+                .contextMenu {
+                    Button("Edit", systemImage: "pencil") {
+                        presentAccount(account)
                     }
-                    .accessibilityLabel("Actions for \(account.name)")
+                    Button(
+                        account.includeInTotals ? "Exclude from totals" : "Include in totals",
+                        systemImage: account.includeInTotals ? "eye.slash" : "eye"
+                    ) {
+                        _ = store.setAccountIncludedInTotals(
+                            accountID: account.id,
+                            included: !account.includeInTotals
+                        )
+                    }
+                    Button("Archive", systemImage: "archivebox") {
+                        _ = store.setAccountArchived(accountID: account.id, isArchived: true)
+                    }
+                }
+                .draggable(account.id.uuidString)
+                .dropDestination(for: String.self) { items, _ in
+                    guard let draggedID = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+                    return store.moveAccount(accountID: draggedID, beforeAccountID: account.id)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button("Edit", systemImage: "pencil") {
@@ -2893,38 +2892,53 @@ private struct CategoriesView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 18) {
-                    screenSubtitle
+                screenSubtitle
 
-                    ForEach(store.rootCategories) { parent in
-                        categoryGroup(parent)
-                    }
-
-                    if !archivedCategories.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Archived")
-                                .font(.title3.weight(.bold))
-                            ForEach(archivedCategories) { category in
-                                HStack {
-                                    Label(category.name, systemImage: category.systemImage)
-                                    Spacer()
-                                    Button("Restore") {
-                                        _ = store.setCategoryArchived(categoryID: category.id, isArchived: false)
-                                    }
-                                    .buttonStyle(.borderless)
+                if store.rootCategories.isEmpty {
+                    Text("Add a top-level category to organize your transactions.")
+                        .font(.subheadline)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .pocketCard()
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
+                        ForEach(store.rootCategories) { parent in
+                            NavigationLink {
+                                CategorySubcategoriesView(store: store, parent: parent)
+                            } label: {
+                                categoryRootTile(parent)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("Edit", systemImage: "pencil") {
+                                    presentCategory(parent)
                                 }
-                                .font(.subheadline)
+                                Button("Archive", systemImage: "archivebox") {
+                                    _ = store.setCategoryArchived(categoryID: parent.id, isArchived: true)
+                                }
                             }
                         }
-                        .pocketCard()
                     }
+                }
 
-                    if store.rootCategories.isEmpty {
-                        Text("Add a top-level category to organize your transactions.")
+                if !archivedCategories.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Archived")
+                            .font(.title3.weight(.bold))
+                        ForEach(archivedCategories) { category in
+                            HStack {
+                                Label(category.name, systemImage: category.systemImage)
+                                Spacer()
+                                Button("Restore") {
+                                    _ = store.setCategoryArchived(categoryID: category.id, isArchived: false)
+                                }
+                                .buttonStyle(.borderless)
+                            }
                             .font(.subheadline)
-                            .foregroundStyle(PocketLedgerTheme.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .pocketCard()
+                        }
                     }
+                    .pocketCard()
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -2955,67 +2969,110 @@ private struct CategoriesView: View {
             .foregroundStyle(PocketLedgerTheme.textSecondary)
     }
 
-    private func categoryGroup(_ parent: LedgerCategory) -> some View {
+    private func categoryRootTile(_ parent: LedgerCategory) -> some View {
         let children = store.data.categories.filter { $0.parentID == parent.id && !$0.isArchived }
 
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                PocketIcon(systemImage: parent.systemImage, tint: PocketLedgerTheme.accent, size: 38)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(parent.name)
-                        .font(.headline)
-                    Text(children.isEmpty ? "Top-level category" : "\(children.count) subcategories")
-                        .font(.caption)
-                        .foregroundStyle(PocketLedgerTheme.textTertiary)
-                }
-
-                Spacer()
-
-                Menu {
-                    Button("Edit", systemImage: "pencil") {
-                        presentCategory(parent)
-                    }
-                    Button("Archive", systemImage: "archivebox") {
-                        _ = store.setCategoryArchived(categoryID: parent.id, isArchived: true)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .foregroundStyle(PocketLedgerTheme.textSecondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Category actions")
-                .accessibilityHint("Opens actions for this category")
-            }
-
-            if children.isEmpty {
-                Text("No subcategories yet")
+            PocketIcon(systemImage: parent.systemImage, tint: PocketLedgerTheme.accent, size: 42)
+            Spacer(minLength: 0)
+            Text(parent.name)
+                .font(.headline)
+                .foregroundStyle(PocketLedgerTheme.textPrimary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            HStack(spacing: 6) {
+                Text(children.isEmpty ? "No subcategories" : "\(children.count) subcategories")
                     .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(PocketLedgerTheme.textTertiary)
-                    .padding(.top, 4)
-            } else {
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
-                    spacing: 8
-                    ) {
-                    ForEach(children) { child in
-                        CategoryTile(
-                            category: child,
-                            onEdit: { presentCategory(child) },
-                            onArchive: {
-                                _ = store.setCategoryArchived(categoryID: child.id, isArchived: true)
-                            }
-                        )
-                    }
-                }
             }
         }
-        .pocketCard()
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
+        .padding(14)
+        .pocketGroupedSurface(cornerRadius: 18)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens subcategories")
     }
 
     private var archivedCategories: [LedgerCategory] {
         store.data.categories.filter(\.isArchived)
+    }
+
+    private func presentCategory(_ category: LedgerCategory?) {
+        editingCategory = category
+        isPresentingCategory = true
+    }
+}
+
+@MainActor
+private struct CategorySubcategoriesView: View {
+    @ObservedObject var store: LedgerStore
+    let parent: LedgerCategory
+    @State private var isPresentingCategory = false
+    @State private var editingCategory: LedgerCategory?
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Subcategories in \(parent.name)")
+                    .font(.subheadline)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                if subcategories.isEmpty {
+                    ContentUnavailableView(
+                        "No subcategories",
+                        systemImage: parent.systemImage,
+                        description: Text("Add subcategories to make expenses easier to organize.")
+                    )
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .pocketCard()
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
+                        ForEach(subcategories) { category in
+                            CategoryTile(
+                                category: category,
+                                onEdit: { presentCategory(category) },
+                                onArchive: {
+                                    _ = store.setCategoryArchived(categoryID: category.id, isArchived: true)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+        }
+        .pocketScreen()
+        .navigationTitle(parent.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    presentCategory(nil)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add subcategory")
+            }
+        }
+        .sheet(isPresented: $isPresentingCategory, onDismiss: { editingCategory = nil }) {
+            CategoryEditor(
+                store: store,
+                category: editingCategory,
+                initialParentID: editingCategory == nil ? parent.id : nil
+            )
+        }
+    }
+
+    private var subcategories: [LedgerCategory] {
+        store.data.categories.filter { $0.parentID == parent.id && !$0.isArchived }
     }
 
     private func presentCategory(_ category: LedgerCategory?) {
@@ -3030,37 +3087,25 @@ private struct CategoryTile: View {
     let onArchive: () -> Void
 
     var body: some View {
-        VStack(spacing: 4) {
-            HStack {
-                Image(systemName: category.systemImage)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-                Spacer()
-
-                Menu {
-                    Button("Edit", systemImage: "pencil", action: onEdit)
-                    Button("Archive", systemImage: "archivebox", action: onArchive)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(PocketLedgerTheme.textSecondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Actions for \(category.name)")
-            }
-
+        VStack(alignment: .leading, spacing: 12) {
+            PocketIcon(systemImage: category.systemImage, tint: PocketLedgerTheme.accent, size: 38)
             Text(category.name)
-                .font(.caption.weight(.medium))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(PocketLedgerTheme.textPrimary)
                 .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity, minHeight: 28)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .pocketGroupedSurface(cornerRadius: 13)
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+        .padding(14)
+        .pocketGroupedSurface(cornerRadius: 18)
+        .contextMenu {
+            Button("Edit", systemImage: "pencil", action: onEdit)
+            Button("Archive", systemImage: "archivebox", action: onArchive)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(category.name)
+        .accessibilityHint("Hold for category actions")
     }
 }
 
@@ -3226,13 +3271,14 @@ private struct CategoryEditor: View {
     init(
         store: LedgerStore,
         category: LedgerCategory? = nil,
+        initialParentID: UUID? = nil,
         onSaved: @escaping (LedgerCategory) -> Void = { _ in }
     ) {
         _store = ObservedObject(wrappedValue: store)
         self.category = category
         self.onSaved = onSaved
         _name = State(initialValue: category?.name ?? "")
-        _parentID = State(initialValue: category?.parentID)
+        _parentID = State(initialValue: category?.parentID ?? initialParentID)
         _systemImage = State(initialValue: category?.systemImage ?? "tag")
         _includeInTotals = State(initialValue: category?.includeInTotals ?? true)
     }
@@ -3339,9 +3385,8 @@ private struct MovementLineEditor: View {
                 }
                 .pickerStyle(.menu)
 
-                Button("New account", systemImage: "plus.circle", action: onCreateAccount)
-                    .labelStyle(.iconOnly)
-                    .accessibilityLabel("New account")
+                Button("New account", action: onCreateAccount)
+                    .font(.caption.weight(.semibold))
                     .buttonStyle(.borderless)
             }
 
@@ -3529,7 +3574,6 @@ struct TransactionEditor: View {
                 ]
                 : [])
         )
-        let initialOutflows = sourceTransaction?.outflows ?? scheduledTransaction?.outflows ?? []
         let initialInflows = sourceTransaction?.inflows ?? scheduledTransaction?.inflows ?? []
         let initialHasAttachments = !(transaction?.attachmentIDs ?? []).isEmpty
             || initialAttachmentData != nil
@@ -3537,7 +3581,6 @@ struct TransactionEditor: View {
             resolvedInitialKind != .expense
                 || initialTiming == .scheduled
                 || scheduledTransaction != nil
-                || initialOutflows.count > 1
                 || !initialInflows.isEmpty
                 || sourceTransaction?.changeAdjustment != nil
                 || sourceTransaction?.exchangeRate != nil
@@ -3601,7 +3644,7 @@ struct TransactionEditor: View {
                 }
 
                 if kind == .expense {
-                    primaryExpenseMovementSection
+                    expensePaymentsSection
                     detailsSection
                     expenseDateSection
                     moreDetailsSection
@@ -3631,10 +3674,7 @@ struct TransactionEditor: View {
                 synchronizeRatePair()
                 synchronizeAutomaticTransferAmount()
             }
-            .onChange(of: outflows) { _, newOutflows in
-                if kind == .expense && newOutflows.count > 1 {
-                    isShowingMoreDetails = true
-                }
+            .onChange(of: outflows) { _, _ in
                 synchronizeAutomaticTransferAmount()
             }
             .onChange(of: inflows) { oldInflows, newInflows in
@@ -3776,32 +3816,62 @@ struct TransactionEditor: View {
         }
     }
 
-    private var primaryExpenseMovementSection: some View {
-        Section("Payment 1") {
+    private var expensePaymentsSection: some View {
+        Section(outflows.count > 1 ? "Payment breakdown" : "Payment") {
             if outflows.isEmpty {
-                Button("Choose payment account", systemImage: "plus.circle") {
+                Button("Choose payment account") {
                     outflows.append(newMovementDraft)
                 }
             } else {
-                MovementLineEditor(
-                    store: store,
-                    line: $outflows[0],
-                    amountPlaceholder: "Amount",
-                    onCreateAccount: {
-                        accountCreationLineID = outflows[0].id
-                        isShowingNewAccount = true
-                    },
-                    allowsArchivedAccount: allowsArchivedMovementAccounts
-                )
+                ForEach(Array(outflows.enumerated()), id: \.element.id) { entry in
+                    let index = entry.offset
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text(index == 0 ? "Main payment" : "Additional payment \(index + 1)")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            if outflows.count > 1 {
+                                removeLineButton(
+                                    accessibilityLabel: "Remove payment \(index + 1)"
+                                ) {
+                                    outflows.remove(at: index)
+                                }
+                            }
+                        }
 
-                if outflows.count > 1 {
-                    Button("Remove payment", systemImage: "trash", role: .destructive) {
-                        outflows.remove(at: 0)
+                        MovementLineEditor(
+                            store: store,
+                            line: $outflows[index],
+                            amountPlaceholder: index == 0 ? "Amount" : "Amount for this payment",
+                            onCreateAccount: {
+                                accountCreationLineID = entry.element.id
+                                isShowingNewAccount = true
+                            },
+                            allowsArchivedAccount: allowsArchivedMovementAccounts
+                        )
                     }
-                    .font(.footnote.weight(.semibold))
-                    .buttonStyle(.borderless)
+                    .padding(.vertical, 4)
                 }
             }
+
+            if !outflows.isEmpty {
+                Button {
+                    outflows.append(newSplitPaymentDraft)
+                } label: {
+                    Label(
+                        outflows.count > 1 ? "Add another payment" : "Split this payment",
+                        systemImage: "arrow.left.arrow.right"
+                    )
+                }
+                .font(.subheadline.weight(.semibold))
+                .buttonStyle(.borderless)
+            }
+        } footer: {
+            Text(outflows.isEmpty
+                 ? "Choose the account this purchase was paid from."
+                 : outflows.count > 1
+                    ? "These amounts combine into one purchase total. Each part can use a different account or currency."
+                    : "Add another part only if you paid from more than one account.")
         }
     }
 
@@ -3822,8 +3892,6 @@ struct TransactionEditor: View {
                     expenseScheduleDetails
                     Divider()
                     expenseBillDetails
-                    Divider()
-                    expenseSplitDetails
                     Divider()
                     expenseReturnedMoneyDetails
                     if !attachments.isEmpty || initialAttachmentFileName != nil {
@@ -3919,60 +3987,6 @@ struct TransactionEditor: View {
         }
     }
 
-    private var expenseSplitDetails: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Split payment")
-                .font(.subheadline.weight(.semibold))
-
-            ForEach(Array(outflows.dropFirst())) { movement in
-                if let index = outflows.firstIndex(where: { $0.id == movement.id }) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("Payment \(index + 1)")
-                                .font(.subheadline.weight(.semibold))
-                            Spacer()
-                            Button(role: .destructive) {
-                                outflows.remove(at: index)
-                            } label: {
-                                Label("Remove", systemImage: "trash")
-                            }
-                            .accessibilityLabel("Remove payment \(index + 1)")
-                            .buttonStyle(.borderless)
-                            .font(.footnote.weight(.semibold))
-                        }
-
-                        MovementLineEditor(
-                            store: store,
-                            line: $outflows[index],
-                            amountPlaceholder: "Amount leaving account",
-                            onCreateAccount: {
-                                accountCreationLineID = movement.id
-                                isShowingNewAccount = true
-                            },
-                            allowsArchivedAccount: allowsArchivedMovementAccounts
-                        )
-                    }
-                    .padding(12)
-                    .pocketGroupedSurface(cornerRadius: 14)
-                }
-            }
-
-            Button {
-                outflows.append(newSplitPaymentDraft)
-            } label: {
-                Label("Add another payment", systemImage: "plus.circle")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .font(.subheadline.weight(.semibold))
-            .buttonStyle(.plain)
-
-            Text("Each payment can use a different account and currency. The bill total is separate.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private var expenseReturnedMoneyDetails: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Returned money")
@@ -3985,15 +3999,12 @@ struct TransactionEditor: View {
                             Text("Return \(index + 1)")
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
-                            Button(role: .destructive) {
+                            removeLineButton(
+                                accessibilityLabel: "Remove returned money \(index + 1)"
+                            ) {
                                 inflows.remove(at: index)
                                 if inflows.isEmpty { requestedChange = "" }
-                            } label: {
-                                Label("Remove", systemImage: "trash")
                             }
-                            .accessibilityLabel("Remove returned money \(index + 1)")
-                            .buttonStyle(.borderless)
-                            .font(.footnote.weight(.semibold))
                         }
 
                         MovementLineEditor(
@@ -4027,10 +4038,13 @@ struct TransactionEditor: View {
 
             if inflows.count == 1 {
                 CurrencyInputField(
-                    "Requested change (optional)",
+                    "Expected change (optional)",
                     text: $requestedChange,
                     currency: inflows[0].currency
                 )
+                Text("Enter how much change you expected. Pocket Ledger compares it with the returned money above.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 if let preview = shortfallPreview {
                     Text(preview)
                         .font(.footnote)
@@ -4042,6 +4056,24 @@ struct TransactionEditor: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func removeLineButton(
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: .destructive, action: action) {
+            Label("Remove", systemImage: "trash")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .frame(minHeight: 34)
+                .background(Color.red.opacity(0.16), in: Capsule())
+                .overlay(Capsule().stroke(Color.red.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.red)
+        .frame(minHeight: 44)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     @ViewBuilder
@@ -4103,11 +4135,11 @@ struct TransactionEditor: View {
                         }
                     }
 
-                    Button("New category", systemImage: "plus.circle") {
+                    Button("New category") {
                         isShowingNewCategory = true
                     }
-                    .labelStyle(.iconOnly)
-                    .accessibilityLabel("New category")
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.borderless)
                 }
             }
 
@@ -4230,7 +4262,7 @@ struct TransactionEditor: View {
 
                 if kind == .expense && inflows.count == 1 {
                     CurrencyInputField(
-                        "Requested change (optional)",
+                        "Expected change (optional)",
                         text: $requestedChange,
                         currency: inflows[0].currency
                     )
@@ -4787,12 +4819,12 @@ struct TransactionEditor: View {
 
         let difference = requested.minorUnits - actual.minorUnits
         if difference > 0 {
-            return "Recorded denomination shortfall: \(Money(currency: inflows[0].currency, minorUnits: difference).formatted)."
+            return "Received \(Money(currency: inflows[0].currency, minorUnits: actual.minorUnits).formatted) — \(Money(currency: inflows[0].currency, minorUnits: difference).formatted) less than expected."
         }
         if difference < 0 {
-            return "Actual change is \(Money(currency: inflows[0].currency, minorUnits: -difference).formatted) above the requested amount."
+            return "Received \(Money(currency: inflows[0].currency, minorUnits: -difference).formatted) more than expected."
         }
-        return "The requested and actual change match."
+        return "Actual and expected change match."
     }
 
     private func parseMovements(_ drafts: [MovementDraft]) -> [MoneyMovement]? {
