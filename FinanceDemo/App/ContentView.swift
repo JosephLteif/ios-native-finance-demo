@@ -415,6 +415,7 @@ private struct MoreView: View {
                             }
                         }
                         .accessibilityHint("Review unresolved ledger items")
+                        .listRowBackground(PocketLedgerTheme.surface)
                     }
                 }
 
@@ -424,6 +425,7 @@ private struct MoreView: View {
                     } label: {
                         Label("Metrics", systemImage: "chart.xyaxis.line")
                     }
+                    .listRowBackground(PocketLedgerTheme.surface)
                 }
 
                 Section("Planning") {
@@ -432,18 +434,21 @@ private struct MoreView: View {
                     } label: {
                         Label("Budgets", systemImage: "chart.bar.doc.horizontal")
                     }
+                    .listRowBackground(PocketLedgerTheme.surface)
 
                     NavigationLink {
                         ScheduledTransactionsView(store: store)
                     } label: {
                         Label("Scheduled", systemImage: "calendar.badge.clock")
                     }
+                    .listRowBackground(PocketLedgerTheme.surface)
 
                     NavigationLink {
                         TemplatesView(store: store)
                     } label: {
                         Label("Templates", systemImage: "rectangle.stack")
                     }
+                    .listRowBackground(PocketLedgerTheme.surface)
                 }
 
                 Section("Organization") {
@@ -452,12 +457,14 @@ private struct MoreView: View {
                     } label: {
                         Label("Categories", systemImage: "square.grid.2x2")
                     }
+                    .listRowBackground(PocketLedgerTheme.surface)
 
                     NavigationLink {
                         ExchangeRatesView(store: store)
                     } label: {
                         Label("Exchange rates", systemImage: "arrow.left.arrow.right")
                     }
+                    .listRowBackground(PocketLedgerTheme.surface)
                 }
 
                 Section {
@@ -466,18 +473,21 @@ private struct MoreView: View {
                     } label: {
                         Label("Import & Backup", systemImage: "externaldrive.badge.icloud")
                     }
+                    .listRowBackground(PocketLedgerTheme.surface)
 
                     NavigationLink {
                         SecuritySettingsView(store: store, security: security)
                     } label: {
                         Label("Settings", systemImage: "gearshape")
                     }
+                    .listRowBackground(PocketLedgerTheme.surface)
 
                     Button {
                         isShowingSetup = true
                     } label: {
                         Label("Setup guide", systemImage: "wand.and.stars")
                     }
+                    .listRowBackground(PocketLedgerTheme.surface)
                 } header: {
                     Text("Data & security")
                 } footer: {
@@ -488,7 +498,6 @@ private struct MoreView: View {
             .navigationBarTitleDisplayMode(.large)
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .listRowBackground(PocketLedgerTheme.surface)
             .foregroundStyle(PocketLedgerTheme.textPrimary)
             .tint(PocketLedgerTheme.accent)
             .pocketScreen()
@@ -1762,18 +1771,20 @@ struct TransactionsView: View {
             } else {
                 ForEach(listSnapshot.groupedTransactions) { day in
                     Section {
-                        ForEach(day.transactions) { transaction in
-                            transactionRow(for: transaction)
-                                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                        ForEach(Array(day.transactions.enumerated()), id: \.element.id) { entry in
+                            transactionRow(for: entry.element)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                                 .listRowBackground(
-                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                        .fill(PocketLedgerTheme.surface)
-                                        .overlay {
-                                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                                        }
+                                    ledgerGroupedRowBackground(
+                                        isFirst: entry.offset == 0,
+                                        isLast: entry.offset == day.transactions.count - 1
+                                    )
                                 )
-                                .listRowSeparator(.hidden)
+                                .listRowSeparatorTint(PocketLedgerTheme.divider)
+                                .listRowSeparator(
+                                    entry.offset == day.transactions.count - 1 ? .hidden : .visible,
+                                    edges: .bottom
+                                )
                         }
                     } header: {
                         dayHeader(day)
@@ -1789,6 +1800,7 @@ struct TransactionsView: View {
             }
         }
         .listStyle(.plain)
+        .listSectionSpacing(20)
         .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
         .pocketScreen()
@@ -2452,6 +2464,7 @@ private struct AccountsView: View {
     @ObservedObject var store: LedgerStore
     @State private var isPresentingAccount = false
     @State private var editingAccount: Account?
+    @State private var isArchivedAccountsExpanded = false
 
     var body: some View {
         List {
@@ -2488,6 +2501,7 @@ private struct AccountsView: View {
                 .listRowSeparator(.hidden)
         }
         .listStyle(.plain)
+        .listSectionSpacing(20)
         .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
         .pocketScreen()
@@ -2506,6 +2520,11 @@ private struct AccountsView: View {
         }
         .sheet(isPresented: $isPresentingAccount, onDismiss: { editingAccount = nil }) {
             AccountEditor(store: store, account: editingAccount)
+        }
+        .onChange(of: archivedAccounts.isEmpty) { _, isEmpty in
+            if isEmpty {
+                isArchivedAccountsExpanded = false
+            }
         }
     }
 
@@ -2594,8 +2613,9 @@ private struct AccountsView: View {
 
     private func accountSection(type: AccountType, accounts: [Account]) -> some View {
         Section {
-            ForEach(accounts) { account in
-                let accountPosition = accounts.firstIndex(where: { $0.id == account.id }) ?? 0
+            ForEach(Array(accounts.enumerated()), id: \.element.id) { entry in
+                let account = entry.element
+                let accountPosition = entry.offset
                 HStack(spacing: 4) {
                     NavigationLink {
                         AccountDetailView(store: store, accountID: account.id)
@@ -2659,16 +2679,18 @@ private struct AccountsView: View {
                     }
                     .tint(account.includeInTotals ? PocketLedgerTheme.textSecondary : PocketLedgerTheme.positive)
                 }
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 .listRowBackground(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(PocketLedgerTheme.surface)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
-                        }
+                    ledgerGroupedRowBackground(
+                        isFirst: entry.offset == 0,
+                        isLast: entry.offset == accounts.count - 1
+                    )
                 )
-                .listRowSeparator(.hidden)
+                .listRowSeparatorTint(PocketLedgerTheme.divider)
+                .listRowSeparator(
+                    entry.offset == accounts.count - 1 ? .hidden : .visible,
+                    edges: .bottom
+                )
             }
         } header: {
             HStack(spacing: 8) {
@@ -2682,6 +2704,7 @@ private struct AccountsView: View {
             }
             .textCase(nil)
         }
+        .listSectionSeparator(.hidden)
     }
 
     private var archivedAccounts: [Account] {
@@ -2690,62 +2713,103 @@ private struct AccountsView: View {
 
     private var archivedAccountsSection: some View {
         Section {
-            ForEach(archivedAccounts) { account in
-                HStack(spacing: 12) {
-                    PocketIcon(
-                        systemImage: account.type.systemImage,
-                        tint: PocketLedgerTheme.textTertiary,
-                        size: 34
-                    )
+            if isArchivedAccountsExpanded {
+                ForEach(Array(archivedAccounts.enumerated()), id: \.element.id) { entry in
+                    let account = entry.element
+                    HStack(spacing: 12) {
+                        PocketIcon(
+                            systemImage: account.type.systemImage,
+                            tint: PocketLedgerTheme.textTertiary,
+                            size: 34
+                        )
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(account.name)
-                            .font(.subheadline.weight(.semibold))
-                        Text("\(account.type.displayName) · \(account.currency.rawValue)")
-                            .font(.caption)
-                            .foregroundStyle(PocketLedgerTheme.textTertiary)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    Button("Restore", systemImage: "arrow.uturn.backward") {
-                        _ = store.setAccountArchived(accountID: account.id, isArchived: false)
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .buttonStyle(.borderless)
-                }
-                .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                    Button("Restore", systemImage: "arrow.uturn.backward") {
-                        _ = store.setAccountArchived(accountID: account.id, isArchived: false)
-                    }
-                    .tint(PocketLedgerTheme.accent)
-                }
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                .listRowBackground(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(PocketLedgerTheme.surface)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.name)
+                                .font(.subheadline.weight(.semibold))
+                            Text("\(account.type.displayName) · \(account.currency.rawValue)")
+                                .font(.caption)
+                                .foregroundStyle(PocketLedgerTheme.textTertiary)
                         }
-                )
-                .listRowSeparator(.hidden)
+
+                        Spacer(minLength: 8)
+
+                        Button("Restore", systemImage: "arrow.uturn.backward") {
+                            _ = store.setAccountArchived(accountID: account.id, isArchived: false)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.borderless)
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button("Restore", systemImage: "arrow.uturn.backward") {
+                            _ = store.setAccountArchived(accountID: account.id, isArchived: false)
+                        }
+                        .tint(PocketLedgerTheme.accent)
+                    }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowBackground(
+                        ledgerGroupedRowBackground(
+                            isFirst: entry.offset == 0,
+                            isLast: entry.offset == archivedAccounts.count - 1
+                        )
+                    )
+                    .listRowSeparatorTint(PocketLedgerTheme.divider)
+                    .listRowSeparator(
+                        entry.offset == archivedAccounts.count - 1 ? .hidden : .visible,
+                        edges: .bottom
+                    )
+                }
             }
         } header: {
-            Text("Archived")
-                .font(.title3.weight(.bold))
-                .textCase(nil)
+            Button {
+                withAnimation(.snappy(duration: 0.22)) {
+                    isArchivedAccountsExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Archived")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(PocketLedgerTheme.textPrimary)
+                    Text("\(archivedAccounts.count)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .rotationEffect(.degrees(isArchivedAccountsExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Archived accounts")
+            .accessibilityValue(isArchivedAccountsExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint(isArchivedAccountsExpanded ? "Hides archived accounts" : "Shows archived accounts")
+            .textCase(nil)
         } footer: {
             Text("Archived accounts stay available for historical transactions but are hidden from new account selections.")
                 .font(.caption)
                 .foregroundStyle(PocketLedgerTheme.textSecondary)
         }
+        .listSectionSeparator(.hidden)
     }
 
     private func presentAccount(_ account: Account?) {
         editingAccount = account
         isPresentingAccount = true
     }
+}
+
+private func ledgerGroupedRowBackground(isFirst: Bool, isLast: Bool) -> some View {
+    UnevenRoundedRectangle(
+        cornerRadii: RectangleCornerRadii(
+            topLeadingRadius: isFirst ? 18 : 0,
+            bottomLeadingRadius: isLast ? 18 : 0,
+            bottomTrailingRadius: isLast ? 18 : 0,
+            topTrailingRadius: isFirst ? 18 : 0
+        ),
+        style: .continuous
+    )
+    .fill(PocketLedgerTheme.surface)
 }
 
 @MainActor
