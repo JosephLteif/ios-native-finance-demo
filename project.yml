@@ -30,6 +30,8 @@ targets:
       - path: FinanceDemo/Shared
       - path: FinanceDemo/WatchShared
       - path: FinanceDemo/Resources/Assets.xcassets
+    resources:
+      - path: FinanceDemo/Config/PrivacyInfo.xcprivacy
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo
@@ -82,6 +84,8 @@ targets:
       - path: FinanceDemo/Shared
       - path: FinanceDemo/WatchShared
       - path: FinanceDemoWidget
+    resources:
+      - path: FinanceDemoWidget/Config/PrivacyInfo.xcprivacy
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.widget
@@ -110,6 +114,8 @@ targets:
       - path: FinanceDemo/Models/FinanceModel.swift
       - path: FinanceDemo/WatchShared
       - path: FinanceDemoWatch
+    resources:
+      - path: FinanceDemoWatch/Config/PrivacyInfo.xcprivacy
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.watchkitapp
@@ -143,6 +149,8 @@ targets:
       - path: FinanceDemo/Models/FinanceModel.swift
       - path: FinanceDemo/WatchShared
       - path: FinanceDemoWatchWidget
+    resources:
+      - path: FinanceDemoWatchWidget/Config/PrivacyInfo.xcprivacy
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.watchkitapp.widget

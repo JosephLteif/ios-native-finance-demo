@@ -19,6 +19,7 @@ struct GenerateBudgetSummaryIntent: AppIntent {
     static let title: LocalizedStringResource = "Summarize Pocket Ledger Budget"
     static let description = IntentDescription("Summarizes this month's Pocket Ledger category budgets, using Apple Intelligence when available.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")
@@ -51,6 +52,7 @@ struct GetBudgetStatusIntent: AppIntent {
     static let title: LocalizedStringResource = "Check Pocket Ledger Budgets"
     static let description = IntentDescription("Returns this month's spending against each Pocket Ledger category budget.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")

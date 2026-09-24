@@ -190,6 +190,7 @@ struct GetTransactionHistoryIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Pocket Ledger Transaction History"
     static let description = IntentDescription("Returns Pocket Ledger transactions for a date range, category, or account.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Date range", description: "The period to search.")
     var period: FinanceDateRange
@@ -243,6 +244,7 @@ struct GetSpendingSummaryIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Pocket Ledger Spending Summary"
     static let description = IntentDescription("Calculates Pocket Ledger expense totals for a date range, category, or account.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Date range", description: "The period to summarize.")
     var period: FinanceDateRange

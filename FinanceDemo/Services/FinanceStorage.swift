@@ -18,6 +18,7 @@ final class FinanceStorage {
     }
 
     private let modelContainer: ModelContainer?
+    private let databaseURL: URL?
     private let storageLocation: StorageLocation
     private let attachmentDirectory: URL?
     private let recoverySnapshotURL: URL?
@@ -37,16 +38,18 @@ final class FinanceStorage {
     init(context: String) {
         if let groupURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupIdentifier
-        ), let sharedContainer = Self.makeModelContainer(
-            at: groupURL.appendingPathComponent("PocketLedger.sqlite")
         ) {
-            modelContainer = sharedContainer
-            storageLocation = .appGroup
-            attachmentDirectory = Self.makeAttachmentDirectory(
-                at: groupURL.appendingPathComponent("PocketLedgerAttachments", isDirectory: true)
-            )
-            recoverySnapshotURL = groupURL.appendingPathComponent("PocketLedger-last-good.json")
-            return
+            let sharedDatabaseURL = groupURL.appendingPathComponent("PocketLedger.sqlite")
+            if let sharedContainer = Self.makeModelContainer(at: sharedDatabaseURL) {
+                modelContainer = sharedContainer
+                databaseURL = sharedDatabaseURL
+                storageLocation = .appGroup
+                attachmentDirectory = Self.makeAttachmentDirectory(
+                    at: groupURL.appendingPathComponent("PocketLedgerAttachments", isDirectory: true)
+                )
+                recoverySnapshotURL = groupURL.appendingPathComponent("PocketLedger-last-good.json")
+                return
+            }
         }
 
         guard context != "widget",
@@ -55,6 +58,7 @@ final class FinanceStorage {
                   in: .userDomainMask
               ).first else {
             modelContainer = nil
+            databaseURL = nil
             storageLocation = .unavailable
             attachmentDirectory = nil
             recoverySnapshotURL = nil
@@ -69,16 +73,17 @@ final class FinanceStorage {
             )
         } catch {
             modelContainer = nil
+            databaseURL = nil
             storageLocation = .unavailable
             attachmentDirectory = nil
             recoverySnapshotURL = nil
             return
         }
 
-        guard let localContainer = Self.makeModelContainer(
-            at: localDirectory.appendingPathComponent("PocketLedger.sqlite")
-        ) else {
+        let localDatabaseURL = localDirectory.appendingPathComponent("PocketLedger.sqlite")
+        guard let localContainer = Self.makeModelContainer(at: localDatabaseURL) else {
             modelContainer = nil
+            databaseURL = nil
             storageLocation = .unavailable
             attachmentDirectory = nil
             recoverySnapshotURL = nil
@@ -86,6 +91,7 @@ final class FinanceStorage {
         }
 
         modelContainer = localContainer
+        databaseURL = localDatabaseURL
         storageLocation = .local
         attachmentDirectory = Self.makeAttachmentDirectory(
             at: localDirectory.appendingPathComponent("Attachments", isDirectory: true)
@@ -124,12 +130,16 @@ final class FinanceStorage {
             .filter { $0.isLetter || $0.isNumber }
         let relativePath = UUID().uuidString + (normalizedExtension.isEmpty ? "" : ".\(normalizedExtension)")
         let url = attachmentDirectory.appendingPathComponent(relativePath, isDirectory: false)
-        try data.write(to: url, options: .atomic)
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
         return relativePath
     }
 
     func attachmentData(relativePath: String) -> Data? {
         guard let url = attachmentURL(relativePath: relativePath) else { return nil }
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: url.path
+        )
         return try? Data(contentsOf: url)
     }
 
@@ -164,7 +174,20 @@ final class FinanceStorage {
         guard let encoded = try? JSONEncoder().encode(snapshot) else { return false }
 
         do {
-            try encoded.write(to: recoverySnapshotURL, options: .atomic)
+            try encoded.write(to: recoverySnapshotURL, options: [.atomic, .completeFileProtection])
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    @discardableResult
+    func deleteRecoverySnapshot() -> Bool {
+        guard let recoverySnapshotURL else { return false }
+        guard FileManager.default.fileExists(atPath: recoverySnapshotURL.path) else { return true }
+
+        do {
+            try FileManager.default.removeItem(at: recoverySnapshotURL)
             return true
         } catch {
             return false
@@ -173,7 +196,14 @@ final class FinanceStorage {
 
     func loadRecoverySnapshot() -> (data: FinanceData, attachmentData: [UUID: Data])? {
         guard let recoverySnapshotURL,
-              let encoded = try? Data(contentsOf: recoverySnapshotURL),
+              FileManager.default.fileExists(atPath: recoverySnapshotURL.path) else {
+            return nil
+        }
+        try? FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: recoverySnapshotURL.path
+        )
+        guard let encoded = try? Data(contentsOf: recoverySnapshotURL),
               let snapshot = try? JSONDecoder().decode(RecoverySnapshot.self, from: encoded) else {
             return nil
         }
@@ -247,6 +277,9 @@ final class FinanceStorage {
             }
 
             try context.save()
+            if let databaseURL {
+                Self.applyDatabaseFileProtection(at: databaseURL)
+            }
             loadStatus = .loaded
             WatchSyncPublisher.publish(data: value)
             return true
@@ -293,6 +326,9 @@ final class FinanceStorage {
                 context.insert(FinanceDatabaseRecord(payload: encoded))
             }
             try context.save()
+            if let databaseURL {
+                Self.applyDatabaseFileProtection(at: databaseURL)
+            }
             loadStatus = .loaded
             WatchSyncPublisher.publish(data: updated)
             return true
@@ -379,7 +415,28 @@ final class FinanceStorage {
             url: databaseURL,
             cloudKitDatabase: .none
         )
-        return try? ModelContainer(for: schema, configurations: [configuration])
+        guard let container = try? ModelContainer(for: schema, configurations: [configuration]) else {
+            return nil
+        }
+        applyDatabaseFileProtection(at: databaseURL)
+        return container
+    }
+
+    private static func applyDatabaseFileProtection(at databaseURL: URL) {
+        let protection = FileProtectionType.completeUntilFirstUserAuthentication
+        let fileURLs = [
+            databaseURL,
+            URL(fileURLWithPath: databaseURL.path + "-wal"),
+            URL(fileURLWithPath: databaseURL.path + "-shm"),
+            URL(fileURLWithPath: databaseURL.path + "-journal")
+        ]
+
+        for fileURL in fileURLs where FileManager.default.fileExists(atPath: fileURL.path) {
+            try? FileManager.default.setAttributes(
+                [.protectionKey: protection],
+                ofItemAtPath: fileURL.path
+            )
+        }
     }
 
     private static func makeAttachmentDirectory(at url: URL) -> URL? {
@@ -387,6 +444,10 @@ final class FinanceStorage {
             try FileManager.default.createDirectory(
                 at: url,
                 withIntermediateDirectories: true
+            )
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete],
+                ofItemAtPath: url.path
             )
             return url
         } catch {

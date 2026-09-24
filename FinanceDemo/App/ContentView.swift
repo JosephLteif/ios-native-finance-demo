@@ -855,7 +855,7 @@ private struct DashboardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(11)
-        .pocketGlassSurface(cornerRadius: 15)
+        .pocketGroupedSurface(cornerRadius: 15)
     }
 
     private var monthSnapshot: some View {

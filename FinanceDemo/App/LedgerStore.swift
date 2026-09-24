@@ -848,6 +848,16 @@ final class LedgerStore: ObservableObject {
     }
 
     @discardableResult
+    func deleteRecoverySnapshot() -> Bool {
+        guard storage.deleteRecoverySnapshot() else {
+            lastActionStatus = "The recovery snapshot could not be deleted."
+            return false
+        }
+        lastActionStatus = "Recovery snapshot deleted"
+        return true
+    }
+
+    @discardableResult
     func replaceData(
         _ imported: FinanceData,
         attachmentFiles: [UUID: Data] = [:],

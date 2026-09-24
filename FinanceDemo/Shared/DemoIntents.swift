@@ -129,6 +129,7 @@ struct GetDemoBalanceIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Pocket Ledger Balance"
     static let description = IntentDescription("Reads the current Pocket Ledger balances by currency.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")
@@ -151,6 +152,7 @@ struct GetCategoriesIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Pocket Ledger Categories"
     static let description = IntentDescription("Returns all Pocket Ledger categories and subcategories.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     func perform() async throws -> some IntentResult & ReturnsValue<[FinanceCategoryEntity]> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")
@@ -181,6 +183,7 @@ struct GetAccountsIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Pocket Ledger Accounts"
     static let description = IntentDescription("Returns all Pocket Ledger accounts with their current balance, currency, and type.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     func perform() async throws -> some IntentResult & ReturnsValue<[FinanceAccountEntity]> & ProvidesDialog {
         let storage = FinanceStorage(context: "app-intent")
@@ -218,6 +221,7 @@ struct GetAccountBalanceIntent: AppIntent {
     static let title: LocalizedStringResource = "Get Pocket Ledger Account Balance"
     static let description = IntentDescription("Reads the current balance for one Pocket Ledger account.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Account", description: "The account whose balance should be read.")
     var account: FinanceAccountEntity
@@ -256,6 +260,7 @@ struct AddLedgerTransactionIntent: AppIntent {
     static let title: LocalizedStringResource = "Add Pocket Ledger Transaction"
     static let description = IntentDescription("Adds an expense, income, or transfer with account, category, note, change, and exchange-rate details.")
     static let openAppWhenRun = false
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
     @Parameter(title: "Transaction type", description: "Choose expense, income, or transfer.")
     var kind: FinanceIntentTransactionKind

@@ -84,10 +84,15 @@ final class AppSecurityService: ObservableObject {
     private static let keychainAccount = "app-passcode-verifier"
     private static let passcodeConfiguredKey = "appPasscodeConfigured"
     private static let biometricsEnabledKey = "appBiometricsEnabled"
+    private static let passcodeLockoutThreshold = 5
+    private static let passcodeLockoutStep: TimeInterval = 15
+    private static let maximumPasscodeLockout: TimeInterval = 5 * 60
 
     private struct PasscodeRecord: Codable {
         let salt: Data
         let digest: Data
+        var failedAttempts: Int?
+        var blockedUntil: Date?
     }
 
     @Published private(set) var isPasscodeEnabled: Bool
@@ -130,6 +135,11 @@ final class AppSecurityService: ObservableObject {
         availableBiometry?.displayName ?? "Biometrics"
     }
 
+    var passcodeLockoutRemainingSeconds: Int {
+        guard let blockedUntil = passcodeRecord?.blockedUntil else { return 0 }
+        return max(0, Int(ceil(blockedUntil.timeIntervalSinceNow)))
+    }
+
     func setPasscode(_ passcode: String) throws {
         guard AppPasscodeRules.isValid(passcode) else {
             throw AppSecurityError.invalidPasscode
@@ -138,7 +148,9 @@ final class AppSecurityService: ObservableObject {
         let salt = try Self.makeSalt()
         let record = PasscodeRecord(
             salt: salt,
-            digest: Self.digest(for: passcode, salt: salt)
+            digest: Self.digest(for: passcode, salt: salt),
+            failedAttempts: 0,
+            blockedUntil: nil
         )
         try Self.writePasscodeRecord(record)
 
@@ -148,15 +160,39 @@ final class AppSecurityService: ObservableObject {
     }
 
     func verifyPasscode(_ passcode: String) -> Bool {
-        guard let passcodeRecord,
+        guard var record = passcodeRecord,
               AppPasscodeRules.isValid(passcode) else {
             return false
         }
 
-        return Self.constantTimeEqual(
-            Self.digest(for: passcode, salt: passcodeRecord.salt),
-            passcodeRecord.digest
+        let now = Date()
+        if let blockedUntil = record.blockedUntil, blockedUntil > now {
+            return false
+        }
+
+        let matches = Self.constantTimeEqual(
+            Self.digest(for: passcode, salt: record.salt),
+            record.digest
         )
+        if matches {
+            if (record.failedAttempts ?? 0) > 0 || record.blockedUntil != nil {
+                record.failedAttempts = 0
+                record.blockedUntil = nil
+                passcodeRecord = record
+                try? Self.writePasscodeRecord(record)
+            }
+            return true
+        }
+
+        let failedAttempts = (record.failedAttempts ?? 0) + 1
+        record.failedAttempts = failedAttempts
+        let lockoutDuration = Self.passcodeLockoutDuration(after: failedAttempts)
+        record.blockedUntil = lockoutDuration > 0
+            ? now.addingTimeInterval(lockoutDuration)
+            : nil
+        passcodeRecord = record
+        try? Self.writePasscodeRecord(record)
+        return false
     }
 
     func removePasscode() throws {
@@ -225,13 +261,35 @@ final class AppSecurityService: ObservableObject {
         isBiometricPromptActive = true
         defer { isBiometricPromptActive = false }
         do {
-            return try await context.evaluatePolicy(
+            let authenticated = try await context.evaluatePolicy(
                 .deviceOwnerAuthenticationWithBiometrics,
                 localizedReason: "Unlock your Pocket Ledger data."
             )
+            if authenticated {
+                resetPasscodeRetryState()
+            }
+            return authenticated
         } catch {
             return false
         }
+    }
+
+    private func resetPasscodeRetryState() {
+        guard var record = passcodeRecord,
+              (record.failedAttempts ?? 0) > 0 || record.blockedUntil != nil else {
+            return
+        }
+
+        record.failedAttempts = 0
+        record.blockedUntil = nil
+        passcodeRecord = record
+        try? Self.writePasscodeRecord(record)
+    }
+
+    private static func passcodeLockoutDuration(after failedAttempts: Int) -> TimeInterval {
+        guard failedAttempts >= passcodeLockoutThreshold else { return 0 }
+        let exponent = min(failedAttempts - passcodeLockoutThreshold, 5)
+        return min(passcodeLockoutStep * pow(2, Double(exponent)), maximumPasscodeLockout)
     }
 
     private static func makeSalt() throws -> Data {

@@ -157,9 +157,11 @@ struct SecuritySettingsView: View {
                         }
                     }
 
-                    Text("Your passcode is stored as a salted verifier in the iPhone Keychain. It is not saved with your ledger data.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    if security.isPasscodeEnabled {
+                        Text("Your passcode is stored as a salted verifier in the iPhone Keychain. Five incorrect attempts trigger a wait period that grows with continued failures.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Biometric unlock") {
@@ -190,8 +192,14 @@ struct SecuritySettingsView: View {
                     }
                 }
 
-                Section("Privacy note") {
-                    Text("Financial values in widgets and watch complications are marked private so the system can redact them on the Lock Screen and during Always On. Actions that change your ledger still require authentication.")
+                Section("Privacy") {
+                    NavigationLink {
+                        PrivacyPolicyView()
+                    } label: {
+                        Label("Privacy Policy", systemImage: "hand.raised")
+                    }
+
+                    Text("Financial values in widgets and watch complications are marked private so the system can redact them on the Lock Screen and during Always On. Widget and App Intent actions that change your ledger require authentication.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -408,7 +416,10 @@ private struct PasscodeSetupView: View {
             return
         }
         if mode == .change && !security.verifyPasscode(currentPasscode) {
-            errorMessage = "The current passcode is incorrect."
+            let seconds = security.passcodeLockoutRemainingSeconds
+            errorMessage = seconds > 0
+                ? "Too many incorrect attempts. Try again in \(seconds) seconds."
+                : "The current passcode is incorrect."
             return
         }
 
@@ -524,7 +535,10 @@ struct AppLockView: View {
     private func unlockWithPasscode() {
         guard security.verifyPasscode(passcode) else {
             passcode = ""
-            errorMessage = "That passcode is incorrect."
+            let seconds = security.passcodeLockoutRemainingSeconds
+            errorMessage = seconds > 0
+                ? "Too many incorrect attempts. Try again in \(seconds) seconds."
+                : "That passcode is incorrect."
             return
         }
 
@@ -545,5 +559,39 @@ struct AppLockView: View {
         } else if !Task.isCancelled, scenePhase != .background {
             errorMessage = "Biometric unlock was not completed. Enter your app passcode to continue."
         }
+    }
+}
+
+private struct PrivacyPolicyView: View {
+    var body: some View {
+        Form {
+            Section("Information stored") {
+                Text("Pocket Ledger stores your accounts, balances, transactions, categories, budgets, schedules, preferences, and any receipt files you choose to save in local app storage. When the shared app group is available, Pocket Ledger widgets use the same ledger storage.")
+                Text("You add ledger details by entering them in the app or importing files you select. Receipt photos or PDFs are added when you choose to scan or attach them.")
+                Text("If you use the paired Apple Watch app, selected ledger data is synchronized to that Watch so its screens can work.")
+            }
+
+            Section("How information is used") {
+                Text("The app uses this information to provide ledger, budget, reporting, widget, Watch, receipt scanning, and import or backup features.")
+                Text("Receipt scanning and optional writing assistance use on-device processing. Pocket Ledger does not send ledger data to a developer-operated server, third-party analytics service, advertising network, or third-party AI service.")
+            }
+
+            Section("Permissions and sharing") {
+                Text("The camera, selected photos, or files are accessed only when you choose to scan or attach a receipt, or import a ledger file. Face ID or Touch ID is handled by Apple’s LocalAuthentication system; Pocket Ledger receives the authentication result, not your biometric data. Optional reminders are scheduled as local notifications.")
+                Text("When you export or share ledger information or a backup, the app hands the selected content to the destination you choose in the system share or file picker. That destination’s own privacy practices apply to the exported copy.")
+            }
+
+            Section("Retention and deletion") {
+                Text("The active ledger remains in local app storage until you delete records or erase it in Settings → Data → Import & Backup. Before a reset or replacement, Pocket Ledger keeps one local last-good recovery snapshot that may include receipt files. It remains until replaced by a later snapshot or deleted from the recovery card in Import & Backup. Pocket Ledger keeps no server-side ledger copy.")
+                Text("Exported backups and copies shared with another app are outside Pocket Ledger’s control; delete them from the destination where you saved or shared them. You can revoke camera, photo, and notification permissions in iOS Settings.")
+            }
+
+            Section("Contact") {
+                Text("For privacy questions, use the developer contact information on Pocket Ledger’s App Store page.")
+            }
+        }
+        .pocketListSurface()
+        .navigationTitle("Privacy Policy")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

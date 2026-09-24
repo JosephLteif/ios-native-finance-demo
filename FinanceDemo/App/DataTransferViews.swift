@@ -21,6 +21,7 @@ struct DataTransferView: View {
     @State private var isContinuingToResetAfterBackup = false
     @State private var isShowingResetSuccess = false
     @State private var isShowingRecoveryConfirmation = false
+    @State private var isShowingRecoveryDeletionConfirmation = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -78,7 +79,7 @@ struct DataTransferView: View {
         .alert("Ledger erased", isPresented: $isShowingResetSuccess) {
             Button("OK") {}
         } message: {
-            Text("Your Pocket Ledger data is now empty. App lock and appearance settings were kept.")
+            Text("Your active ledger is empty. Any last-good recovery snapshot is available in Import & Backup. App lock and appearance settings were kept.")
         }
         .confirmationDialog(
             "Restore the last-good ledger?",
@@ -88,7 +89,17 @@ struct DataTransferView: View {
             Button("Restore last-good snapshot", action: restoreLastGoodSnapshot)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This replaces the current ledger with the snapshot captured before the last destructive restore.")
+            Text("This replaces the current ledger with the snapshot captured before the last reset or replacement.")
+        }
+        .confirmationDialog(
+            "Delete the recovery snapshot?",
+            isPresented: $isShowingRecoveryDeletionConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete recovery snapshot", role: .destructive, action: deleteRecoverySnapshot)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the local restore copy, including receipt files stored inside it. Your current ledger and exported backups are unchanged.")
         }
         .alert("Data transfer failed", isPresented: errorPresented) {
             Button("OK") { errorMessage = nil }
@@ -156,7 +167,7 @@ struct DataTransferView: View {
                 .font(.title3.weight(.bold))
                 .foregroundStyle(PocketLedgerTheme.warning)
 
-            Text("Reset removes all ledger accounts, categories, transactions, schedules, and saved exchange rates. Your app lock and appearance settings stay unchanged.")
+            Text("Reset replaces the active ledger with an empty one and normally keeps a local last-good recovery snapshot. Delete any snapshot from this screen if you also want to remove the recovery copy. Your app lock and appearance settings stay unchanged.")
                 .font(.subheadline)
                 .foregroundStyle(PocketLedgerTheme.textSecondary)
 
@@ -179,10 +190,10 @@ struct DataTransferView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("A full Pocket Ledger backup is the safest way to restore this ledger after it is erased.")
+                Text("A full Pocket Ledger backup is the safest way to restore if the on-device recovery snapshot is missing or deleted.")
             }
             .confirmationDialog(
-                "Erase all ledger data?",
+                "Erase the active ledger?",
                 isPresented: $isShowingResetWarning,
                 titleVisibility: .visible
             ) {
@@ -191,17 +202,17 @@ struct DataTransferView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes every account, category, transaction, scheduled transaction, and exchange rate from this device. The action cannot be undone without a backup.")
+                Text("This removes every account, category, transaction, scheduled transaction, and exchange rate from the active ledger. Any local recovery snapshot remains available until you delete it here.")
             }
             .confirmationDialog(
-                "Final warning: erase everything?",
+                "Final warning: erase the active ledger?",
                 isPresented: $isShowingFinalResetWarning,
                 titleVisibility: .visible
             ) {
-                Button("Erase all data", role: .destructive, action: resetLedger)
+                Button("Erase active ledger", role: .destructive, action: resetLedger)
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This is the last confirmation. Your ledger will be replaced with an empty one immediately.")
+                Text("This is the last confirmation. The active ledger will be replaced with an empty one immediately; any local recovery snapshot will remain.")
             }
         }
         .pocketCard()
@@ -212,7 +223,7 @@ struct DataTransferView: View {
             Label("Last-good recovery snapshot", systemImage: "arrow.uturn.backward.circle")
                 .font(.title3.weight(.bold))
 
-            Text("Pocket Ledger keeps a local recovery copy before replacing the ledger. It includes receipt files when they are still available.")
+            Text("Pocket Ledger keeps a local recovery copy before resetting or replacing the ledger. It can contain ledger details and available receipt files. Delete it here to remove the copy from app storage.")
                 .font(.subheadline)
                 .foregroundStyle(PocketLedgerTheme.textSecondary)
 
@@ -224,6 +235,15 @@ struct DataTransferView: View {
             }
             .buttonStyle(.glass)
             .tint(PocketLedgerTheme.accent)
+
+            Button(role: .destructive) {
+                isShowingRecoveryDeletionConfirmation = true
+            } label: {
+                Label("Delete recovery snapshot", systemImage: "trash")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.glass)
+            .tint(PocketLedgerTheme.warning)
         }
         .pocketCard()
     }
@@ -341,6 +361,13 @@ struct DataTransferView: View {
             return
         }
         isShowingResetSuccess = true
+    }
+
+    private func deleteRecoverySnapshot() {
+        guard store.deleteRecoverySnapshot() else {
+            errorMessage = store.lastActionStatus ?? "The recovery snapshot could not be deleted."
+            return
+        }
     }
 }
 
