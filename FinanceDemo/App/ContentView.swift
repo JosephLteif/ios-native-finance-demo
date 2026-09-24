@@ -1802,7 +1802,14 @@ struct TransactionsView: View {
                     Section {
                         ForEach(Array(day.transactions.enumerated()), id: \.element.id) { entry in
                             transactionRow(for: entry.element)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                                .listRowInsets(
+                                    EdgeInsets(
+                                        top: 0,
+                                        leading: PocketLedgerTheme.screenHorizontalPadding * 2,
+                                        bottom: 0,
+                                        trailing: PocketLedgerTheme.screenHorizontalPadding * 2
+                                    )
+                                )
                                 .listRowBackground(
                                     ledgerGroupedRowBackground(
                                         isFirst: entry.offset == 0,
@@ -2705,7 +2712,14 @@ private struct AccountsView: View {
                     }
                     .tint(account.includeInTotals ? PocketLedgerTheme.textSecondary : PocketLedgerTheme.positive)
                 }
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                .listRowInsets(
+                    EdgeInsets(
+                        top: 0,
+                        leading: PocketLedgerTheme.screenHorizontalPadding * 2,
+                        bottom: 0,
+                        trailing: PocketLedgerTheme.screenHorizontalPadding * 2
+                    )
+                )
                 .listRowBackground(
                     ledgerGroupedRowBackground(
                         isFirst: entry.offset == 0,
@@ -2771,7 +2785,14 @@ private struct AccountsView: View {
                         }
                         .tint(PocketLedgerTheme.accent)
                     }
-                    .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: 0,
+                            leading: PocketLedgerTheme.screenHorizontalPadding * 2,
+                            bottom: 0,
+                            trailing: PocketLedgerTheme.screenHorizontalPadding * 2
+                        )
+                    )
                     .listRowBackground(
                         ledgerGroupedRowBackground(
                             isFirst: entry.offset == 0,
