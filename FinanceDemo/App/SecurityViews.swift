@@ -115,13 +115,19 @@ struct SecuritySettingsView: View {
                     }
                     .accessibilityIdentifier("scheduled-transaction-live-activity-toggle")
 
-                    Text(
-                        "Groups up to three upcoming scheduled entries in one private countdown, and counts any additional entries in the same window. "
-                            + "It appears up to eight hours before the next due entry; scheduled notifications follow their selected reminder time independently. "
-                            + "Due entries are added when Pocket Ledger next opens. Enable Live Activities in Settings > Apps > Pocket Ledger, and allow them on the Lock Screen in Settings > Face ID & Passcode > Allow Access When Locked."
-                    )
+                    Text("Shows upcoming scheduled entries in a private Lock Screen countdown.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    DisclosureGroup("Timing and setup") {
+                        Text(
+                            "Groups up to three upcoming scheduled entries in one private countdown, and counts any additional entries in the same window. "
+                                + "It appears up to eight hours before the next due entry; scheduled notifications follow their selected reminder time independently. "
+                                + "Due entries are added when Pocket Ledger next opens. Enable Live Activities in Settings > Apps > Pocket Ledger, and allow them on the Lock Screen in Settings > Face ID & Passcode > Allow Access When Locked."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
 
                     if let dailyReminderStatus {
                         Text(dailyReminderStatus)

@@ -477,7 +477,7 @@ struct MetricsView: View {
                 }
             }
             .chartLegend(.hidden)
-            .frame(height: 246)
+            .frame(height: 216)
 
             spendingTotal(snapshot.expenses)
         }
@@ -502,7 +502,7 @@ struct MetricsView: View {
                 }
             }
             .chartLegend(.hidden)
-            .frame(height: 246)
+            .frame(height: 216)
 
             spendingTotal(total)
         }
@@ -929,7 +929,7 @@ private struct CategoryMetricsDetailView: View {
                 x: .value("Month", point.date, unit: .month),
                 y: .value("Amount", Double(point.amount))
             )
-            .interpolationMethod(.catmullRom)
+            .interpolationMethod(.linear)
             .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             .foregroundStyle(PocketLedgerTheme.accent)
 
@@ -948,7 +948,12 @@ private struct CategoryMetricsDetailView: View {
             }
         }
         .chartYScale(domain: 0...Double(maximum))
-        .chartYAxis(.hidden)
+        .chartYAxis {
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { _ in
+                AxisGridLine()
+                    .foregroundStyle(PocketLedgerTheme.divider)
+            }
+        }
         .chartXAxis {
             AxisMarks(values: .stride(by: .month)) { _ in
                 AxisGridLine()
@@ -957,7 +962,7 @@ private struct CategoryMetricsDetailView: View {
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
         }
-        .frame(height: 238)
+        .frame(height: 205)
         .padding(.top, 8)
     }
 

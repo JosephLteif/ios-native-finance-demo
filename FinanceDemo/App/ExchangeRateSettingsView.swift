@@ -48,8 +48,9 @@ struct ExchangeRatesView: View {
                                     .foregroundStyle(PocketLedgerTheme.accent)
 
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(rate.summary)
+                                    Text(rate.displaySummary)
                                         .font(.subheadline.weight(.semibold))
+                                        .accessibilityLabel(rate.summary)
                                     Text("Custom saved rate")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)

@@ -207,7 +207,7 @@ enum PocketLedgerTheme {
     static var divider: Color { Color(uiColor: .separator) }
     static var textPrimary: Color { .primary }
     static var textSecondary: Color { .secondary }
-    static var textTertiary: Color { .secondary.opacity(0.75) }
+    static var textTertiary: Color { .secondary.opacity(0.85) }
     static var accent: Color { palette.accent }
     static var income: Color { palette.income }
     static var positive: Color { palette.positive }

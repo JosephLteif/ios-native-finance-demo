@@ -656,6 +656,17 @@ struct ExchangeRate: Codable, Equatable, Identifiable {
         let number = NSDecimalNumber(decimal: quoteUnitsPerBaseUnit).stringValue
         return "1 \(baseCurrency.rawValue) = \(number) \(quoteCurrency.rawValue)"
     }
+
+    var displaySummary: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.usesSignificantDigits = true
+        formatter.minimumSignificantDigits = 1
+        formatter.maximumSignificantDigits = 7
+        let value = formatter.string(from: NSDecimalNumber(decimal: quoteUnitsPerBaseUnit))
+            ?? NSDecimalNumber(decimal: quoteUnitsPerBaseUnit).stringValue
+        return "1 \(baseCurrency.rawValue) = \(value) \(quoteCurrency.rawValue)"
+    }
 }
 
 struct ChangeAdjustment: Codable, Equatable {

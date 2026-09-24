@@ -101,17 +101,11 @@ struct BudgetsView: View {
             ProgressView(value: ratio)
                 .tint(projectedOver ? PocketLedgerTheme.warning : PocketLedgerTheme.accent)
                 .animation(PocketLedgerMotion.expressive(reduceMotion: reduceMotion), value: ratio)
-            HStack {
-                Text(over
-                     ? "Over by \(Money(currency: budget.currency, minorUnits: -remaining).formatted)"
-                     : "Remaining \(Money(currency: budget.currency, minorUnits: remaining).formatted)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.positive)
-                Spacer()
-                Text("\(summary.percentUsed)% used")
-                    .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(PocketLedgerTheme.textTertiary)
-            }
+            Text(over
+                 ? "Over by \(Money(currency: budget.currency, minorUnits: -remaining).formatted)"
+                 : "Remaining \(Money(currency: budget.currency, minorUnits: remaining).formatted)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(over ? PocketLedgerTheme.warning : PocketLedgerTheme.positive)
             HStack {
                 Text("Projected \(summary.projected.formatted)")
                     .font(.caption)

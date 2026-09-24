@@ -1856,11 +1856,12 @@ struct TransactionsView: View {
                 }
             }
         }
-        .overlay(alignment: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if !deletedTransactionsForUndo.isEmpty {
                 undoBanner(for: deletedTransactionsForUndo)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
+                    .padding(.vertical, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .onAppear(perform: refreshListSnapshot)
@@ -2228,9 +2229,9 @@ struct TransactionsView: View {
 
                 Spacer()
 
-                Text("\(listSnapshot.filteredTransactions.count) shown")
+                Text("\(listSnapshot.filteredTransactions.count) \(listSnapshot.filteredTransactions.count == 1 ? "transaction" : "transactions")")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
 
             LazyVGrid(
@@ -2387,16 +2388,16 @@ private struct TransactionRow: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(accentColor)
                 .frame(width: 38, height: 38)
-                .pocketGlassSurface(cornerRadius: 19, tint: accentColor.opacity(0.12))
+                .background(accentColor.opacity(0.12), in: Circle())
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(transaction.note)
                     .font(.subheadline.weight(.semibold))
-                    .lineLimit(2)
+                    .lineLimit(1)
                 Text(rowSubtitle)
                     .font(.caption)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
 
                 if let amountDue = transaction.amountDue {
                     Text("Bill total · \(amountDue.formatted)")
@@ -2406,10 +2407,11 @@ private struct TransactionRow: View {
                 }
 
                 if let exchangeRate = transaction.exchangeRate {
-                    Text(exchangeRate.summary)
+                    Text(exchangeRate.displaySummary)
                         .font(.caption2)
                         .foregroundStyle(PocketLedgerTheme.textTertiary)
                         .lineLimit(1)
+                        .accessibilityLabel(exchangeRate.summary)
                 }
 
                 if let shortfall = transaction.changeAdjustment?.shortfall {
@@ -2485,6 +2487,7 @@ private struct AccountsView: View {
     @State private var isPresentingAccount = false
     @State private var editingAccount: Account?
     @State private var isArchivedAccountsExpanded = false
+    @State private var expandedPositionCurrency: LedgerCurrency?
 
     var body: some View {
         List {
@@ -2550,12 +2553,12 @@ private struct AccountsView: View {
     }
 
     private var globalPositionSummary: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Global position")
+                    Text("Net worth by currency")
                         .font(.title3.weight(.bold))
-                    Text("Assets, liabilities, and net total by currency")
+                    Text("Tap a currency to see assets and liabilities")
                         .font(.caption)
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
                 }
@@ -2573,28 +2576,38 @@ private struct AccountsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(currency.rawValue)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        DisclosureGroup(isExpanded: Binding(
+                            get: { expandedPositionCurrency == currency },
+                            set: { expandedPositionCurrency = $0 ? currency : nil }
+                        )) {
+                            accountPositionRow(
+                                title: "Assets",
+                                value: store.assetBalance(for: currency),
+                                tint: PocketLedgerTheme.income
+                            )
+                            accountPositionRow(
+                                title: "Liabilities",
+                                value: store.liabilityBalance(for: currency),
+                                tint: PocketLedgerTheme.warning
+                            )
+                        } label: {
+                            HStack(spacing: 10) {
+                                Text(currency.rawValue)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(PocketLedgerTheme.textSecondary)
 
-                        accountPositionRow(
-                            title: "Assets",
-                            value: store.assetBalance(for: currency),
-                            tint: PocketLedgerTheme.income
-                        )
-                        accountPositionRow(
-                            title: "Liabilities",
-                            value: store.liabilityBalance(for: currency),
-                            tint: PocketLedgerTheme.warning
-                        )
-                        accountPositionRow(
-                            title: "Total",
-                            value: store.netWorth(for: currency),
-                            tint: PocketLedgerTheme.textPrimary,
-                            isEmphasized: true
-                        )
+                                Spacer(minLength: 8)
+
+                                Text(store.netWorth(for: currency).formatted)
+                                    .font(.headline.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(PocketLedgerTheme.textPrimary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                            }
+                        }
+                        .tint(PocketLedgerTheme.textSecondary)
                     }
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 8)
                 }
             }
         }
@@ -2604,22 +2617,17 @@ private struct AccountsView: View {
     private func accountPositionRow(
         title: String,
         value: Money,
-        tint: Color,
-        isEmphasized: Bool = false
+        tint: Color
     ) -> some View {
         HStack {
             Text(title)
-                .font(isEmphasized ? .subheadline.weight(.semibold) : .caption)
-                .foregroundStyle(isEmphasized ? PocketLedgerTheme.textPrimary : PocketLedgerTheme.textSecondary)
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
 
             Spacer()
 
             Text(value.formatted)
-                .font(
-                    isEmphasized
-                        ? Font.subheadline.weight(.semibold).monospacedDigit()
-                        : Font.caption.weight(.semibold).monospacedDigit()
-                )
+                .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
