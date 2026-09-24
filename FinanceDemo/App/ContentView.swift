@@ -2802,10 +2802,10 @@ private struct AccountsView: View {
 private func ledgerGroupedRowBackground(isFirst: Bool, isLast: Bool) -> some View {
     UnevenRoundedRectangle(
         cornerRadii: RectangleCornerRadii(
-            topLeadingRadius: isFirst ? 18 : 0,
-            bottomLeadingRadius: isLast ? 18 : 0,
-            bottomTrailingRadius: isLast ? 18 : 0,
-            topTrailingRadius: isFirst ? 18 : 0
+            topLeading: isFirst ? 18 : 0,
+            bottomLeading: isLast ? 18 : 0,
+            bottomTrailing: isLast ? 18 : 0,
+            topTrailing: isFirst ? 18 : 0
         ),
         style: .continuous
     )
