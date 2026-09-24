@@ -94,6 +94,8 @@ a:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
 .document-heading { max-width: 900px; padding-bottom: 2.5rem; border-bottom: 1px solid var(--ink); }
 .document-heading h1 { font-size: clamp(3.5rem, 7vw, 6.2rem); }
 .document-heading .overline { margin-bottom: 1.4rem; }
+.contact-page .overline, .contact-page .section-index { font-size: 0.75rem; }
+.contact-page .document-heading h1 { letter-spacing: -0.05em; }
 .document-date { margin: 1.5rem 0 0; color: var(--red); font-size: 0.62rem; }
 .document-date span { padding-inline: 0.4rem; }
 .policy-layout { display: grid; grid-template-columns: 210px 1fr; gap: clamp(2rem, 7vw, 7rem); padding-top: 2.5rem; }
@@ -113,6 +115,7 @@ a:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
 .contact-sheet .section-index { display: block; padding: 0; margin-bottom: 1.1rem; }
 .contact-sheet h2 { font-size: 2rem; }
 .contact-sheet .email-link { margin-top: 0.7rem; }
+.contact-sheet .email-fallback { margin-top: 0.35rem; }
 .contact-sheet p { max-width: 550px; }
 .contact-page .back-link { padding-top: 1rem; }
 
