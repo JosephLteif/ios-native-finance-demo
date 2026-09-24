@@ -1726,24 +1726,24 @@ struct TransactionsView: View {
     var body: some View {
         List {
             screenSubtitle
-                .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 2, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 14, leading: 0, bottom: 2, trailing: 0))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
             if isSelectingTransactions {
                 selectionToolbar
-                    .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 4, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 4, trailing: 0))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
 
             filtersButton
-                .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
             transactionsSummary
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 6, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 6, trailing: 0))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
@@ -1761,11 +1761,13 @@ struct TransactionsView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 38)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
                 Button("Add expense", systemImage: "plus", action: onAddExpense)
                     .buttonStyle(.glassProminent)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             } else {
@@ -1794,7 +1796,7 @@ struct TransactionsView: View {
                 }
 
                 transactionPagination
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 24, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 24, trailing: 0))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             }
@@ -1804,6 +1806,7 @@ struct TransactionsView: View {
         .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
         .pocketScreen()
+        .padding(.horizontal, PocketLedgerTheme.screenHorizontalPadding)
         .navigationTitle("Transactions")
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.visible, for: .navigationBar)
@@ -1964,6 +1967,7 @@ struct TransactionsView: View {
                         .accessibilityIdentifier("transaction-saved-filter")
                     }
                 }
+                .pocketListSurface()
                 .navigationTitle("Filters")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -2469,12 +2473,12 @@ private struct AccountsView: View {
     var body: some View {
         List {
             screenSubtitle
-                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 4, trailing: 0))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
             globalPositionSummary
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 12, trailing: 0))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
@@ -2496,7 +2500,7 @@ private struct AccountsView: View {
                  : "Persistent storage is unavailable; changes cannot be saved.")
                 .font(.caption)
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 20, trailing: 16))
+                .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 20, trailing: 0))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
         }
@@ -2505,6 +2509,7 @@ private struct AccountsView: View {
         .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
         .pocketScreen()
+        .padding(.horizontal, PocketLedgerTheme.screenHorizontalPadding)
         .navigationTitle("Accounts")
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.visible, for: .navigationBar)
@@ -3108,10 +3113,7 @@ struct AccountEditor: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .pocketScreen()
-            .listRowBackground(Color.clear)
-            .tint(PocketLedgerTheme.accent)
+            .pocketListSurface()
             .navigationTitle(account == nil ? "New account" : "Edit account")
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: currency) { oldCurrency, newCurrency in
@@ -3233,10 +3235,7 @@ private struct CategoryEditor: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .pocketScreen()
-            .listRowBackground(Color.clear)
-            .tint(PocketLedgerTheme.accent)
+            .pocketListSurface()
             .navigationTitle(category == nil ? "New category" : "Edit category")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3640,10 +3639,7 @@ struct TransactionEditor: View {
                 guard useCustomRate else { return }
                 synchronizeAutomaticTransferAmount()
             }
-            .scrollContentBackground(.hidden)
-            .pocketScreen()
-            .listRowBackground(Color.clear)
-            .tint(PocketLedgerTheme.accent)
+            .pocketListSurface()
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .sensoryFeedback(.success, trigger: saveFeedbackTrigger)

@@ -318,6 +318,7 @@ struct MetricsView: View {
                             .pickerStyle(.menu)
                         }
                     }
+                    .pocketListSurface()
                     .navigationTitle("Breakdown")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {

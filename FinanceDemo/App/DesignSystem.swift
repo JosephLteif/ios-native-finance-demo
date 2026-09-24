@@ -323,6 +323,13 @@ extension View {
             .preferredColorScheme(PocketLedgerTheme.appearanceMode.preferredColorScheme)
     }
 
+    func pocketListSurface() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .listRowBackground(PocketLedgerTheme.surface)
+            .pocketScreen()
+    }
+
     func pocketCard(cornerRadius: CGFloat = 18) -> some View {
         self
             .frame(maxWidth: .infinity, alignment: .leading)

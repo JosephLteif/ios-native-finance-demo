@@ -55,10 +55,7 @@ struct SetupWizardView: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .pocketScreen()
-            .listRowBackground(Color.clear)
-            .tint(PocketLedgerTheme.accent)
+            .pocketListSurface()
             .navigationTitle("Welcome to Pocket Ledger")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

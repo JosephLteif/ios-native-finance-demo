@@ -498,10 +498,7 @@ private struct AccountBalanceEditor: View {
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .pocketScreen()
-            .listRowBackground(Color.clear)
-            .tint(PocketLedgerTheme.accent)
+            .pocketListSurface()
             .navigationTitle("Edit balance")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

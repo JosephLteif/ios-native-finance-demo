@@ -204,10 +204,7 @@ struct SecuritySettingsView: View {
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .pocketScreen()
-            .listRowBackground(Color.clear)
-            .tint(PocketLedgerTheme.accent)
+            .pocketListSurface()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $passcodeSheet) { sheet in
@@ -357,10 +354,7 @@ private struct PasscodeSetupView: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .pocketScreen()
-            .listRowBackground(Color.clear)
-            .tint(PocketLedgerTheme.accent)
+            .pocketListSurface()
             .navigationTitle(mode.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

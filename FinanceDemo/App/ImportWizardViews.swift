@@ -523,6 +523,7 @@ private struct ImportWizardSourceStep: View {
                 }
             }
         }
+        .pocketListSurface()
         .accessibilityIdentifier("importWizard.source")
     }
 
@@ -624,6 +625,7 @@ private struct ImportWizardDefaultsStep: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .pocketListSurface()
         .accessibilityIdentifier("importWizard.defaults")
     }
 }
@@ -661,6 +663,7 @@ private struct ImportWizardOrganizeStep: View {
                     categoriesSection(data: data)
                 }
                 .listStyle(.insetGrouped)
+                .pocketListSurface()
                 .searchable(text: $searchText, prompt: "Search accounts and categories")
             } else {
                 ContentUnavailableView("Preparing import", systemImage: "arrow.triangle.2.circlepath")
@@ -1062,6 +1065,7 @@ private struct ImportWizardAccountEditor: View {
                 }
             }
         }
+        .pocketListSurface()
         .navigationTitle("Edit account")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -1168,6 +1172,7 @@ private struct ImportWizardBulkAccountsSheet: View {
                 }
             }
         }
+        .pocketListSurface()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -1284,6 +1289,7 @@ private struct ImportWizardBulkCategoriesSheet: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .pocketListSurface()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -1368,6 +1374,7 @@ private struct ImportWizardReviewStep: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .pocketListSurface()
             .searchable(text: $searchText, prompt: "Search imported transactions")
             .accessibilityIdentifier("importWizard.review")
         } else {

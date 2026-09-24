@@ -87,10 +87,7 @@ struct ExchangeRatesView: View {
                 }
             }
         }
-        .scrollContentBackground(.hidden)
-        .pocketScreen()
-        .listRowBackground(Color.clear)
-        .tint(PocketLedgerTheme.accent)
+        .pocketListSurface()
         .navigationTitle("Exchange rates")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $sheet) { sheet in
@@ -154,10 +151,7 @@ private struct ExchangeRateEditor: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .scrollContentBackground(.hidden)
-            .pocketScreen()
-            .listRowBackground(Color.clear)
-            .tint(PocketLedgerTheme.accent)
+            .pocketListSurface()
             .navigationTitle(existingRate == nil ? "Add exchange rate" : "Edit exchange rate")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

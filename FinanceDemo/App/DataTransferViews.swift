@@ -389,10 +389,7 @@ private struct BackupRestoreView: View {
                     Text("Merge keeps existing records and adds records with new IDs. Replace removes the current ledger and restores this backup exactly.")
                 }
             }
-            .scrollContentBackground(.hidden)
-            .pocketScreen()
-            .listRowBackground(Color.clear)
-            .tint(PocketLedgerTheme.accent)
+            .pocketListSurface()
             .navigationTitle("Restore backup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -200,6 +200,7 @@ private struct BudgetEditor: View {
                     Toggle("Rollover unused amount", isOn: $rollover)
                 }
             }
+            .pocketListSurface()
             .navigationTitle(budget == nil ? "New budget" : "Edit budget")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

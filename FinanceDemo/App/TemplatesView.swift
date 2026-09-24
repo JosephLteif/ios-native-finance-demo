@@ -122,6 +122,7 @@ struct TemplateNameEditor: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .pocketListSurface()
             .navigationTitle("Save template")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
