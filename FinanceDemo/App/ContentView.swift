@@ -3817,7 +3817,7 @@ struct TransactionEditor: View {
     }
 
     private var expensePaymentsSection: some View {
-        Section {
+        Section(header: Text(outflows.count > 1 ? "Payment breakdown" : "Payment")) {
             if outflows.isEmpty {
                 Button("Choose payment account") {
                     outflows.append(newMovementDraft)
@@ -3872,8 +3872,6 @@ struct TransactionEditor: View {
                  : outflows.count > 1
                     ? "These amounts combine into one purchase total. Each part can use a different account or currency."
                     : "Add another part only if you paid from more than one account.")
-        } header: {
-            Text(outflows.count > 1 ? "Payment breakdown" : "Payment")
         }
     }
 
