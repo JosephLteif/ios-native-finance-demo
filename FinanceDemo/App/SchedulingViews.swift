@@ -1,0 +1,376 @@
+import SwiftUI
+
+@MainActor
+struct ScheduledTransactionsView: View {
+    @ObservedObject var store: LedgerStore
+
+    @State private var isPresentingEditor = false
+    @State private var editingSchedule: ScheduledTransaction?
+    @State private var scheduleToDelete: ScheduledTransaction?
+    @State private var reminderStatus: String?
+    @AppStorage(NotificationService.globalReminderKey)
+    private var globalReminderRawValue = ScheduledReminderTiming.oneDayBefore.rawValue
+
+    var body: some View {
+        List {
+            Text("Plan bills, income, and recurring transfers")
+                .font(.subheadline)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+            Text("Due entries are added to Transactions when Pocket Ledger opens or returns to the foreground.")
+                .font(.footnote)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+            globalReminderSettings
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+            if !schedules.isEmpty {
+                Button {
+                    Task {
+                        reminderStatus = await NotificationService
+                            .requestScheduledTransactionNotifications(
+                                schedules: schedules
+                            )
+                    }
+                } label: {
+                    Label("Enable scheduled reminders", systemImage: "bell.badge")
+                }
+                .buttonStyle(.glass)
+                .tint(PocketLedgerTheme.accent)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+
+            if let reminderStatus {
+                Text(reminderStatus)
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
+            if schedules.isEmpty {
+                emptyState
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(schedules) { schedule in
+                    scheduleCard(schedule)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
+        .pocketScreen()
+        .navigationTitle("Scheduled")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: presentNewSchedule) {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add scheduled transaction")
+            }
+        }
+        .sheet(isPresented: $isPresentingEditor, onDismiss: { editingSchedule = nil }) {
+            TransactionEditor(
+                store: store,
+                initialTiming: .scheduled,
+                scheduledTransaction: editingSchedule
+            )
+        }
+        .onChange(of: globalReminderRawValue) { _, _ in
+            Task {
+                await NotificationService.refreshScheduledTransactionNotifications(
+                    schedules: schedules
+                )
+            }
+        }
+    }
+
+    private var globalReminderTiming: ScheduledReminderTiming {
+        ScheduledReminderTiming(rawValue: globalReminderRawValue) ?? .oneDayBefore
+    }
+
+    private var globalReminderSettings: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Reminder defaults", systemImage: "bell.badge")
+                .font(.headline)
+                .foregroundStyle(PocketLedgerTheme.textPrimary)
+
+            Picker("Default reminder", selection: $globalReminderRawValue) {
+                ForEach(ScheduledReminderTiming.allCases) { timing in
+                    Text(timing.title).tag(timing.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(PocketLedgerTheme.accent)
+
+            Text("Schedules set to Default use this timing. Each schedule can override it below.")
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+        }
+        .padding(14)
+        .pocketGroupedSurface(cornerRadius: 18)
+    }
+
+    private var schedules: [ScheduledTransaction] {
+        store.data.scheduledTransactions.sorted { lhs, rhs in
+            if lhs.isEnabled != rhs.isEnabled {
+                return lhs.isEnabled && !rhs.isEnabled
+            }
+            return lhs.nextRunDate < rhs.nextRunDate
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+            Text("Nothing scheduled yet")
+                .font(.headline)
+            Text("Create a future or recurring transaction and it will be recorded automatically when the app is active.")
+                .font(.subheadline)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+                .multilineTextAlignment(.center)
+            Button("Create schedule", action: presentNewSchedule)
+                .buttonStyle(.glassProminent)
+                .tint(PocketLedgerTheme.accent)
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 44)
+        .padding(.horizontal, 20)
+        .pocketGroupedSurface(cornerRadius: 20)
+    }
+
+    private func scheduleCard(_ schedule: ScheduledTransaction) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(schedule.note.isEmpty ? schedule.kind.displayName : schedule.note)
+                        .font(.headline)
+                        .lineLimit(2)
+                    Text(store.transactionSummary(schedule.transactionTemplate))
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(PocketLedgerTheme.textPrimary)
+                }
+
+                Spacer(minLength: 8)
+
+                Toggle(
+                    "Enable \(schedule.note.isEmpty ? schedule.kind.displayName : schedule.note)",
+                    isOn: enabledBinding(for: schedule)
+                )
+                .labelsHidden()
+                .accessibilityValue(schedule.isEnabled ? "On" : "Off")
+                .disabled(isCompletedOneTime(schedule))
+            }
+
+            HStack(spacing: 8) {
+                Label(schedule.kind.displayName, systemImage: schedule.kind == .income ? "arrow.down.left" : "arrow.up.right")
+                if schedule.kind == .expense {
+                    Text("·")
+                    Text(store.categoryPath(for: schedule.categoryID))
+                        .lineLimit(1)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+            Text(timingText(for: schedule))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(schedule.isEnabled ? PocketLedgerTheme.accent : PocketLedgerTheme.textTertiary)
+
+            Menu {
+                Button {
+                    updateReminder(for: schedule, timing: nil)
+                } label: {
+                    if schedule.reminderTiming == nil {
+                        Label("Default · \(globalReminderTiming.title)", systemImage: "checkmark")
+                    } else {
+                        Text("Default · \(globalReminderTiming.title)")
+                    }
+                }
+
+                ForEach(ScheduledReminderTiming.allCases) { timing in
+                    Button {
+                        updateReminder(for: schedule, timing: timing)
+                    } label: {
+                        if schedule.reminderTiming == timing {
+                            Label(timing.title, systemImage: "checkmark")
+                        } else {
+                            Text(timing.title)
+                        }
+                    }
+                }
+            } label: {
+                Label("Reminder: \(reminderLabel(for: schedule))", systemImage: "bell")
+            }
+            .font(.caption.weight(.semibold))
+            .buttonStyle(.glass)
+            .tint(PocketLedgerTheme.accent)
+
+            HStack {
+                if schedule.isEnabled {
+                    Menu {
+                        Button("Record now", systemImage: "checkmark.circle") {
+                            _ = store.recordScheduledTransactionNow(id: schedule.id)
+                        }
+                        Button("Skip next", systemImage: "forward.end") {
+                            _ = store.skipNextScheduledTransaction(id: schedule.id)
+                        }
+                    } label: {
+                        Label("Actions", systemImage: "ellipsis.circle")
+                    }
+                    .buttonStyle(.glass)
+                    .tint(PocketLedgerTheme.accent)
+                }
+
+                Button("Edit") {
+                    editingSchedule = schedule
+                    isPresentingEditor = true
+                }
+                .buttonStyle(.glass)
+                .tint(PocketLedgerTheme.accent)
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    scheduleToDelete = schedule
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(16)
+        .pocketGroupedSurface(cornerRadius: 20)
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(PocketLedgerTheme.divider, lineWidth: 1)
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            if schedule.isEnabled {
+                Button("Record now", systemImage: "checkmark.circle") {
+                    _ = store.recordScheduledTransactionNow(id: schedule.id)
+                }
+                .tint(PocketLedgerTheme.positive)
+
+                Button("Skip next", systemImage: "forward.end") {
+                    _ = store.skipNextScheduledTransaction(id: schedule.id)
+                }
+                .tint(PocketLedgerTheme.textSecondary)
+            } else if !isCompletedOneTime(schedule) {
+                Button("Enable", systemImage: "play.circle") {
+                    _ = store.setScheduledTransactionEnabled(id: schedule.id, isEnabled: true)
+                }
+                .tint(PocketLedgerTheme.positive)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button("Edit", systemImage: "pencil") {
+                editingSchedule = schedule
+                isPresentingEditor = true
+            }
+            .tint(PocketLedgerTheme.accent)
+
+            Button(role: .destructive) {
+                scheduleToDelete = schedule
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .confirmationDialog(
+            "Delete scheduled transaction?",
+            isPresented: Binding(
+                get: { scheduleToDelete?.id == schedule.id },
+                set: { isPresented in
+                    if !isPresented, scheduleToDelete?.id == schedule.id {
+                        scheduleToDelete = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                _ = store.deleteScheduledTransaction(id: schedule.id)
+                scheduleToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                scheduleToDelete = nil
+            }
+        } message: {
+            Text("This scheduled transaction will be removed.")
+        }
+    }
+
+    private func timingText(for schedule: ScheduledTransaction) -> String {
+        let date = schedule.nextRunDate.formatted(date: .abbreviated, time: .shortened)
+        if let skippedDate = schedule.lastSkippedDate,
+           schedule.lastRunDate.map({ skippedDate > $0 }) ?? true {
+            if schedule.frequency == .once {
+                return "Skipped \(skippedDate.formatted(date: .abbreviated, time: .shortened))"
+            }
+            return "Skipped \(skippedDate.formatted(date: .abbreviated, time: .shortened)) · Next \(date)"
+        }
+        if schedule.isEnabled {
+            if schedule.frequency == .once {
+                return "Runs on \(date)"
+            }
+            if schedule.frequency == .monthly,
+               schedule.monthlyRule == .lastDayOfMonth {
+                return "Next \(date) · Last day of each month"
+            }
+            return "Next \(date) · \(schedule.frequency.displayName)"
+        }
+
+        if isCompletedOneTime(schedule), let lastRunDate = schedule.lastRunDate {
+            return "Completed \(lastRunDate.formatted(date: .abbreviated, time: .shortened))"
+        }
+        return "Paused · Next \(date)"
+    }
+
+    private func isCompletedOneTime(_ schedule: ScheduledTransaction) -> Bool {
+        schedule.frequency == .once && schedule.lastRunDate != nil
+    }
+
+    private func enabledBinding(for schedule: ScheduledTransaction) -> Binding<Bool> {
+        Binding(
+            get: {
+                store.data.scheduledTransactions.first { $0.id == schedule.id }?.isEnabled ?? false
+            },
+            set: { isEnabled in
+                _ = store.setScheduledTransactionEnabled(id: schedule.id, isEnabled: isEnabled)
+            }
+        )
+    }
+
+    private func reminderLabel(for schedule: ScheduledTransaction) -> String {
+        schedule.reminderTiming?.title ?? "Default · \(globalReminderTiming.title)"
+    }
+
+    private func updateReminder(
+        for schedule: ScheduledTransaction,
+        timing: ScheduledReminderTiming?
+    ) {
+        var updated = schedule
+        updated.reminderTiming = timing
+        _ = store.updateScheduledTransaction(updated)
+    }
+
+    private func presentNewSchedule() {
+        editingSchedule = nil
+        isPresentingEditor = true
+    }
+}

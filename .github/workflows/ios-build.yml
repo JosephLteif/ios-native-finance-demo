@@ -2,6 +2,12 @@ name: Build unsigned iOS IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      run_simulator_tests:
+        description: Run the iPhone Simulator test job (adds about 9 minutes)
+        required: false
+        default: false
+        type: boolean
   push:
     tags:
       - "v*"
@@ -10,12 +16,23 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-ios:
+    name: Build iOS app
     runs-on: macos-26
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+
+      - name: Cache Swift package data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/SourcePackages
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
 
       - name: Print build environment
         run: |
@@ -26,13 +43,13 @@ jobs:
           xcode-select -p
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
 
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
-
-      - name: Inspect generated schemes
-        run: xcodebuild -list -project ios-native-finance-demo.xcodeproj
 
       - name: Compile app and widget for a generic iOS device
         run: |
@@ -44,35 +61,291 @@ jobs:
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            clean build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
 
-      - name: Verify app and embedded widget
+      - name: Archive iOS app
         run: |
           set -euo pipefail
-          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
-          test -d "$APP_PATH" || { echo "Missing app: $APP_PATH"; exit 1; }
+          tar -czf "$GITHUB_WORKSPACE/FinanceDemo-app.tar.gz" \
+            -C "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" \
+            FinanceDemo.app
+
+      - name: Upload iOS app
+        uses: actions/upload-artifact@v7
+        with:
+          name: FinanceDemo-ios-build
+          path: FinanceDemo-app.tar.gz
+          retention-days: 1
+
+  build-watch:
+    name: Build watch app
+    runs-on: macos-26
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Cache Swift package data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/SourcePackages
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Compile watch simulator and device builds
+        run: |
+          set -u
+          simulator_log="$RUNNER_TEMP/xcodebuild-watch.log"
+          device_log="$RUNNER_TEMP/xcodebuild-watch-device.log"
+
+          xcodebuild \
+            -project ios-native-finance-demo.xcodeproj \
+            -scheme FinanceDemoWatch \
+            -configuration Debug \
+            -sdk watchsimulator \
+            -destination "generic/platform=watchOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/WatchDerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/WatchSimulatorSourcePackages" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build > "$simulator_log" 2>&1 &
+          simulator_pid=$!
+
+          xcodebuild \
+            -project ios-native-finance-demo.xcodeproj \
+            -scheme FinanceDemoWatch \
+            -configuration Release \
+            -sdk watchos \
+            -destination "generic/platform=watchOS" \
+            -derivedDataPath "$RUNNER_TEMP/WatchDeviceDerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/WatchDeviceSourcePackages" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build > "$device_log" 2>&1 &
+          device_pid=$!
+
+          simulator_status=0
+          device_status=0
+          wait "$simulator_pid" || simulator_status=$?
+          wait "$device_pid" || device_status=$?
+
+          cat "$simulator_log"
+          cat "$device_log"
+
+          if [ "$simulator_status" -ne 0 ]; then
+            exit "$simulator_status"
+          fi
+          exit "$device_status"
+
+      - name: Archive watch app
+        run: |
+          set -euo pipefail
+          tar -czf "$GITHUB_WORKSPACE/FinanceDemo-watch.tar.gz" \
+            -C "$RUNNER_TEMP/WatchDeviceDerivedData/Build/Products/Release-watchos" \
+            FinanceDemoWatch.app
+
+      - name: Upload watch app
+        uses: actions/upload-artifact@v7
+        with:
+          name: FinanceDemo-watch-build
+          path: FinanceDemo-watch.tar.gz
+          retention-days: 1
+
+  test-ios:
+    name: Run iOS tests
+    runs-on: macos-26
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_simulator_tests }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Cache Swift package data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/SourcePackages
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('project.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Compile unit tests and boot an iPhone simulator
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ && $2 ~ /^[A-Fa-f0-9-]+$/ { print $2; exit }')"
+          test -n "$SIMULATOR_ID" || { echo "No available iPhone simulator found"; exit 1; }
+          echo "SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
+
+          if ! xcrun simctl list devices available | grep -F "$SIMULATOR_ID" | grep -F "(Booted)" > /dev/null; then
+            xcrun simctl boot "$SIMULATOR_ID"
+          fi
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
+          simulator_boot_pid=$!
+
+          build_status=0
+          xcodebuild \
+            -project ios-native-finance-demo.xcodeproj \
+            -scheme FinanceDemo \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath "$RUNNER_TEMP/TestDerivedData" \
+            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build-for-testing 2>&1 | tee "$RUNNER_TEMP/xcodebuild-tests.log" || build_status=$?
+
+          if [ "$build_status" -ne 0 ]; then
+            kill "$simulator_boot_pid" 2>/dev/null || true
+            exit "$build_status"
+          fi
+
+          simulator_boot_status=0
+          wait "$simulator_boot_pid" || simulator_boot_status=$?
+          cat "$RUNNER_TEMP/simulator-boot.log"
+          exit "$simulator_boot_status"
+
+      - name: Run logic tests
+        run: |
+          set -euo pipefail
+          test -n "$SIMULATOR_ID" || { echo "The test simulator was not selected"; exit 1; }
+          xcodebuild \
+            -project ios-native-finance-demo.xcodeproj \
+            -scheme FinanceDemo \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -parallel-testing-enabled NO \
+            -derivedDataPath "$RUNNER_TEMP/TestDerivedData" \
+            -clonedSourcePackagesDirPath "$HOME/Library/Developer/Xcode/SourcePackages" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            test-without-building \
+            -only-testing:FinanceDemoTests 2>&1 | tee "$RUNNER_TEMP/xcodebuild-logic-tests.log"
+
+  package:
+    name: Package unsigned IPA
+    needs: [build-ios, build-watch, test-ios]
+    if: ${{ always() && needs.build-ios.result == 'success' && needs.build-watch.result == 'success' && (needs.test-ios.result == 'success' || needs.test-ios.result == 'skipped') }}
+    runs-on: macos-26
+
+    steps:
+      - name: Download iOS app
+        uses: actions/download-artifact@v7
+        with:
+          name: FinanceDemo-ios-build
+          path: ios-build
+
+      - name: Download watch app
+        uses: actions/download-artifact@v7
+        with:
+          name: FinanceDemo-watch-build
+          path: watch-build
+
+      - name: Embed watch app and verify bundle
+        run: |
+          set -euo pipefail
+          PACKAGE_ROOT="$RUNNER_TEMP/package"
+          mkdir -p "$PACKAGE_ROOT"
+          tar -xzf ios-build/FinanceDemo-app.tar.gz -C "$PACKAGE_ROOT"
+          tar -xzf watch-build/FinanceDemo-watch.tar.gz -C "$PACKAGE_ROOT"
+
+          APP_PATH="$PACKAGE_ROOT/FinanceDemo.app"
+          WATCH_SOURCE_PATH="$PACKAGE_ROOT/FinanceDemoWatch.app"
+          test -d "$APP_PATH" || { echo "Missing iOS app: $APP_PATH"; exit 1; }
+          test -d "$WATCH_SOURCE_PATH" || { echo "Missing watch app: $WATCH_SOURCE_PATH"; exit 1; }
+          mkdir -p "$APP_PATH/Watch"
+          ditto "$WATCH_SOURCE_PATH" "$APP_PATH/Watch/FinanceDemoWatch.app"
+
           test -d "$APP_PATH/PlugIns" || { echo "Missing PlugIns directory: $APP_PATH/PlugIns"; exit 1; }
-          WIDGET_PATH="$(find "$APP_PATH/PlugIns" -maxdepth 1 -type d -name "*.appex" -print -quit)"
+          WATCH_APP_PATH="$APP_PATH/Watch/FinanceDemoWatch.app"
+          test -d "$WATCH_APP_PATH" || { echo "Missing embedded watch app: $WATCH_APP_PATH"; exit 1; }
+          test ! -e "$APP_PATH/PlugIns/FinanceDemoWatch.app" || {
+            echo "Watch app was embedded as an iOS plug-in instead of a Watch bundle."
+            exit 1
+          }
+          test -d "$WATCH_APP_PATH/PlugIns/FinanceDemoWatchWidget.appex" || {
+            echo "Missing embedded watch complication: $WATCH_APP_PATH/PlugIns/FinanceDemoWatchWidget.appex"
+            exit 1
+          }
+          WIDGET_PATH=""
+          for candidate in "$APP_PATH"/PlugIns/*.appex; do
+            if [ -d "$candidate" ]; then
+              WIDGET_PATH="$candidate"
+              break
+            fi
+          done
           test -n "$WIDGET_PATH" || { echo "No WidgetKit .appex found in $APP_PATH/PlugIns"; exit 1; }
+          test -f "$APP_PATH/Assets.car" || { echo "Missing compiled asset catalog: $APP_PATH/Assets.car"; exit 1; }
+          DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_PATH/Info.plist")"
+          test "$DISPLAY_NAME" = "Pocket Ledger" || {
+            echo "Unexpected app display name: $DISPLAY_NAME"
+            exit 1
+          }
           echo "App: $APP_PATH"
+          echo "Watch app: $WATCH_APP_PATH"
           echo "Widget extension: $WIDGET_PATH"
+          echo "Compiled asset catalog: $APP_PATH/Assets.car"
+          echo "Display name: $DISPLAY_NAME"
           file "$APP_PATH/FinanceDemo"
 
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
-          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/FinanceDemo.app"
+          APP_PATH="$RUNNER_TEMP/package/FinanceDemo.app"
           PACKAGE_ROOT="$RUNNER_TEMP/unsigned-ipa"
+          IPA_PATH="$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
           rm -rf "$PACKAGE_ROOT"
+          rm -f "$IPA_PATH"
           mkdir -p "$PACKAGE_ROOT/Payload"
-          cp -R "$APP_PATH" "$PACKAGE_ROOT/Payload/FinanceDemo.app"
-          ditto -c -k --sequesterRsrc --keepParent "$PACKAGE_ROOT/Payload" "$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
-          test -f "$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
-          unzip -l "$GITHUB_WORKSPACE/FinanceDemo-unsigned.ipa"
+          ditto "$APP_PATH" "$PACKAGE_ROOT/Payload/FinanceDemo.app"
+          ditto -c -k --sequesterRsrc --keepParent "$PACKAGE_ROOT/Payload" "$IPA_PATH"
+          test -f "$IPA_PATH"
+          unzip -t "$IPA_PATH"
+          unzip -Z1 "$IPA_PATH" | grep -Eq '^Payload/FinanceDemo\.app/PlugIns/[^/]+\.appex(/|$)' || {
+            echo "Packaged IPA does not contain an embedded widget extension."
+            exit 1
+          }
+          unzip -Z1 "$IPA_PATH" | grep -Eq '^Payload/FinanceDemo\.app/Watch/FinanceDemoWatch\.app(/|$)' || {
+            echo "Packaged IPA does not contain the embedded watch app."
+            exit 1
+          }
+          unzip -l "$IPA_PATH"
 
       - name: Write build information
         run: |
@@ -86,7 +359,7 @@ jobs:
           cat build-info.txt
 
       - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: FinanceDemo-unsigned
           path: |

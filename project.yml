@@ -4,13 +4,20 @@ options:
   bundleIdPrefix: com.josephlteif
   deploymentTarget:
     iOS: 26.0
+    watchOS: 26.0
   createIntermediateGroups: true
   groupSortPosition: top
 
 settings:
   base:
     IPHONEOS_DEPLOYMENT_TARGET: 26.0
+    WATCHOS_DEPLOYMENT_TARGET: 26.0
     SWIFT_VERSION: 6.0
+
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.19
 
 targets:
   FinanceDemo:
@@ -21,9 +28,14 @@ targets:
       - path: FinanceDemo/Models
       - path: FinanceDemo/Services
       - path: FinanceDemo/Shared
+      - path: FinanceDemo/WatchShared
+      - path: FinanceDemo/Resources/Assets.xcassets
+    resources:
+      - path: FinanceDemo/Config/PrivacyInfo.xcprivacy
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: FinanceDemo/Config/Info.plist
         CODE_SIGN_ENTITLEMENTS: FinanceDemo/Config/FinanceDemo.entitlements
         TARGETED_DEVICE_FAMILY: 1
@@ -31,10 +43,19 @@ targets:
     info:
       path: FinanceDemo/Config/Info.plist
       properties:
-        CFBundleDisplayName: Finance Native Demo
-        CFBundleName: FinanceDemo
-        CFBundleShortVersionString: 1.0
-        CFBundleVersion: 1
+        CFBundleDisplayName: Pocket Ledger
+        CFBundleName: Pocket Ledger
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSCameraUsageDescription: "Pocket Ledger uses the camera to read bill items."
+        NSFaceIDUsageDescription: "Pocket Ledger uses Face ID to unlock your financial data."
+        NSPhotoLibraryUsageDescription: "Pocket Ledger uses selected bill photos to read bill items."
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLName: com.josephlteif.financedemo
+            CFBundleURLSchemes:
+              - pocketledger
         UILaunchScreen: {}
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations:
@@ -45,19 +66,26 @@ targets:
         com.apple.security.application-groups:
           - group.com.josephlteif.financedemo
     dependencies:
+      - package: ZIPFoundation
       - target: FinanceDemoWidget
+        embed: true
+        codeSign: false
     scheme:
       gatherCoverageData: false
-      testTargets: []
+      testTargets:
+        - FinanceDemoTests
 
   FinanceDemoWidget:
     type: app-extension
     platform: iOS
     sources:
       - path: FinanceDemo/Models
-      - path: FinanceDemo/Services/DemoSharedStorage.swift
+      - path: FinanceDemo/Services/FinanceStorage.swift
       - path: FinanceDemo/Shared
+      - path: FinanceDemo/WatchShared
       - path: FinanceDemoWidget
+    resources:
+      - path: FinanceDemoWidget/Config/PrivacyInfo.xcprivacy
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.widget
@@ -67,15 +95,89 @@ targets:
     info:
       path: FinanceDemoWidget/Config/Info.plist
       properties:
-        CFBundleDisplayName: Finance Demo Balance
-        CFBundleName: FinanceDemoWidget
-        CFBundleShortVersionString: 1.0
-        CFBundleVersion: 1
+        CFBundleDisplayName: Pocket Ledger Balance
+        CFBundleName: Pocket Ledger Widget
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).BalanceWidgetBundle
     entitlements:
       path: FinanceDemoWidget/Config/FinanceDemoWidget.entitlements
       properties:
         com.apple.security.application-groups:
           - group.com.josephlteif.financedemo
+
+  FinanceDemoWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: FinanceDemo/Models/FinanceModel.swift
+      - path: FinanceDemo/WatchShared
+      - path: FinanceDemoWatch
+    resources:
+      - path: FinanceDemoWatch/Config/PrivacyInfo.xcprivacy
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        SUPPORTS_MACCATALYST: NO
+    info:
+      path: FinanceDemoWatch/Config/Info.plist
+      properties:
+        WKWatchKitApp: true
+        CFBundleDisplayName: Pocket Ledger
+        CFBundleName: Pocket Ledger
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        WKCompanionAppBundleIdentifier: com.josephlteif.financedemo
+        WKRunsIndependentlyOfCompanionApp: false
+    entitlements:
+      path: FinanceDemoWatch/Config/FinanceDemoWatch.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.josephlteif.financedemo
+    dependencies:
+      - target: FinanceDemoWatchWidget
+        embed: true
+        codeSign: false
+    scheme: {}
+
+  FinanceDemoWatchWidget:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: FinanceDemo/Models/FinanceModel.swift
+      - path: FinanceDemo/WatchShared
+      - path: FinanceDemoWatchWidget
+    resources:
+      - path: FinanceDemoWatchWidget/Config/PrivacyInfo.xcprivacy
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.watchkitapp.widget
+        TARGETED_DEVICE_FAMILY: "4"
+    info:
+      path: FinanceDemoWatchWidget/Config/Info.plist
+      properties:
+        CFBundleDisplayName: Pocket Ledger Complication
+        CFBundleName: Pocket Ledger Complication
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: FinanceDemoWatchWidget/Config/FinanceDemoWatchWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.josephlteif.financedemo
+
+  FinanceDemoTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: FinanceDemoTests
+    dependencies:
+      - target: FinanceDemo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.josephlteif.financedemo.tests
+        GENERATE_INFOPLIST_FILE: YES

@@ -1,31 +1,49 @@
 import SwiftUI
 import WidgetKit
 
-struct BalanceEntry: TimelineEntry {
+private enum PocketWidgetTheme {
+    static let background = Color(red: 0.04, green: 0.08, blue: 0.13)
+    static let accent = Color(red: 0.20, green: 0.78, blue: 0.70)
+    static let income = Color(red: 0.37, green: 0.66, blue: 1.00)
+    static let warning = Color(red: 0.96, green: 0.70, blue: 0.32)
+}
+
+struct BalanceEntry: TimelineEntry, Sendable {
     let date: Date
-    let snapshot: DemoSnapshot
+    let snapshot: FinanceWidgetSnapshot
 }
 
 struct BalanceTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> BalanceEntry {
         BalanceEntry(
             date: .now,
-            snapshot: DemoSnapshot(
-                balanceCents: 100_000,
-                lastTransactionDescription: "Starting balance",
+            snapshot: FinanceWidgetSnapshot(
+                usdAvailable: Money(currency: .usd, minorUnits: 0),
+                lbpAvailable: Money(currency: .lbp, minorUnits: 0),
+                eurAvailable: Money(currency: .eur, minorUnits: 0),
+                latestTransactionDescription: "No transactions yet",
                 lastUpdated: .now,
-                lastWidgetRefresh: nil,
-                appGroupAvailable: true
+                appGroupAvailable: true,
+                attentionCount: 0,
+                upcomingScheduledCount: 0
             )
         )
     }
 
     func getSnapshot(in context: Context, completion: @escaping (BalanceEntry) -> Void) {
-        completion(BalanceEntry(date: .now, snapshot: DemoSharedStorage(context: "widget").snapshot()))
+        completion(
+            BalanceEntry(
+                date: .now,
+                snapshot: FinanceStorage(context: "widget").widgetSnapshot()
+            )
+        )
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<BalanceEntry>) -> Void) {
-        let entry = BalanceEntry(date: .now, snapshot: DemoSharedStorage(context: "widget").snapshot())
+        let entry = BalanceEntry(
+            date: .now,
+            snapshot: FinanceStorage(context: "widget").widgetSnapshot()
+        )
         let refreshDate = Date(timeIntervalSinceNow: 15 * 60)
         completion(Timeline(entries: [entry], policy: .after(refreshDate)))
     }
@@ -38,45 +56,109 @@ struct BalanceWidgetEntryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("Finance Demo")
+            Text("Pocket Ledger")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PocketWidgetTheme.accent)
 
-            Text(entry.snapshot.balanceText)
-                .font(.system(size: family == .systemSmall ? 30 : 38, weight: .bold, design: .rounded))
-                .minimumScaleFactor(0.65)
-                .lineLimit(1)
+            if entry.snapshot.appGroupAvailable {
+                if family == .systemSmall {
+                    balanceRow(currency: "USD", amount: entry.snapshot.usdAvailable.formatted)
+                    balanceRow(currency: "LBP", amount: entry.snapshot.lbpAvailable.formatted)
+                    balanceRow(currency: "EUR", amount: entry.snapshot.eurAvailable.formatted)
+                } else {
+                    balanceRow(currency: "USD", amount: entry.snapshot.usdAvailable.formatted)
+                    balanceRow(currency: "LBP", amount: entry.snapshot.lbpAvailable.formatted)
+                    balanceRow(currency: "EUR", amount: entry.snapshot.eurAvailable.formatted)
 
-            Text(entry.snapshot.lastTransactionDescription)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(family == .systemSmall ? 2 : 1)
+                    Text(entry.snapshot.latestTransactionDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .privacySensitive()
+
+                    if entry.snapshot.attentionCount > 0 || entry.snapshot.upcomingScheduledCount > 0 {
+                        HStack(spacing: 6) {
+                            if entry.snapshot.attentionCount > 0 {
+                                Label(
+                                    "\(entry.snapshot.attentionCount) attention",
+                                    systemImage: "exclamationmark.circle"
+                                )
+                                .foregroundStyle(PocketWidgetTheme.warning)
+                            }
+                            if entry.snapshot.upcomingScheduledCount > 0 {
+                                Label(
+                                    "\(entry.snapshot.upcomingScheduledCount) upcoming",
+                                    systemImage: "calendar.badge.clock"
+                                )
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        .font(.caption2.weight(.semibold))
+                    }
+                }
+            } else {
+                Text("Shared storage unavailable")
+                    .font(.headline)
+                    .foregroundStyle(PocketWidgetTheme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Sign both targets with the Pocket Ledger App Group to share balances.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Spacer(minLength: 0)
 
             HStack {
-                Text(entry.snapshot.lastUpdated, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if entry.snapshot.appGroupAvailable {
+                    Text(entry.snapshot.lastUpdated, style: .relative)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text("App Group required")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: 4)
 
                 if entry.snapshot.appGroupAvailable {
-                    Button(intent: AddDemoExpenseIntent()) {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.title3)
+                    if family == .systemMedium {
+                        Button(intent: AddDemoExpenseIntent()) {
+                            Label("Add $5 USD expense", systemImage: "plus.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(PocketWidgetTheme.accent)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Add a five dollar USD expense")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add a five dollar expense")
                 } else {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(PocketWidgetTheme.warning)
                         .accessibilityLabel("Shared App Group unavailable")
                 }
             }
         }
-        .containerBackground(.background, for: .widget)
+        .containerBackground(PocketWidgetTheme.background, for: .widget)
+        .widgetURL(URL(string: family == .systemSmall
+            ? "pocketledger://overview"
+            : "pocketledger://transactions"))
+    }
+
+    private func balanceRow(currency: String, amount: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(currency)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(currency == "USD" ? PocketWidgetTheme.income : .secondary)
+            Spacer(minLength: 6)
+            Text(amount)
+                .font((family == .systemSmall ? Font.body : Font.title3).weight(.bold).monospacedDigit())
+                .minimumScaleFactor(0.80)
+                .lineLimit(1)
+                .privacySensitive()
+        }
     }
 }
 
@@ -87,8 +169,8 @@ struct BalanceWidget: Widget {
         StaticConfiguration(kind: Self.kind, provider: BalanceTimelineProvider()) { entry in
             BalanceWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("Demo Balance")
-        .description("Shows the shared demo balance and last transaction.")
+        .configurationDisplayName("Pocket Ledger Balances")
+        .description("Shows available USD, LBP, and EUR balances and the latest transaction.")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
@@ -97,6 +179,7 @@ struct BalanceWidget: Widget {
 struct BalanceWidgetBundle: WidgetBundle {
     var body: some Widget {
         BalanceWidget()
+        ScheduledTransactionLiveActivity()
+        AddExpenseControl()
     }
 }
-

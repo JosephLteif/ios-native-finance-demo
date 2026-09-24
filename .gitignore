@@ -8,6 +8,7 @@ build/
 *.app/
 *.appex/
 *.ipa
+artifacts/
 
 # Apple signing material and credential files
 *.cer
@@ -31,4 +32,3 @@ fastlane/session/
 .DS_Store
 .idea/
 .vscode/
-
