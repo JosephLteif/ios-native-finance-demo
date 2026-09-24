@@ -2836,6 +2836,7 @@ private func ledgerGroupedRowBackground(isFirst: Bool, isLast: Bool) -> some Vie
         style: .continuous
     )
     .fill(PocketLedgerTheme.surface)
+    .padding(.horizontal, 16)
 }
 
 @MainActor
@@ -3367,28 +3368,21 @@ private struct MovementLineEditor: View {
     @ObservedObject var store: LedgerStore
     @Binding var line: MovementDraft
     let amountPlaceholder: String
-    let onCreateAccount: () -> Void
     let allowsArchivedAccount: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             CurrencyInputField(amountPlaceholder, text: $line.amount, currency: line.currency)
 
-            HStack {
-                Picker("Account", selection: $line.accountID) {
-                    ForEach(store.data.accounts.filter { account in
-                        !account.isArchived || (allowsArchivedAccount && account.id == line.accountID)
-                    }) { account in
-                        Text("\(account.name) (\(account.currency.rawValue))")
-                            .tag(account.id)
-                    }
+            Picker("Account", selection: $line.accountID) {
+                ForEach(store.data.accounts.filter { account in
+                    !account.isArchived || (allowsArchivedAccount && account.id == line.accountID)
+                }) { account in
+                    Text("\(account.name) (\(account.currency.rawValue))")
+                        .tag(account.id)
                 }
-                .pickerStyle(.menu)
-
-                Button("New account", action: onCreateAccount)
-                    .font(.caption.weight(.semibold))
-                    .buttonStyle(.borderless)
             }
+            .pickerStyle(.menu)
 
             HStack {
                 Text("Currency")
@@ -3447,9 +3441,6 @@ struct TransactionEditor: View {
     @State private var previewAttachment: LedgerAttachment?
     @State private var isShowingAttachmentImporter = false
     @State private var replacingAttachmentID: UUID?
-    @State private var isShowingNewAccount = false
-    @State private var isShowingNewCategory = false
-    @State private var accountCreationLineID: UUID?
     @State private var errorMessage: String?
     @State private var isShowingMoreDetails = false
     @State private var saveFeedbackTrigger = 0
@@ -3724,24 +3715,6 @@ struct TransactionEditor: View {
                     AttachmentPreviewView(store: store, attachment: attachment)
                 }
             }
-            .sheet(isPresented: $isShowingNewAccount) {
-                AccountEditor(store: store) { account in
-                    if let lineID = accountCreationLineID {
-                        if let index = outflows.firstIndex(where: { $0.id == lineID }) {
-                            outflows[index].accountID = account.id
-                        }
-                        if let index = inflows.firstIndex(where: { $0.id == lineID }) {
-                            inflows[index].accountID = account.id
-                        }
-                    }
-                    accountCreationLineID = nil
-                }
-            }
-            .sheet(isPresented: $isShowingNewCategory) {
-                CategoryEditor(store: store) { category in
-                    categoryID = category.id
-                }
-            }
             .fileImporter(
                 isPresented: $isShowingAttachmentImporter,
                 allowedContentTypes: [.image, .pdf],
@@ -3850,10 +3823,6 @@ struct TransactionEditor: View {
                             store: store,
                             line: $outflows[index],
                             amountPlaceholder: index == 0 ? "Amount" : "Amount for this payment",
-                            onCreateAccount: {
-                                accountCreationLineID = entry.element.id
-                                isShowingNewAccount = true
-                            },
                             allowsArchivedAccount: allowsArchivedMovementAccounts
                         )
                     }
@@ -4012,10 +3981,6 @@ struct TransactionEditor: View {
                             store: store,
                             line: $inflows[index],
                             amountPlaceholder: "Amount returned",
-                            onCreateAccount: {
-                                accountCreationLineID = movement.id
-                                isShowingNewAccount = true
-                            },
                             allowsArchivedAccount: allowsArchivedMovementAccounts
                         )
                     }
@@ -4125,22 +4090,14 @@ struct TransactionEditor: View {
     private var detailsSection: some View {
         Section("Details") {
             if kind == .expense {
-                HStack {
-                    if selectableCategories.isEmpty {
-                        Text("No categories yet — this expense will be Uncategorized.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Picker("Category", selection: $categoryID) {
-                            CategoryPickerContent(categories: selectableCategories)
-                        }
+                if selectableCategories.isEmpty {
+                    Text("No categories yet — this expense will be Uncategorized.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Picker("Category", selection: $categoryID) {
+                        CategoryPickerContent(categories: selectableCategories)
                     }
-
-                    Button("New category") {
-                        isShowingNewCategory = true
-                    }
-                    .font(.caption.weight(.semibold))
-                    .buttonStyle(.borderless)
                 }
             }
 
@@ -4205,10 +4162,6 @@ struct TransactionEditor: View {
                         store: store,
                         line: $line,
                         amountPlaceholder: kind == .transfer ? "Amount sent" : "Amount leaving account",
-                        onCreateAccount: {
-                            accountCreationLineID = $line.wrappedValue.id
-                            isShowingNewAccount = true
-                        },
                         allowsArchivedAccount: allowsArchivedMovementAccounts
                     )
                 }
@@ -4246,10 +4199,6 @@ struct TransactionEditor: View {
                         store: store,
                         line: $line,
                         amountPlaceholder: kind == .transfer ? "Amount received" : "Amount entering account",
-                        onCreateAccount: {
-                            accountCreationLineID = $line.wrappedValue.id
-                            isShowingNewAccount = true
-                        },
                         allowsArchivedAccount: allowsArchivedMovementAccounts
                     )
                 }

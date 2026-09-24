@@ -329,17 +329,22 @@ struct ScheduledTransactionsView: View {
                     Button {
                         _ = store.recordScheduledTransactionNow(id: schedule.id)
                     } label: {
-                        Label("Record now", systemImage: "checkmark.circle")
+                        Label("Record", systemImage: "checkmark.circle")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .tint(PocketLedgerTheme.positive)
+                    .accessibilityLabel("Record now")
                 }
 
                 Button {
                     editorRoute = .edit(schedule)
                 } label: {
                     Label("Edit", systemImage: "pencil")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -358,6 +363,8 @@ struct ScheduledTransactionsView: View {
                     }
                 } label: {
                     Label("More", systemImage: "ellipsis")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)

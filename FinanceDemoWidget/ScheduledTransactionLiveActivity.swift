@@ -5,42 +5,42 @@ import WidgetKit
 struct ScheduledTransactionLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ScheduledTransactionActivityAttributes.self) { context in
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 Label(
                     context.state.totalItemsCount == 1
                         ? "Scheduled transaction"
                         : "Scheduled transactions",
                     systemImage: "calendar.badge.clock"
                 )
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
 
-                ForEach(context.state.items) { item in
+                ForEach(context.state.items.prefix(2)) { item in
                     HStack(alignment: .firstTextBaseline) {
                         Text(
                             item.dueDate,
                             format: .dateTime.month(.abbreviated).day().hour().minute()
                         )
-                        .font(.subheadline.weight(.medium))
+                        .font(.caption.weight(.medium))
 
                         Spacer(minLength: 12)
 
                         countdown(to: item.dueDate)
-                            .font(.title3.monospacedDigit().weight(.semibold))
+                            .font(.subheadline.monospacedDigit().weight(.semibold))
                     }
                 }
 
-                if context.state.additionalItemsCount > 0 {
-                    Text("And \(context.state.additionalItemsCount) more scheduled entries")
-                        .font(.caption)
+                if context.state.totalItemsCount > 2 {
+                    Text("And \(context.state.totalItemsCount - 2) more scheduled entries")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
 
                 Text("Due entries are added when you next open Pocket Ledger.")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             .foregroundStyle(.white)
-            .padding(16)
+            .padding(12)
             .activityBackgroundTint(Color(red: 0.08, green: 0.16, blue: 0.22))
             .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
@@ -76,7 +76,7 @@ struct ScheduledTransactionLiveActivity: Widget {
                     .foregroundStyle(.white)
                 }
             } compactLeading: {
-                Image(systemName: "calendar.badge.clock")
+                Image(systemName: "timer")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.teal)
             } compactTrailing: {
@@ -86,10 +86,11 @@ struct ScheduledTransactionLiveActivity: Widget {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             } minimal: {
-                Image(systemName: "calendar.badge.clock")
-                    .font(.system(size: 16, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.teal)
+                countdown(to: context.state.items.first?.dueDate ?? context.attributes.primaryDueDate)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             .keylineTint(.teal)
         }
