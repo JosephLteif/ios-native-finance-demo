@@ -587,7 +587,8 @@ private struct PrivacyPolicyView: View {
             }
 
             Section("Contact") {
-                Text("For privacy questions, use the developer contact information on Pocket Ledger’s App Store page.")
+                Text("For privacy questions, email:")
+                Link("joelteif11@gmail.com", destination: URL(string: "mailto:joelteif11@gmail.com")!)
             }
         }
         .pocketListSurface()
