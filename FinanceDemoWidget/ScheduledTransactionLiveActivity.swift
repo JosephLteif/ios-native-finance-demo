@@ -15,17 +15,30 @@ struct ScheduledTransactionLiveActivity: Widget {
                     .font(.subheadline.weight(.semibold))
 
                 ForEach(context.state.items.prefix(2)) { item in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(
-                            item.dueDate,
-                            format: .dateTime.month(.abbreviated).day().hour().minute()
-                        )
-                        .font(.caption.weight(.medium))
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title ?? "Scheduled transaction")
+                                .font(.headline)
+                                .lineLimit(1)
+                                .privacySensitive()
 
-                        Spacer(minLength: 12)
+                            if let amountText = item.amountText {
+                                Text(amountText)
+                                    .font(.caption.weight(.medium))
+                                    .lineLimit(1)
+                                    .privacySensitive()
+                            }
+                        }
 
-                        countdown(to: item.dueDate)
-                            .font(.subheadline.monospacedDigit().weight(.semibold))
+                        Spacer(minLength: 8)
+
+                        VStack(alignment: .trailing, spacing: 2) {
+                            countdown(to: item.dueDate)
+                                .font(.subheadline.monospacedDigit().weight(.semibold))
+                            Text(item.dueDate, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day())
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.72))
+                        }
                     }
                 }
 
@@ -46,9 +59,25 @@ struct ScheduledTransactionLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label("\(context.state.totalItemsCount) scheduled", systemImage: "calendar.badge.clock")
-                        .font(.caption.weight(.semibold))
+                    if let item = context.state.items.first {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(item.title ?? "Scheduled transaction")
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                                .privacySensitive()
+                            if let amountText = item.amountText {
+                                Text(amountText)
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                                    .privacySensitive()
+                            }
+                        }
                         .foregroundStyle(.white)
+                    } else {
+                        Label("Scheduled", systemImage: "calendar.badge.clock")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     countdown(to: context.state.items.first?.dueDate ?? context.attributes.primaryDueDate)
@@ -58,13 +87,23 @@ struct ScheduledTransactionLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(context.state.items.prefix(2)) { item in
-                            HStack {
-                                Text(
-                                    item.dueDate,
-                                    format: .dateTime.month(.abbreviated).day().hour().minute()
-                                )
-                                Spacer()
-                                countdown(to: item.dueDate)
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.title ?? "Scheduled transaction")
+                                        .lineLimit(1)
+                                        .privacySensitive()
+                                    if let amountText = item.amountText {
+                                        Text(amountText)
+                                            .font(.caption2)
+                                            .privacySensitive()
+                                    }
+                                }
+                                Spacer(minLength: 4)
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    countdown(to: item.dueDate)
+                                    Text(item.dueDate, format: .dateTime.month(.abbreviated).day().hour().minute())
+                                        .font(.caption2)
+                                }
                             }
                             .font(.caption.monospacedDigit())
                         }
@@ -86,11 +125,9 @@ struct ScheduledTransactionLiveActivity: Widget {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             } minimal: {
-                countdown(to: context.state.items.first?.dueDate ?? context.attributes.primaryDueDate)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.teal)
             }
             .keylineTint(.teal)
         }

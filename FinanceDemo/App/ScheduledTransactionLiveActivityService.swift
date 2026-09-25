@@ -32,10 +32,8 @@ actor ScheduledTransactionLiveActivityService {
             return
         }
 
-        let activityStartDate = max(
-            now.addingTimeInterval(1),
-            schedule.nextRunDate.addingTimeInterval(-maximumDuration)
-        )
+        let activityStartDate = schedule.nextRunDate.addingTimeInterval(-maximumDuration)
+        let shouldStartImmediately = activityStartDate <= now
         let groupedSchedules = schedules
             .filter {
                 $0.isEnabled
@@ -43,8 +41,14 @@ actor ScheduledTransactionLiveActivityService {
                     && $0.nextRunDate <= schedule.nextRunDate.addingTimeInterval(maximumDuration)
             }
             .sorted { $0.nextRunDate < $1.nextRunDate }
-        let items = groupedSchedules.prefix(3).map {
-            ScheduledTransactionActivityItem(id: $0.id, dueDate: $0.nextRunDate)
+        let items = groupedSchedules.prefix(3).map { schedule in
+            let title = schedule.note.trimmingCharacters(in: .whitespacesAndNewlines)
+            return ScheduledTransactionActivityItem(
+                id: schedule.id,
+                dueDate: schedule.nextRunDate,
+                title: String((title.isEmpty ? schedule.kind.displayName : title).prefix(48)),
+                amountText: schedule.amountDue?.formatted
+            )
         }
         let state = ScheduledTransactionActivityAttributes.ContentState(
             items: items,
@@ -65,7 +69,7 @@ actor ScheduledTransactionLiveActivityService {
                 && $0.attributes.primaryDueDate == attributes.primaryDueDate
                 && $0.activityState != .ended
                 && $0.activityState != .dismissed
-        }) {
+        }), !(shouldStartImmediately && matchingActivity.activityState == .pending) {
             if matchingActivity.content.state != content.state {
                 await matchingActivity.update(content)
             }
@@ -74,26 +78,35 @@ actor ScheduledTransactionLiveActivityService {
         }
 
         await end(existingActivities)
-        let alert = AlertConfiguration(
-            title: state.totalItemsCount == 1 ? "Scheduled transaction" : "Scheduled transactions",
-            body: "A private countdown to your scheduled entries is now available.",
-            sound: .default
-        )
-
         do {
-            let activity = try Activity.request(
-                attributes: attributes,
-                content: content,
-                pushType: nil,
-                style: .standard,
-                alertConfiguration: alert,
-                start: activityStartDate
-            )
+            let activity: Activity<ScheduledTransactionActivityAttributes>
+            if shouldStartImmediately {
+                activity = try Activity.request(
+                    attributes: attributes,
+                    content: content,
+                    pushType: nil,
+                    style: .standard
+                )
+            } else {
+                let alert = AlertConfiguration(
+                    title: state.totalItemsCount == 1 ? "Scheduled transaction" : "Scheduled transactions",
+                    body: "A private countdown to your scheduled entries is now available.",
+                    sound: .default
+                )
+                activity = try Activity.request(
+                    attributes: attributes,
+                    content: content,
+                    pushType: nil,
+                    style: .standard,
+                    alertConfiguration: alert,
+                    start: activityStartDate
+                )
+            }
             let activityState = String(describing: activity.activityState)
             logger.info("Scheduled transaction Live Activity accepted with state \(activityState, privacy: .public).")
         } catch {
             let errorDescription = error.localizedDescription
-            logger.error("Could not schedule transaction Live Activity: \(errorDescription, privacy: .public)")
+            logger.error("Could not start or schedule transaction Live Activity: \(errorDescription, privacy: .public)")
         }
     }
 
