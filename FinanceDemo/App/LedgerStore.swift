@@ -1276,8 +1276,13 @@ final class LedgerStore: ObservableObject {
     }
 
     private func replaceData(_ updated: FinanceData) {
+        let indexInputsChanged = data.accounts != updated.accounts
+            || data.categories != updated.categories
+            || data.transactions != updated.transactions
         data = updated
-        ledgerIndex = LedgerIndex(data: updated)
+        if indexInputsChanged {
+            ledgerIndex = LedgerIndex(data: updated)
+        }
         ledgerRevision &+= 1
     }
 
