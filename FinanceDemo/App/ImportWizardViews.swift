@@ -1352,44 +1352,61 @@ private struct ImportWizardBulkCategoriesSheet: View {
     }
 }
 
+private struct ImportWizardReviewContext {
+    let accounts: [Account]
+    let categories: [LedgerCategory]
+    let currencyConflictIndices: Set<Int>
+    let suspiciousTransactionIDs: Set<UUID>
+    let transactionSearchTextByID: [UUID: String]
+}
+
 @MainActor
 private struct ImportWizardReviewStep: View {
     @Binding var draft: ImportDraft
     @ObservedObject var store: LedgerStore
     @Binding var rememberRules: Bool
-    @State private var filter: ImportTransactionReviewFilter = .exceptions
-    @State private var searchText = ""
-
-    private struct ReviewContext {
-        let accounts: [Account]
-        let categories: [LedgerCategory]
-        let accountsByID: [UUID: Account]
-        let categoriesByID: [UUID: LedgerCategory]
-        let currencyConflictIndices: Set<Int>
-        let suspiciousTransactionIDs: Set<UUID>
-    }
 
     var body: some View {
         if let data = draft.importedData {
-            let context = reviewContext(data: data)
-            List {
-                exceptionsSection(context: context)
-                summarySection(data: data)
-                transactionSection(data: data, context: context)
-                Section("Remembered decisions") {
-                    Toggle("Remember explicit mappings and account edits", isOn: $rememberRules)
-                    Text("Only changes made in this wizard are saved locally. On-device classifications and transaction data are never stored as rules.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .listStyle(.insetGrouped)
-            .pocketListSurface()
-            .searchable(text: $searchText, prompt: "Search imported transactions")
-            .accessibilityIdentifier("importWizard.review")
+            ImportWizardReviewList(
+                draft: $draft,
+                store: store,
+                rememberRules: $rememberRules,
+                data: data,
+                context: makeImportWizardReviewContext(data: data, store: store)
+            )
         } else {
             ContentUnavailableView("No staged import", systemImage: "doc.questionmark")
         }
+    }
+}
+
+@MainActor
+private struct ImportWizardReviewList: View {
+    @Binding var draft: ImportDraft
+    @ObservedObject var store: LedgerStore
+    @Binding var rememberRules: Bool
+    let data: FinanceData
+    let context: ImportWizardReviewContext
+    @State private var filter: ImportTransactionReviewFilter = .exceptions
+    @State private var searchText = ""
+
+    var body: some View {
+        List {
+            exceptionsSection(context: context)
+            summarySection(data: data)
+            transactionSection(data: data, context: context)
+            Section("Remembered decisions") {
+                Toggle("Remember explicit mappings and account edits", isOn: $rememberRules)
+                Text("Only changes made in this wizard are saved locally. On-device classifications and transaction data are never stored as rules.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .listStyle(.insetGrouped)
+        .pocketListSurface()
+        .searchable(text: $searchText, prompt: "Search imported transactions")
+        .accessibilityIdentifier("importWizard.review")
     }
 
     @ViewBuilder
@@ -1420,7 +1437,7 @@ private struct ImportWizardReviewStep: View {
     }
 
     @ViewBuilder
-    private func exceptionsSection(context: ReviewContext) -> some View {
+    private func exceptionsSection(context: ImportWizardReviewContext) -> some View {
         Section("Review") {
             let currencyConflictCount = context.currencyConflictIndices.count
             Picker("Transaction rows", selection: $filter) {
@@ -1467,7 +1484,7 @@ private struct ImportWizardReviewStep: View {
     }
 
     @ViewBuilder
-    private func transactionSection(data: FinanceData, context: ReviewContext) -> some View {
+    private func transactionSection(data: FinanceData, context: ImportWizardReviewContext) -> some View {
         Section("Transactions") {
             let indices = filteredTransactionIndices(data: data, context: context)
             if filter == .skipped {
@@ -1495,7 +1512,7 @@ private struct ImportWizardReviewStep: View {
         }
     }
 
-    private func filteredTransactionIndices(data: FinanceData, context: ReviewContext) -> [Int] {
+    private func filteredTransactionIndices(data: FinanceData, context: ImportWizardReviewContext) -> [Int] {
         let matchingIndices = data.transactions.indices.filter { index in
             matchesSearch(data.transactions[index], context: context)
         }
@@ -1517,66 +1534,10 @@ private struct ImportWizardReviewStep: View {
         }
     }
 
-    private func matchesSearch(_ transaction: LedgerTransaction, context: ReviewContext) -> Bool {
+    private func matchesSearch(_ transaction: LedgerTransaction, context: ImportWizardReviewContext) -> Bool {
         guard !searchText.isEmpty else { return true }
-        let accountIDs = Set(transaction.outflows.map(\.accountID) + transaction.inflows.map(\.accountID))
-        let accountText = accountIDs
-            .compactMap { context.accountsByID[$0]?.name }
-            .joined(separator: " ")
-        let categoryText = transaction.categoryID
-            .flatMap { context.categoriesByID[$0]?.name }
-            ?? ""
-        let amountText = (transaction.outflows + transaction.inflows)
-            .map { $0.money.formatted }
-            .joined(separator: " ")
-        let haystack = [transaction.note, accountText, categoryText, amountText]
-            .joined(separator: " ")
-        return haystack.localizedCaseInsensitiveContains(searchText)
-    }
-
-    private func reviewContext(data: FinanceData) -> ReviewContext {
-        var accountsByID: [UUID: Account] = [:]
-        for account in data.accounts {
-            accountsByID[account.id] = account
-        }
-        for account in store.data.accounts {
-            accountsByID[account.id] = account
-        }
-
-        var categoriesByID: [UUID: LedgerCategory] = [:]
-        for category in data.categories {
-            categoriesByID[category.id] = category
-        }
-        for category in store.data.categories {
-            categoriesByID[category.id] = category
-        }
-
-        let currencyConflictIndices = Set(data.transactions.indices.filter { index in
-            let transaction = data.transactions[index]
-            let movements = transaction.outflows + transaction.inflows
-            return movements.contains { movement in
-                guard let account = accountsByID[movement.accountID] else { return true }
-                guard account.currency != movement.money.currency else { return false }
-                return financeConvertedMinorUnits(
-                    movement.money,
-                    to: account.currency,
-                    using: transaction.exchangeRate
-                ) == nil
-            }
-        })
-
-        return ReviewContext(
-            accounts: accountsByID.values.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            },
-            categories: categoriesByID.values.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            },
-            accountsByID: accountsByID,
-            categoriesByID: categoriesByID,
-            currencyConflictIndices: currencyConflictIndices,
-            suspiciousTransactionIDs: FinanceImportReview.suspiciousLargeAmountTransactionIDs(in: data)
-        )
+        return context.transactionSearchTextByID[transaction.id, default: ""]
+            .localizedCaseInsensitiveContains(searchText)
     }
 
     private func transactionBinding(at index: Int) -> Binding<LedgerTransaction> {
@@ -1593,6 +1554,72 @@ private struct ImportWizardReviewStep: View {
             draft.excludedDuplicateIDs.insert(id)
         }
     }
+}
+
+@MainActor
+private func makeImportWizardReviewContext(
+    data: FinanceData,
+    store: LedgerStore
+) -> ImportWizardReviewContext {
+    var accountsByID: [UUID: Account] = [:]
+    for account in data.accounts {
+        accountsByID[account.id] = account
+    }
+    for account in store.data.accounts {
+        accountsByID[account.id] = account
+    }
+
+    var categoriesByID: [UUID: LedgerCategory] = [:]
+    for category in data.categories {
+        categoriesByID[category.id] = category
+    }
+    for category in store.data.categories {
+        categoriesByID[category.id] = category
+    }
+
+    let currencyConflictIndices = Set(data.transactions.indices.filter { index in
+        let transaction = data.transactions[index]
+        let movements = transaction.outflows + transaction.inflows
+        return movements.contains { movement in
+            guard let account = accountsByID[movement.accountID] else { return true }
+            guard account.currency != movement.money.currency else { return false }
+            return financeConvertedMinorUnits(
+                movement.money,
+                to: account.currency,
+                using: transaction.exchangeRate
+            ) == nil
+        }
+    })
+
+    var transactionSearchTextByID: [UUID: String] = [:]
+    for transaction in data.transactions {
+        let movements = transaction.outflows + transaction.inflows
+        let accountText = Set(movements.map(\.accountID))
+            .compactMap { accountsByID[$0]?.name }
+            .joined(separator: " ")
+        let categoryText = transaction.categoryID
+            .flatMap { categoriesByID[$0]?.name }
+            ?? ""
+        let amountText = movements.map { $0.money.formatted }.joined(separator: " ")
+        transactionSearchTextByID[transaction.id] = [
+            transaction.note,
+            accountText,
+            categoryText,
+            amountText
+        ].joined(separator: " ")
+    }
+
+    return ImportWizardReviewContext(
+        accounts: accountsByID.values.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        },
+        categories: categoriesByID.values.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        },
+        currencyConflictIndices: currencyConflictIndices,
+        suspiciousTransactionIDs: FinanceImportReview.suspiciousLargeAmountTransactionIDs(in: data),
+        transactionSearchTextByID: transactionSearchTextByID
+    )
 }
 
 private struct ImportWizardTransactionRow: View {
