@@ -107,6 +107,10 @@ struct GlobalSearchView: View {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var searchTaskID: String {
+        "\(store.ledgerRevision)|\(query)"
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             PocketGlassContainer(spacing: 14) {
@@ -207,9 +211,9 @@ struct GlobalSearchView: View {
         .pocketScreen()
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
-        .onAppear(perform: refreshResults)
-        .onChange(of: searchText) { _, _ in refreshResults() }
-        .onChange(of: store.ledgerRevision) { _, _ in refreshResults() }
+        .task(id: searchTaskID) {
+            await refreshResults(for: query)
+        }
         .sheet(item: $editingTransaction) { transaction in
             TransactionEditor(store: store, transaction: transaction)
         }
@@ -243,7 +247,19 @@ struct GlobalSearchView: View {
         }
     }
 
-    private func refreshResults() {
+    private func refreshResults(for query: String) async {
+        guard !query.isEmpty else {
+            results = .empty
+            return
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(180))
+        } catch {
+            return
+        }
+        guard !Task.isCancelled else { return }
+
         results = GlobalSearchSnapshot.make(
             query: query,
             accounts: store.data.accounts,
