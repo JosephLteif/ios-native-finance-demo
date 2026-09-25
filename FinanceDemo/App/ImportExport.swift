@@ -1567,10 +1567,32 @@ enum FinanceImportBuilder {
         var importedTransactions: [LedgerTransaction] = []
         var warnings: [String] = []
         var skippedRows = 0
+        let isoDateFormatter = ISO8601DateFormatter()
+        let dateFormatters = [
+            "yyyy-MM-dd",
+            "yyyy.MM.dd",
+            "yy.MM.dd",
+            "yyyy/MM/dd",
+            "dd/MM/yyyy",
+            "MM/dd/yyyy",
+            "dd-MM-yyyy",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy.MM.dd HH:mm:ss"
+        ].map { format in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = .current
+            formatter.dateFormat = format
+            return formatter
+        }
 
         for (rowOffset, row) in table.rows.enumerated() {
             do {
-                let date = try parseDate(value(for: .date, in: row, table: table, mapping: mapping))
+                let date = try parseDate(
+                    value(for: .date, in: row, table: table, mapping: mapping),
+                    isoFormatter: isoDateFormatter,
+                    dateFormatters: dateFormatters
+                )
                 let rawAmount = value(for: .amount, in: row, table: table, mapping: mapping)
                 let accountName = value(for: .account, in: row, table: table, mapping: mapping)
                 let currencyValue = value(for: .currency, in: row, table: table, mapping: mapping)
@@ -2169,7 +2191,11 @@ enum FinanceImportBuilder {
         )
     }
 
-    private static func parseDate(_ rawValue: String) throws -> Date {
+    private static func parseDate(
+        _ rawValue: String,
+        isoFormatter: ISO8601DateFormatter,
+        dateFormatters: [DateFormatter]
+    ) throws -> Date {
         let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { throw FinanceImportError.row("The date is empty.") }
 
@@ -2185,24 +2211,9 @@ enum FinanceImportBuilder {
             }
         }
 
-        let isoFormatter = ISO8601DateFormatter()
         if let date = isoFormatter.date(from: value) { return date }
 
-        for format in [
-            "yyyy-MM-dd",
-            "yyyy.MM.dd",
-            "yy.MM.dd",
-            "yyyy/MM/dd",
-            "dd/MM/yyyy",
-            "MM/dd/yyyy",
-            "dd-MM-yyyy",
-            "yyyy-MM-dd HH:mm:ss",
-            "yyyy.MM.dd HH:mm:ss"
-        ] {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = .current
-            formatter.dateFormat = format
+        for formatter in dateFormatters {
             if let date = formatter.date(from: value) { return date }
         }
 
