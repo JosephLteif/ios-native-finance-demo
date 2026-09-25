@@ -550,6 +550,7 @@ private struct DashboardView: View {
     let onAddAction: (AddAction) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presentedSheet: DashboardSheet?
+    @State private var transactionToTemplate: LedgerTransaction?
     @State private var snapshot = DashboardSnapshot.empty
     @State private var dashboardPreferences = DashboardPreferences.load()
     @State private var isBalanceScopeExpanded = false
@@ -579,6 +580,7 @@ private struct DashboardView: View {
                     .padding(.bottom, 24)
                 }
             }
+            .pocketSwipeActionsContainer()
             .pocketScreen()
             .accessibilityIdentifier("dashboard-\(selectedColorTheme)")
             .preferredColorScheme(
@@ -607,6 +609,9 @@ private struct DashboardView: View {
                 case .transaction(let transaction):
                     TransactionEditor(store: store, transaction: transaction)
                 }
+            }
+            .sheet(item: $transactionToTemplate) { transaction in
+                TemplateNameEditor(store: store, transaction: transaction)
             }
             .onAppear(perform: refreshSnapshot)
             .onChange(of: store.ledgerRevision) { _, _ in
@@ -1185,10 +1190,11 @@ private struct DashboardView: View {
                             transaction: transaction,
                             store: store,
                             onEdit: { presentedSheet = .transaction(transaction) },
-                            onDuplicate: {},
-                            onDelete: {},
-                            onSaveTemplate: {},
-                            allowsActions: false
+                            onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
+                            onDelete: { _ = store.deleteTransaction(id: transaction.id) },
+                            onSaveTemplate: { transactionToTemplate = transaction },
+                            allowsActions: true,
+                            usesScrollSwipeActions: true
                         )
                         .transition(
                             reduceMotion
@@ -2308,14 +2314,22 @@ struct TransactionsView: View {
 }
 
 @MainActor
-private struct TransactionRow: View {
+struct TransactionRow: View {
     let transaction: LedgerTransaction
     @ObservedObject var store: LedgerStore
     @State private var isShowingDeleteConfirmation = false
+    @State private var swipeOffset: CGFloat = 0
+    @State private var swipeStartOffset: CGFloat = 0
+    @State private var isTrackingHorizontalSwipe = false
     let onEdit: () -> Void
     let onDuplicate: () -> Void
     let onDelete: () -> Void
     let onSaveTemplate: () -> Void
+    let onOpen: (() -> Void)?
+    let subtitleOverride: String?
+    let amountOverride: String?
+    let amountColorOverride: Color?
+    let usesScrollSwipeActions: Bool
     let allowsActions: Bool
     let isSelectionMode: Bool
     let isSelected: Bool
@@ -2331,7 +2345,12 @@ private struct TransactionRow: View {
         allowsActions: Bool,
         isSelectionMode: Bool = false,
         isSelected: Bool = false,
-        onToggleSelection: @escaping () -> Void = {}
+        onToggleSelection: @escaping () -> Void = {},
+        onOpen: (() -> Void)? = nil,
+        subtitleOverride: String? = nil,
+        amountOverride: String? = nil,
+        amountColorOverride: Color? = nil,
+        usesScrollSwipeActions: Bool = false
     ) {
         self.transaction = transaction
         self.store = store
@@ -2339,6 +2358,11 @@ private struct TransactionRow: View {
         self.onDuplicate = onDuplicate
         self.onDelete = onDelete
         self.onSaveTemplate = onSaveTemplate
+        self.onOpen = onOpen
+        self.subtitleOverride = subtitleOverride
+        self.amountOverride = amountOverride
+        self.amountColorOverride = amountColorOverride
+        self.usesScrollSwipeActions = usesScrollSwipeActions
         self.allowsActions = allowsActions
         self.isSelectionMode = isSelectionMode
         self.isSelected = isSelected
@@ -2346,13 +2370,33 @@ private struct TransactionRow: View {
     }
 
     var body: some View {
-        Button(action: isSelectionMode ? onToggleSelection : onEdit) {
-            rowContent
+        if usesCustomScrollSwipeFallback {
+            rowWithActions
+                .simultaneousGesture(customSwipeGesture)
+        } else {
+            rowWithActions
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(transaction.note), \(rowSubtitle), \(amountText)")
-        .accessibilityHint(isSelectionMode ? "Toggles transaction selection" : "Opens transaction details")
+    }
+
+    private var rowWithActions: some View {
+        ZStack {
+            if usesCustomScrollSwipeFallback {
+                scrollSwipeActions
+            }
+
+            Button(action: activateRow) {
+                rowContent
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .offset(x: usesCustomScrollSwipeFallback ? swipeOffset : 0)
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(transaction.note), \(displaySubtitle), \(displayAmountText)")
+            .accessibilityHint(isSelectionMode ? "Toggles transaction selection" : "Opens transaction details")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
+        .contentShape(Rectangle())
         .contextMenu {
             if allowsActions {
                 Button("Edit", systemImage: "pencil", action: onEdit)
@@ -2391,6 +2435,99 @@ private struct TransactionRow: View {
         }
     }
 
+    private var usesCustomScrollSwipeFallback: Bool {
+        guard usesScrollSwipeActions && allowsActions else { return false }
+        if #available(iOS 27, *) { return false }
+        return true
+    }
+
+    private var scrollSwipeActions: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                scrollSwipeAction("Duplicate", systemImage: "plus.square.on.square", tint: PocketLedgerTheme.accent, action: onDuplicate)
+                scrollSwipeAction("Template", systemImage: "rectangle.stack.badge.plus", tint: PocketLedgerTheme.positive, action: onSaveTemplate)
+            }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 0) {
+                scrollSwipeAction("Delete", systemImage: "trash", tint: .red) {
+                    isShowingDeleteConfirmation = true
+                }
+                scrollSwipeAction("Edit", systemImage: "pencil", tint: PocketLedgerTheme.accent, action: onEdit)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityHidden(swipeOffset == 0)
+    }
+
+    private func scrollSwipeAction(
+        _ title: String,
+        systemImage: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            closeSwipeActions()
+            action()
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .semibold))
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .frame(width: 72)
+            .frame(maxHeight: .infinity)
+            .foregroundStyle(.white)
+            .background(tint)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    private var customSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                if !isTrackingHorizontalSwipe {
+                    isTrackingHorizontalSwipe = true
+                    swipeStartOffset = swipeOffset
+                }
+                swipeOffset = min(144, max(-144, swipeStartOffset + value.translation.width))
+            }
+            .onEnded { value in
+                guard isTrackingHorizontalSwipe else { return }
+                isTrackingHorizontalSwipe = false
+                let finalOffset = min(144, max(-144, swipeStartOffset + value.translation.width))
+                withAnimation(.snappy) {
+                    swipeOffset = abs(finalOffset) >= 72 ? (finalOffset < 0 ? -144 : 144) : 0
+                }
+                swipeStartOffset = swipeOffset
+            }
+    }
+
+    private func activateRow() {
+        if usesCustomScrollSwipeFallback && swipeOffset != 0 {
+            closeSwipeActions()
+            return
+        }
+        if isSelectionMode {
+            onToggleSelection()
+        } else {
+            (onOpen ?? onEdit)()
+        }
+    }
+
+    private func closeSwipeActions() {
+        withAnimation(.snappy) {
+            swipeOffset = 0
+        }
+        swipeStartOffset = 0
+        isTrackingHorizontalSwipe = false
+    }
+
     private var rowContent: some View {
         HStack(spacing: 12) {
             if isSelectionMode {
@@ -2410,7 +2547,7 @@ private struct TransactionRow: View {
                 Text(transaction.note)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text(rowSubtitle)
+                Text(displaySubtitle)
                     .font(.caption)
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
                     .lineLimit(1)
@@ -2442,9 +2579,9 @@ private struct TransactionRow: View {
 
             Spacer(minLength: 8)
 
-            Text(amountText)
+            Text(displayAmountText)
                 .font(.subheadline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(accentColor)
+                .foregroundStyle(amountColorOverride ?? accentColor)
                 .multilineTextAlignment(.trailing)
                 .lineLimit(2)
         }
@@ -2457,6 +2594,10 @@ private struct TransactionRow: View {
             ? store.categoryPath(for: transaction.categoryID)
             : transaction.kind.displayName
         return "\(detail) · \(transaction.date.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private var displaySubtitle: String {
+        subtitleOverride ?? rowSubtitle
     }
 
     private var iconName: String {
@@ -2494,6 +2635,10 @@ private struct TransactionRow: View {
         case .transfer:
             return store.transactionSummary(transaction)
         }
+    }
+
+    private var displayAmountText: String {
+        amountOverride ?? amountText
     }
 }
 

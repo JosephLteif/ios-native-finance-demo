@@ -837,6 +837,10 @@ private struct CategoryMetricsDetailView: View {
 
     @State private var anchorDate: Date
     @State private var snapshot = CategoryMetricsDetailSnapshot.empty
+    @State private var editingTransaction: LedgerTransaction?
+    @State private var transactionToTemplate: LedgerTransaction?
+    @State private var transactionToOpenID: UUID?
+    @State private var isShowingTransactionDetail = false
 
     init(
         store: LedgerStore,
@@ -869,10 +873,22 @@ private struct CategoryMetricsDetailView: View {
                 .padding(.bottom, 24)
             }
         }
+        .pocketSwipeActionsContainer()
         .pocketScreen()
         .navigationTitle(categoryTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $isShowingTransactionDetail) {
+            if let transactionToOpenID {
+                MetricsTransactionDetailView(store: store, transactionID: transactionToOpenID)
+            }
+        }
         .toolbar(.visible, for: .navigationBar)
+        .sheet(item: $editingTransaction) { transaction in
+            TransactionEditor(store: store, transaction: transaction)
+        }
+        .sheet(item: $transactionToTemplate) { transaction in
+            TemplateNameEditor(store: store, transaction: transaction)
+        }
         .onAppear(perform: refreshSnapshot)
         .onChange(of: anchorDate) { _, _ in refreshSnapshot() }
         .onChange(of: store.ledgerRevision) { _, _ in refreshSnapshot() }
@@ -1060,39 +1076,26 @@ private struct CategoryMetricsDetailView: View {
                     .padding(.vertical, 24)
             } else {
                 ForEach(snapshot.selectedMonthTransactions) { transaction in
-                    NavigationLink {
-                        MetricsTransactionDetailView(store: store, transactionID: transaction.id)
-                    } label: {
-                        HStack(spacing: 12) {
-                            VStack(spacing: 0) {
-                                Text(transaction.date.formatted(.dateTime.day()))
-                                    .font(.headline.weight(.bold).monospacedDigit())
-                                Text(transaction.date.formatted(.dateTime.weekday(.abbreviated)))
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-                            }
-                            .frame(width: 42)
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(accountNames(for: transaction))
-                                    .font(.subheadline.weight(.medium))
-                                    .lineLimit(1)
-                                Text(transaction.note)
-                                    .font(.caption)
-                                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer(minLength: 8)
-
-                            Text(Money(currency: currency, minorUnits: transactionAmount(transaction)).formatted)
-                                .font(.subheadline.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(PocketLedgerTheme.warning)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens transaction details")
-                    .padding(.vertical, 12)
+                    TransactionRow(
+                        transaction: transaction,
+                        store: store,
+                        onEdit: { editingTransaction = transaction },
+                        onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
+                        onDelete: { _ = store.deleteTransaction(id: transaction.id) },
+                        onSaveTemplate: { transactionToTemplate = transaction },
+                        allowsActions: true,
+                        onOpen: {
+                            transactionToOpenID = transaction.id
+                            isShowingTransactionDetail = true
+                        },
+                        subtitleOverride: [
+                            accountNames(for: transaction),
+                            transaction.date.formatted(.dateTime.month(.abbreviated).day().year())
+                        ].filter { !$0.isEmpty }.joined(separator: " · "),
+                        amountOverride: "− \(Money(currency: currency, minorUnits: transactionAmount(transaction)).formatted)",
+                        amountColorOverride: PocketLedgerTheme.warning,
+                        usesScrollSwipeActions: true
+                    )
 
                     if transaction.id != snapshot.selectedMonthTransactions.last?.id {
                         Divider().overlay(PocketLedgerTheme.divider)

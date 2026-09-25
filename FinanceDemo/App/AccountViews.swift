@@ -78,6 +78,7 @@ struct AccountDetailView: View {
     @State private var isPresentingAccountEditor = false
     @State private var isPresentingBalanceEditor = false
     @State private var editingTransaction: LedgerTransaction?
+    @State private var transactionToTemplate: LedgerTransaction?
     @State private var transactionPage = 0
     @State private var snapshot = AccountDetailSnapshot.empty
 
@@ -115,6 +116,9 @@ struct AccountDetailView: View {
             }
             .sheet(item: $editingTransaction) { transaction in
                 TransactionEditor(store: store, transaction: transaction)
+            }
+            .sheet(item: $transactionToTemplate) { transaction in
+                TemplateNameEditor(store: store, transaction: transaction)
             }
             .pocketScreen()
             .onAppear(perform: refreshSnapshot)
@@ -193,7 +197,8 @@ struct AccountDetailView: View {
                                         transaction: transaction,
                                         account: account,
                                         store: store,
-                                        onEdit: { editingTransaction = transaction }
+                                        onEdit: { editingTransaction = transaction },
+                                        onSaveTemplate: { transactionToTemplate = transaction }
                                     )
                                     Divider().overlay(PocketLedgerTheme.divider)
                                 }
@@ -238,6 +243,7 @@ struct AccountDetailView: View {
             .padding(.top, 12)
             .padding(.bottom, 24)
         }
+        .pocketSwipeActionsContainer()
         .onChange(of: transactionPage) { _, _ in refreshSnapshot() }
     }
 
@@ -345,6 +351,7 @@ private struct AccountTransactionRow: View {
     let account: Account
     @ObservedObject var store: LedgerStore
     let onEdit: () -> Void
+    let onSaveTemplate: () -> Void
 
     private var outgoing: Int64 {
         transaction.outflows
@@ -373,82 +380,43 @@ private struct AccountTransactionRow: View {
     }
 
     var body: some View {
-        Button(action: onEdit) {
-            HStack(spacing: 12) {
-                Image(systemName: iconName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 36, height: 36)
-                    .pocketGlassSurface(cornerRadius: 18, tint: tint.opacity(0.12))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(transaction.note)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    Text(detailText)
-                        .font(.caption)
-                        .foregroundStyle(PocketLedgerTheme.textSecondary)
-                        .lineLimit(1)
-                    Text(transaction.date.formatted(.dateTime.month(.abbreviated).day().year()))
-                        .font(.caption2)
-                        .foregroundStyle(PocketLedgerTheme.textTertiary)
-                }
-
-                Spacer(minLength: 8)
-
-                VStack(alignment: .trailing, spacing: 3) {
-                    if outgoing > 0 {
-                        Text("− " + Money(currency: account.currency, minorUnits: outgoing).formatted)
-                            .foregroundStyle(PocketLedgerTheme.warning)
-                    }
-                    if incoming > 0 {
-                        Text("+ " + Money(currency: account.currency, minorUnits: incoming).formatted)
-                            .foregroundStyle(PocketLedgerTheme.income)
-                    }
-                }
-                .font(.caption.weight(.semibold).monospacedDigit())
-                .multilineTextAlignment(.trailing)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(transaction.note), \(detailText)")
-        .accessibilityHint("Opens transaction details")
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 11)
+        TransactionRow(
+            transaction: transaction,
+            store: store,
+            onEdit: onEdit,
+            onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
+            onDelete: { _ = store.deleteTransaction(id: transaction.id) },
+            onSaveTemplate: onSaveTemplate,
+            allowsActions: true,
+            subtitleOverride: subtitle,
+            amountOverride: amountText,
+            amountColorOverride: amountColor,
+            usesScrollSwipeActions: true
+        )
     }
 
-    private var detailText: String {
+    private var subtitle: String {
         let detail = transaction.kind == .expense
             ? store.categoryPath(for: transaction.categoryID)
             : transaction.kind.displayName
-        return detail
+        return [detail, transaction.date.formatted(.dateTime.month(.abbreviated).day().year())]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
     }
 
-    private var iconName: String {
-        if transaction.categoryID != nil {
-            return store.ledgerIndex.categorySystemImage(for: transaction.categoryID)
-        }
-
-        switch transaction.kind {
-        case .expense:
-            return "arrow.up.right"
-        case .income:
-            return "arrow.down.left"
-        case .transfer:
-            return "arrow.left.arrow.right"
-        }
+    private var amountText: String {
+        [
+            outgoing > 0 ? "− " + Money(currency: account.currency, minorUnits: outgoing).formatted : nil,
+            incoming > 0 ? "+ " + Money(currency: account.currency, minorUnits: incoming).formatted : nil
+        ]
+        .compactMap { $0 }
+        .joined(separator: "\n")
     }
 
-    private var tint: Color {
-        switch transaction.kind {
-        case .expense:
-            return PocketLedgerTheme.warning
-        case .income:
-            return PocketLedgerTheme.income
-        case .transfer:
-            return PocketLedgerTheme.positive
-        }
+    private var amountColor: Color {
+        if outgoing > 0 && incoming == 0 { return PocketLedgerTheme.warning }
+        if incoming > 0 && outgoing == 0 { return PocketLedgerTheme.income }
+        return PocketLedgerTheme.positive
     }
 }
 

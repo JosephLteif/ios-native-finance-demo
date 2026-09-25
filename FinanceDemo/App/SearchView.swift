@@ -101,6 +101,7 @@ struct GlobalSearchView: View {
     @Binding var searchText: String
     @State private var results = GlobalSearchSnapshot.empty
     @State private var editingTransaction: LedgerTransaction?
+    @State private var transactionToTemplate: LedgerTransaction?
 
     private var query: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -166,12 +167,17 @@ struct GlobalSearchView: View {
                         if !results.transactions.isEmpty {
                             resultsSection(title: "Transactions", count: results.transactionCount) {
                                 ForEach(results.transactions) { transaction in
-                                    Button {
-                                        editingTransaction = transaction
-                                    } label: {
-                                        SearchTransactionRow(transaction: transaction, store: store)
-                                    }
-                                    .buttonStyle(.plain)
+                                    TransactionRow(
+                                        transaction: transaction,
+                                        store: store,
+                                        onEdit: { editingTransaction = transaction },
+                                        onDuplicate: { _ = store.duplicateTransaction(id: transaction.id) },
+                                        onDelete: { _ = store.deleteTransaction(id: transaction.id) },
+                                        onSaveTemplate: { transactionToTemplate = transaction },
+                                        allowsActions: true,
+                                        subtitleOverride: transactionSubtitle(transaction),
+                                        usesScrollSwipeActions: true
+                                    )
                                     if transaction.id != results.transactions.last?.id {
                                         Divider().overlay(PocketLedgerTheme.divider)
                                     }
@@ -197,6 +203,7 @@ struct GlobalSearchView: View {
                 .padding(.bottom, 24)
             }
         }
+        .pocketSwipeActionsContainer()
         .pocketScreen()
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)
@@ -205,6 +212,9 @@ struct GlobalSearchView: View {
         .onChange(of: store.ledgerRevision) { _, _ in refreshResults() }
         .sheet(item: $editingTransaction) { transaction in
             TransactionEditor(store: store, transaction: transaction)
+        }
+        .sheet(item: $transactionToTemplate) { transaction in
+            TemplateNameEditor(store: store, transaction: transaction)
         }
     }
 
@@ -240,6 +250,19 @@ struct GlobalSearchView: View {
             categories: store.data.categories,
             index: store.ledgerIndex
         )
+    }
+
+    private func transactionSubtitle(_ transaction: LedgerTransaction) -> String {
+        let accountNames = (transaction.outflows + transaction.inflows)
+            .compactMap { store.account(with: $0.accountID)?.name }
+            .joined(separator: ", ")
+        return [
+            store.categoryPath(for: transaction.categoryID),
+            accountNames,
+            transaction.date.formatted(.dateTime.month(.abbreviated).day().year())
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
     }
 }
 
@@ -281,7 +304,6 @@ private struct SearchAccountRow: View {
         .contentShape(Rectangle())
     }
 }
-
 private struct SearchCategoryRow: View {
     let category: LedgerCategory
     let path: String
@@ -306,84 +328,6 @@ private struct SearchCategoryRow: View {
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
-        }
-        .padding(.vertical, 11)
-        .contentShape(Rectangle())
-    }
-}
-
-@MainActor
-private struct SearchTransactionRow: View {
-    let transaction: LedgerTransaction
-    @ObservedObject var store: LedgerStore
-
-    private var accent: Color {
-        switch transaction.kind {
-        case .expense: return PocketLedgerTheme.warning
-        case .income: return PocketLedgerTheme.income
-        case .transfer: return PocketLedgerTheme.positive
-        }
-    }
-
-    private var icon: String {
-        if transaction.categoryID != nil {
-            return store.ledgerIndex.categorySystemImage(for: transaction.categoryID)
-        }
-        switch transaction.kind {
-        case .expense: return "arrow.up.right"
-        case .income: return "arrow.down.left"
-        case .transfer: return "arrow.left.arrow.right"
-        }
-    }
-
-    private var amount: String {
-        switch transaction.kind {
-        case .expense:
-            return "− " + transaction.outflows.map { $0.money.formatted }.joined(separator: " + ")
-        case .income:
-            return "+ " + transaction.inflows.map { $0.money.formatted }.joined(separator: " + ")
-        case .transfer:
-            return store.transactionSummary(transaction)
-        }
-    }
-
-    private var subtitle: String {
-        let accountNames = (transaction.outflows + transaction.inflows)
-            .compactMap { store.account(with: $0.accountID)?.name }
-            .joined(separator: ", ")
-        return [
-            store.categoryPath(for: transaction.categoryID),
-            accountNames,
-            transaction.date.formatted(.dateTime.month(.abbreviated).day().year())
-        ]
-        .filter { !$0.isEmpty }
-        .joined(separator: " · ")
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(accent)
-                .frame(width: 36, height: 36)
-                .pocketGlassSurface(cornerRadius: 18, tint: accent.opacity(0.12))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(transaction.note)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-                    .lineLimit(2)
-            }
-
-            Spacer(minLength: 8)
-            Text(amount)
-                .font(.caption.weight(.semibold).monospacedDigit())
-                .foregroundStyle(accent)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
         }
         .padding(.vertical, 11)
         .contentShape(Rectangle())
