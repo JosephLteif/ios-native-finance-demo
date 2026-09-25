@@ -694,31 +694,12 @@ struct TransactionEditor: View {
             Text("Attachments")
                 .font(.subheadline.weight(.semibold))
 
-            ForEach(attachments) { attachment in
-                HStack {
-                    Button {
-                        previewAttachment = attachment
-                    } label: {
-                        Label(
-                            attachment.fileName,
-                            systemImage: attachment.contentType == "application/pdf" ? "doc.richtext" : "photo"
-                        )
-                    }
-                    .foregroundStyle(PocketLedgerTheme.textPrimary)
-
-                    Spacer()
-
-                    Button("Replace") {
-                        beginReplacingAttachment(attachment)
-                    }
-                    .font(.footnote.weight(.semibold))
-                }
-                .swipeActions {
-                    Button("Delete", systemImage: "trash", role: .destructive) {
-                        deleteAttachment(attachment)
-                    }
-                }
-            }
+            TransactionAttachmentRows(
+                attachments: attachments,
+                onPreview: { previewAttachment = $0 },
+                onReplace: { beginReplacingAttachment($0) },
+                onDelete: { deleteAttachment($0) }
+            )
 
             if attachments.isEmpty, let initialAttachmentFileName {
                 Label(
@@ -755,28 +736,12 @@ struct TransactionEditor: View {
     private var attachmentSection: some View {
         if !attachments.isEmpty {
             Section("Attachments") {
-                ForEach(attachments) { attachment in
-                    HStack {
-                        Button {
-                            previewAttachment = attachment
-                        } label: {
-                            Label(attachment.fileName, systemImage: attachment.contentType == "application/pdf" ? "doc.richtext" : "photo")
-                        }
-                        .foregroundStyle(PocketLedgerTheme.textPrimary)
-
-                        Spacer()
-
-                        Button(action: { beginReplacingAttachment(attachment) }) {
-                            Text("Replace")
-                        }
-                        .font(.footnote.weight(.semibold))
-                    }
-                    .swipeActions {
-                        Button("Delete", systemImage: "trash", role: .destructive) {
-                            deleteAttachment(attachment)
-                        }
-                    }
-                }
+                TransactionAttachmentRows(
+                    attachments: attachments,
+                    onPreview: { previewAttachment = $0 },
+                    onReplace: { beginReplacingAttachment($0) },
+                    onDelete: { deleteAttachment($0) }
+                )
             }
         } else if let initialAttachmentFileName {
             Section("Receipt attachment") {
