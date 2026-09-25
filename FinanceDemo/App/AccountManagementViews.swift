@@ -1,0 +1,557 @@
+import Foundation
+import SwiftUI
+
+@MainActor
+struct AccountsView: View {
+    @ObservedObject var store: LedgerStore
+    @State private var isPresentingAccount = false
+    @State private var editingAccount: Account?
+    @State private var isArchivedAccountsExpanded = false
+    @State private var expandedPositionCurrency: LedgerCurrency?
+
+    var body: some View {
+        List {
+            screenSubtitle
+                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+            globalPositionSummary
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
+            ForEach(AccountType.allCases) { accountType in
+                let accounts = store.activeAccounts.filter { $0.type == accountType }
+                if !accounts.isEmpty {
+                    accountSection(type: accountType, accounts: accounts)
+                }
+            }
+
+            if !archivedAccounts.isEmpty {
+                archivedAccountsSection
+            }
+
+            Text(store.storageAvailable && store.sharedStorageAvailable
+                 ? "Stored locally in the shared app container."
+                 : store.storageAvailable
+                 ? "Stored persistently on this device; widget sharing is unavailable."
+                 : "Persistent storage is unavailable; changes cannot be saved.")
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 20, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+        .listStyle(.plain)
+        .listSectionSpacing(20)
+        .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
+        .pocketScreen()
+        .navigationTitle("Accounts")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    presentAccount(nil)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add account")
+            }
+        }
+        .sheet(isPresented: $isPresentingAccount, onDismiss: { editingAccount = nil }) {
+            AccountEditor(store: store, account: editingAccount)
+        }
+        .onChange(of: archivedAccounts.isEmpty) { _, isEmpty in
+            if isEmpty {
+                isArchivedAccountsExpanded = false
+            }
+        }
+    }
+
+    private var globalPositionSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Net worth by currency")
+                        .font(.title3.weight(.bold))
+                    Text("Tap a currency to see assets and liabilities")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chart.pie.fill")
+                    .foregroundStyle(PocketLedgerTheme.accent)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(LedgerCurrency.allCases) { currency in
+                    if currency != LedgerCurrency.allCases[0] {
+                        Divider().overlay(PocketLedgerTheme.divider)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        DisclosureGroup(isExpanded: Binding(
+                            get: { expandedPositionCurrency == currency },
+                            set: { expandedPositionCurrency = $0 ? currency : nil }
+                        )) {
+                            accountPositionRow(
+                                title: "Assets",
+                                value: store.assetBalance(for: currency),
+                                tint: PocketLedgerTheme.income
+                            )
+                            accountPositionRow(
+                                title: "Liabilities",
+                                value: store.liabilityBalance(for: currency),
+                                tint: PocketLedgerTheme.warning
+                            )
+                        } label: {
+                            HStack(spacing: 10) {
+                                Text(currency.rawValue)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+                                Spacer(minLength: 8)
+
+                                Text(store.netWorth(for: currency).formatted)
+                                    .font(.headline.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(PocketLedgerTheme.textPrimary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                            }
+                        }
+                        .tint(PocketLedgerTheme.textSecondary)
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+        .pocketCard()
+    }
+
+    private func accountPositionRow(
+        title: String,
+        value: Money,
+        tint: Color
+    ) -> some View {
+        HStack {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+
+            Spacer()
+
+            Text(value.formatted)
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+        }
+    }
+
+    private var screenSubtitle: some View {
+        Text("Tap for activity. Hold for options or drag to reorder within its type.")
+            .font(.subheadline)
+            .foregroundStyle(PocketLedgerTheme.textSecondary)
+    }
+
+    private func accountSection(type: AccountType, accounts: [Account]) -> some View {
+        Section {
+            ForEach(Array(accounts.enumerated()), id: \.element.id) { entry in
+                let account = entry.element
+                HStack(spacing: 4) {
+                    NavigationLink {
+                        AccountDetailView(store: store, accountID: account.id)
+                    } label: {
+                        AccountRow(account: account, balance: store.balance(for: account))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .contextMenu {
+                    Button("Edit", systemImage: "pencil") {
+                        presentAccount(account)
+                    }
+                    Button(
+                        account.includeInTotals ? "Exclude from totals" : "Include in totals",
+                        systemImage: account.includeInTotals ? "eye.slash" : "eye"
+                    ) {
+                        _ = store.setAccountIncludedInTotals(
+                            accountID: account.id,
+                            included: !account.includeInTotals
+                        )
+                    }
+                    Button("Archive", systemImage: "archivebox") {
+                        _ = store.setAccountArchived(accountID: account.id, isArchived: true)
+                    }
+                }
+                .draggable(account.id.uuidString)
+                .dropDestination(for: String.self) { items, _ in
+                    guard let draggedID = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+                    return store.moveAccount(accountID: draggedID, beforeAccountID: account.id)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                    Button("Edit", systemImage: "pencil") {
+                        presentAccount(account)
+                    }
+                    Button("Archive", systemImage: "archivebox") {
+                        _ = store.setAccountArchived(accountID: account.id, isArchived: true)
+                    }
+                    .tint(PocketLedgerTheme.warning)
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                    Button(
+                        account.includeInTotals ? "Exclude" : "Include",
+                        systemImage: account.includeInTotals ? "eye.slash" : "eye"
+                    ) {
+                        _ = store.setAccountIncludedInTotals(
+                            accountID: account.id,
+                            included: !account.includeInTotals
+                        )
+                    }
+                    .tint(account.includeInTotals ? PocketLedgerTheme.textSecondary : PocketLedgerTheme.positive)
+                }
+                .listRowInsets(
+                    EdgeInsets(
+                        top: 0,
+                        leading: PocketLedgerTheme.screenHorizontalPadding * 2,
+                        bottom: 0,
+                        trailing: PocketLedgerTheme.screenHorizontalPadding * 2
+                    )
+                )
+                .listRowBackground(
+                    ledgerGroupedRowBackground(
+                        isFirst: entry.offset == 0,
+                        isLast: entry.offset == accounts.count - 1
+                    )
+                )
+                .listRowSeparatorTint(PocketLedgerTheme.divider)
+                .listRowSeparator(
+                    entry.offset == accounts.count - 1 ? .hidden : .visible,
+                    edges: .bottom
+                )
+            }
+        } header: {
+            HStack(spacing: 8) {
+                Image(systemName: type.systemImage)
+                    .foregroundStyle(PocketLedgerTheme.accent)
+                Text(type.displayName)
+                    .font(.caption.weight(.bold))
+                Text("\(accounts.count) \(accounts.count == 1 ? "account" : "accounts")")
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+            }
+            .textCase(nil)
+        }
+        .listSectionSeparator(.hidden)
+    }
+
+    private var archivedAccounts: [Account] {
+        store.data.accounts.filter(\.isArchived)
+    }
+
+    private var archivedAccountsSection: some View {
+        Section {
+            if isArchivedAccountsExpanded {
+                ForEach(Array(archivedAccounts.enumerated()), id: \.element.id) { entry in
+                    let account = entry.element
+                    HStack(spacing: 12) {
+                        PocketIcon(
+                            systemImage: account.type.systemImage,
+                            tint: PocketLedgerTheme.textTertiary,
+                            size: 34
+                        )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.name)
+                                .font(.subheadline.weight(.semibold))
+                            Text("\(account.type.displayName) · \(account.currency.rawValue)")
+                                .font(.caption)
+                                .foregroundStyle(PocketLedgerTheme.textTertiary)
+                        }
+
+                        Spacer(minLength: 8)
+
+                        Button("Restore", systemImage: "arrow.uturn.backward") {
+                            _ = store.setAccountArchived(accountID: account.id, isArchived: false)
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.borderless)
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button("Restore", systemImage: "arrow.uturn.backward") {
+                            _ = store.setAccountArchived(accountID: account.id, isArchived: false)
+                        }
+                        .tint(PocketLedgerTheme.accent)
+                    }
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: 0,
+                            leading: PocketLedgerTheme.screenHorizontalPadding * 2,
+                            bottom: 0,
+                            trailing: PocketLedgerTheme.screenHorizontalPadding * 2
+                        )
+                    )
+                    .listRowBackground(
+                        ledgerGroupedRowBackground(
+                            isFirst: entry.offset == 0,
+                            isLast: entry.offset == archivedAccounts.count - 1
+                        )
+                    )
+                    .listRowSeparatorTint(PocketLedgerTheme.divider)
+                    .listRowSeparator(
+                        entry.offset == archivedAccounts.count - 1 ? .hidden : .visible,
+                        edges: .bottom
+                    )
+                }
+            }
+        } header: {
+            Button {
+                withAnimation(.snappy(duration: 0.22)) {
+                    isArchivedAccountsExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Archived")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(PocketLedgerTheme.textPrimary)
+                    Text("\(archivedAccounts.count)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                        .rotationEffect(.degrees(isArchivedAccountsExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Archived accounts")
+            .accessibilityValue(isArchivedAccountsExpanded ? "Expanded" : "Collapsed")
+            .accessibilityHint(isArchivedAccountsExpanded ? "Hides archived accounts" : "Shows archived accounts")
+            .textCase(nil)
+        } footer: {
+            Text("Archived accounts stay available for historical transactions but are hidden from new account selections.")
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textSecondary)
+        }
+        .listSectionSeparator(.hidden)
+    }
+
+    private func presentAccount(_ account: Account?) {
+        editingAccount = account
+        isPresentingAccount = true
+    }
+}
+
+private func ledgerGroupedRowBackground(isFirst: Bool, isLast: Bool) -> some View {
+    UnevenRoundedRectangle(
+        cornerRadii: RectangleCornerRadii(
+            topLeading: isFirst ? 18 : 0,
+            bottomLeading: isLast ? 18 : 0,
+            bottomTrailing: isLast ? 18 : 0,
+            topTrailing: isFirst ? 18 : 0
+        ),
+        style: .continuous
+    )
+    .fill(PocketLedgerTheme.surface)
+    .padding(.horizontal, 16)
+}
+
+@MainActor
+private struct AccountRow: View {
+    let account: Account
+    let balance: Money
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PocketIcon(
+                systemImage: account.type.systemImage,
+                tint: account.type == .loan || !account.includeInTotals
+                    ? PocketLedgerTheme.warning
+                    : PocketLedgerTheme.income,
+                size: 36
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.name)
+                    .font(.subheadline.weight(.semibold))
+                Text(account.type.displayName)
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+                if !account.includeInTotals {
+                    Text("Excluded from totals")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(PocketLedgerTheme.warning)
+                }
+                if account.isArchived {
+                    Text("Archived")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(PocketLedgerTheme.textTertiary)
+                }
+            }
+
+            Spacer()
+
+            Text(balance.formatted)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .foregroundStyle(account.type == .loan || !account.includeInTotals
+                    ? PocketLedgerTheme.warning
+                    : PocketLedgerTheme.textPrimary)
+        }
+        .padding(.vertical, 11)
+    }
+}
+
+@MainActor
+struct AccountEditor: View {
+    @ObservedObject var store: LedgerStore
+    let account: Account?
+    let initialCurrency: LedgerCurrency?
+    let onSaved: (Account) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var type: AccountType = .cash
+    @State private var currency: LedgerCurrency = .usd
+    @State private var openingBalance = "0"
+    @State private var includeInTotals = true
+    @State private var errorMessage: String?
+
+    init(
+        store: LedgerStore,
+        account: Account? = nil,
+        initialCurrency: LedgerCurrency? = nil,
+        onSaved: @escaping (Account) -> Void = { _ in }
+    ) {
+        _store = ObservedObject(wrappedValue: store)
+        self.account = account
+        self.initialCurrency = initialCurrency
+        self.onSaved = onSaved
+        _name = State(initialValue: account?.name ?? "")
+        _type = State(initialValue: account?.type ?? .cash)
+        _currency = State(initialValue: account?.currency ?? initialCurrency ?? .usd)
+        _openingBalance = State(
+            initialValue: account.map {
+                NSDecimalNumber(
+                    decimal: Decimal($0.openingBalance.minorUnits) / Decimal($0.currency.minorUnitScale)
+                ).stringValue
+            } ?? "0"
+        )
+        _includeInTotals = State(initialValue: account?.includeInTotals ?? true)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Account") {
+                    TextField("Name", text: $name)
+                    Picker("Type", selection: $type) {
+                        ForEach(AccountType.allCases) { accountType in
+                            Label(accountType.displayName, systemImage: accountType.systemImage)
+                                .tag(accountType)
+                        }
+                    }
+                    Picker("Currency", selection: $currency) {
+                        ForEach(LedgerCurrency.allCases) { currency in
+                            Text(currency.rawValue).tag(currency)
+                        }
+                    }
+                    if hasActivity {
+                        Text("Changing currency updates this account's opening balance and all related transactions. Amounts keep their displayed numeric value; no exchange-rate conversion is applied.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    Toggle("Include in totals and metrics", isOn: $includeInTotals)
+                    Text("Turn this off for assets or investments you want to track separately.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Opening balance") {
+                    CurrencyInputField("Amount", text: $openingBalance, currency: currency)
+                    Text("The amount is stored in the account's own currency.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .pocketListSurface()
+            .navigationTitle(account == nil ? "New account" : "Edit account")
+            .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: currency) { oldCurrency, newCurrency in
+                guard let account, oldCurrency != newCurrency,
+                      let balance = Money.parse(openingBalance, currency: oldCurrency) else {
+                    return
+                }
+                let migratedBalance = balance.recast(to: newCurrency)
+                openingBalance = NSDecimalNumber(
+                    decimal: Decimal(migratedBalance.minorUnits)
+                        / Decimal(newCurrency.minorUnitScale)
+                ).stringValue
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: save)
+                }
+            }
+            .alert("Account not saved", isPresented: errorPresented) {
+                Button("OK") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
+        }
+    }
+
+    private var errorPresented: Binding<Bool> {
+        Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )
+    }
+
+    private func save() {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            errorMessage = "Enter an account name."
+            return
+        }
+        guard let balance = Money.parse(openingBalance, currency: currency) else {
+            errorMessage = "Enter a valid opening balance."
+            return
+        }
+
+        let value = Account(
+            id: account?.id ?? UUID(),
+            name: trimmedName,
+            type: type,
+            currency: currency,
+            openingBalance: balance,
+            includeInTotals: includeInTotals,
+            isArchived: account?.isArchived ?? false
+        )
+        let saved = account == nil ? store.addAccount(value) : store.updateAccount(value)
+        guard saved else {
+            errorMessage = store.lastActionStatus ?? "The account could not be saved."
+            return
+        }
+        onSaved(value)
+        dismiss()
+    }
+
+    private var hasActivity: Bool {
+        guard let account else { return false }
+        return store.data.transactions.contains {
+            ($0.outflows + $0.inflows).contains { $0.accountID == account.id }
+        } || store.data.scheduledTransactions.contains {
+            ($0.outflows + $0.inflows).contains { $0.accountID == account.id }
+        }
+    }
+}
