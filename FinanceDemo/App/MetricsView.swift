@@ -713,12 +713,7 @@ struct MetricsView: View {
     }
 
     private func generateReport(transactionLimit: Int?) {
-        let currentSnapshot = MetricsSnapshot.make(
-            index: store.ledgerIndex,
-            interval: interval,
-            selectedCurrency: selectedCurrency,
-            selectedCategoryID: selectedCategoryID
-        )
+        let currentSnapshot = snapshot
 
         var spendingByCurrency: [LedgerCurrency: Int64] = [:]
         for transaction in currentSnapshot.filteredTransactions where transaction.kind == .expense {
