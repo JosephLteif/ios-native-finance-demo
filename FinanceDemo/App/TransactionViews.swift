@@ -155,19 +155,6 @@ private struct TransactionListSnapshot {
             return FinanceSearch.matches(transaction, query: query, index: index)
         }
 
-        let pageCount = max(1, (filteredTransactions.count + pageSize - 1) / pageSize)
-        let displayedPage = min(page, pageCount - 1)
-        let pageStart = displayedPage * pageSize
-        let pageTransactions = Array(
-            filteredTransactions.dropFirst(pageStart).prefix(pageSize)
-        )
-        let grouped = Dictionary(grouping: pageTransactions) {
-            calendar.startOfDay(for: $0.date)
-        }
-        let groupedTransactions = grouped.keys.sorted(by: >).map { date in
-            TransactionDay(date: date, transactions: grouped[date] ?? [])
-        }
-
         var expenseTotals: [LedgerCurrency: Int64] = [:]
         for transaction in filteredTransactions where transaction.kind == .expense {
             for currency in LedgerCurrency.allCases {
@@ -176,6 +163,32 @@ private struct TransactionListSnapshot {
                     currency: currency
                 )
             }
+        }
+
+        return TransactionListSnapshot(
+            filteredTransactions: filteredTransactions,
+            pageTransactions: [],
+            groupedTransactions: [],
+            pageCount: 1,
+            displayedPage: 0,
+            expenseTotals: expenseTotals
+        ).showingPage(page, pageSize: pageSize, calendar: calendar)
+    }
+
+    func showingPage(
+        _ page: Int,
+        pageSize: Int,
+        calendar: Calendar = .current
+    ) -> TransactionListSnapshot {
+        let pageCount = max(1, (filteredTransactions.count + pageSize - 1) / pageSize)
+        let displayedPage = min(page, pageCount - 1)
+        let pageStart = displayedPage * pageSize
+        let pageTransactions = Array(filteredTransactions.dropFirst(pageStart).prefix(pageSize))
+        let grouped = Dictionary(grouping: pageTransactions) {
+            calendar.startOfDay(for: $0.date)
+        }
+        let groupedTransactions = grouped.keys.sorted(by: >).map { date in
+            TransactionDay(date: date, transactions: grouped[date] ?? [])
         }
 
         return TransactionListSnapshot(
@@ -403,7 +416,7 @@ struct TransactionsView: View {
             transactionPage = 0
             refreshListSnapshot()
         }
-        .onChange(of: transactionPage) { _, _ in refreshListSnapshot() }
+        .onChange(of: transactionPage) { _, _ in refreshListPage() }
         .onChange(of: store.ledgerRevision) { _, _ in
             transactionPage = 0
             refreshListSnapshot()
@@ -692,6 +705,13 @@ struct TransactionsView: View {
             customStartDate: customStartDate,
             customEndDate: customEndDate,
             page: transactionPage,
+            pageSize: transactionsPerPage
+        )
+    }
+
+    private func refreshListPage() {
+        listSnapshot = listSnapshot.showingPage(
+            transactionPage,
             pageSize: transactionsPerPage
         )
     }
