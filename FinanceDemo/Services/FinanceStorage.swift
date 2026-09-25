@@ -24,6 +24,7 @@ final class FinanceStorage {
     private let recoverySnapshotURL: URL?
     private(set) var loadStatus: LoadStatus = .notLoaded
     private(set) var saveConflict = false
+    private var loadedSnapshot: (data: FinanceData, payload: Data)?
 
     private struct RecoveryAttachment: Codable {
         let id: UUID
@@ -214,6 +215,7 @@ final class FinanceStorage {
     }
 
     func load() -> FinanceData {
+        loadedSnapshot = nil
         guard let context = makeContext() else {
             loadStatus = .empty
             return .empty
@@ -234,6 +236,7 @@ final class FinanceStorage {
             return .empty
         }
 
+        loadedSnapshot = (decoded, record.payload)
         loadStatus = .loaded
         return decoded
     }
@@ -257,14 +260,19 @@ final class FinanceStorage {
             let records = try context.fetch(FetchDescriptor<FinanceDatabaseRecord>())
             if let record = records.first {
                 if let expected {
-                    if let current = try? JSONDecoder().decode(FinanceData.self, from: record.payload) {
-                        if current != expected {
-                            saveConflict = true
+                    let matchesLoadedSnapshot = loadedSnapshot.map {
+                        $0.payload == record.payload && $0.data == expected
+                    } ?? false
+                    if !matchesLoadedSnapshot {
+                        if let current = try? JSONDecoder().decode(FinanceData.self, from: record.payload) {
+                            if current != expected {
+                                saveConflict = true
+                                return false
+                            }
+                        } else if !allowingCorruptedReplacement {
+                            loadStatus = .corrupted
                             return false
                         }
-                    } else if !allowingCorruptedReplacement {
-                        loadStatus = .corrupted
-                        return false
                     }
                 }
                 record.payload = encoded
@@ -280,6 +288,7 @@ final class FinanceStorage {
             if let databaseURL {
                 Self.applyDatabaseFileProtection(at: databaseURL)
             }
+            loadedSnapshot = (value, encoded)
             loadStatus = .loaded
             WatchSyncPublisher.publish(data: value)
             return true
@@ -329,6 +338,7 @@ final class FinanceStorage {
             if let databaseURL {
                 Self.applyDatabaseFileProtection(at: databaseURL)
             }
+            loadedSnapshot = (updated, encoded)
             loadStatus = .loaded
             WatchSyncPublisher.publish(data: updated)
             return true
