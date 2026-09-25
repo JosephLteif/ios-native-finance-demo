@@ -873,6 +873,7 @@ private struct CategoryMetricsDetailView: View {
                 .padding(.bottom, 24)
             }
         }
+        .pocketSwipeActionsContainer()
         .pocketScreen()
         .navigationTitle(categoryTitle)
         .navigationBarTitleDisplayMode(.inline)

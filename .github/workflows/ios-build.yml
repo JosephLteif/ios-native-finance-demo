@@ -18,7 +18,7 @@ permissions:
 jobs:
   build-ios:
     name: Build iOS app
-    runs-on: macos-26
+    runs-on: xcode-27
 
     steps:
       - name: Check out source
@@ -174,7 +174,7 @@ jobs:
 
   test-ios:
     name: Run iOS tests
-    runs-on: macos-26
+    runs-on: xcode-27
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_simulator_tests }}
 
     steps:
@@ -262,7 +262,7 @@ jobs:
     name: Package unsigned IPA
     needs: [build-ios, build-watch, test-ios]
     if: ${{ always() && needs.build-ios.result == 'success' && needs.build-watch.result == 'success' && (needs.test-ios.result == 'success' || needs.test-ios.result == 'skipped') }}
-    runs-on: macos-26
+    runs-on: xcode-27
 
     steps:
       - name: Download iOS app

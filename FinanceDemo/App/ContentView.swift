@@ -580,6 +580,7 @@ private struct DashboardView: View {
                     .padding(.bottom, 24)
                 }
             }
+            .pocketSwipeActionsContainer()
             .pocketScreen()
             .accessibilityIdentifier("dashboard-\(selectedColorTheme)")
             .preferredColorScheme(
@@ -2316,6 +2317,7 @@ struct TransactionsView: View {
 struct TransactionRow: View {
     let transaction: LedgerTransaction
     @ObservedObject var store: LedgerStore
+    @Environment(\.layoutDirection) private var layoutDirection
     @State private var isShowingDeleteConfirmation = false
     @State private var swipeOffset: CGFloat = 0
     @State private var swipeStartOffset: CGFloat = 0
@@ -2435,19 +2437,21 @@ struct TransactionRow: View {
     }
 
     private var usesCustomScrollSwipeFallback: Bool {
-        usesScrollSwipeActions && allowsActions
+        guard usesScrollSwipeActions && allowsActions else { return false }
+        if #available(iOS 27, *) { return false }
+        return true
     }
 
     private var scrollSwipeActions: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 0) {
+            if isLeadingSwipeActive {
                 scrollSwipeAction("Duplicate", systemImage: "plus.square.on.square", tint: PocketLedgerTheme.accent, action: onDuplicate)
                 scrollSwipeAction("Template", systemImage: "rectangle.stack.badge.plus", tint: PocketLedgerTheme.positive, action: onSaveTemplate)
             }
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 0) {
+            if isTrailingSwipeActive {
                 scrollSwipeAction("Delete", systemImage: "trash", tint: .red) {
                     isShowingDeleteConfirmation = true
                 }
@@ -2456,6 +2460,14 @@ struct TransactionRow: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityHidden(swipeOffset == 0)
+    }
+
+    private var isLeadingSwipeActive: Bool {
+        layoutDirection == .leftToRight ? swipeOffset > 0 : swipeOffset < 0
+    }
+
+    private var isTrailingSwipeActive: Bool {
+        layoutDirection == .leftToRight ? swipeOffset < 0 : swipeOffset > 0
     }
 
     private func scrollSwipeAction(
