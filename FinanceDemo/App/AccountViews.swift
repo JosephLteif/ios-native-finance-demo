@@ -55,13 +55,24 @@ private struct AccountDetailSnapshot {
                 .reduce(Int64.zero, +)
         }
 
+        return AccountDetailSnapshot(
+            transactions: transactions,
+            pageTransactions: [],
+            pageCount: 1,
+            displayedPage: 0,
+            incoming: incoming,
+            outgoing: outgoing
+        ).showingPage(page, pageSize: pageSize)
+    }
+
+    func showingPage(_ page: Int, pageSize: Int) -> AccountDetailSnapshot {
         let pageCount = max(1, (transactions.count + pageSize - 1) / pageSize)
         let displayedPage = min(page, pageCount - 1)
         let pageStart = displayedPage * pageSize
-        let pageTransactions = Array(transactions.dropFirst(pageStart).prefix(pageSize))
+
         return AccountDetailSnapshot(
             transactions: transactions,
-            pageTransactions: pageTransactions,
+            pageTransactions: Array(transactions.dropFirst(pageStart).prefix(pageSize)),
             pageCount: pageCount,
             displayedPage: displayedPage,
             incoming: incoming,
@@ -244,7 +255,7 @@ struct AccountDetailView: View {
             .padding(.bottom, 24)
         }
         .pocketSwipeActionsContainer()
-        .onChange(of: transactionPage) { _, _ in refreshSnapshot() }
+        .onChange(of: transactionPage) { _, _ in refreshSnapshotPage() }
     }
 
     private func refreshSnapshot() {
@@ -256,6 +267,13 @@ struct AccountDetailView: View {
             index: store.ledgerIndex,
             account: account,
             page: transactionPage,
+            pageSize: transactionsPerPage
+        )
+    }
+
+    private func refreshSnapshotPage() {
+        snapshot = snapshot.showingPage(
+            transactionPage,
             pageSize: transactionsPerPage
         )
     }
