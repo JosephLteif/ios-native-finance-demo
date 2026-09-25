@@ -12,9 +12,11 @@ struct MoreView: View {
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
     var body: some View {
+        let attentionItems = store.attentionItems
+
         NavigationStack {
             List {
-                if !store.attentionItems.isEmpty || !store.data.attentionState.dismissedIDs.isEmpty {
+                if !attentionItems.isEmpty || !store.data.attentionState.dismissedIDs.isEmpty {
                     Section("Review") {
                         NavigationLink {
                             AttentionInboxView(store: store, onAddExpense: onAddExpense)
@@ -23,7 +25,7 @@ struct MoreView: View {
                                 HStack {
                                     Text("Needs attention")
                                     Spacer()
-                                    Text("\(store.attentionItems.count)")
+                                    Text("\(attentionItems.count)")
                                         .font(.caption.weight(.bold).monospacedDigit())
                                         .foregroundStyle(PocketLedgerTheme.warning)
                                 }
@@ -994,16 +996,18 @@ private struct AttentionInboxView: View {
     let onAddExpense: () -> Void
 
     var body: some View {
+        let attentionItems = store.attentionItems
+
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
-                if store.attentionItems.isEmpty {
+                if attentionItems.isEmpty {
                     emptyState
                 } else {
                     Text("Resolve these items to keep balances, budgets, and metrics trustworthy.")
                         .font(.subheadline)
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
 
-                    ForEach(store.attentionItems) { item in
+                    ForEach(attentionItems) { item in
                         attentionCard(item)
                     }
                 }
