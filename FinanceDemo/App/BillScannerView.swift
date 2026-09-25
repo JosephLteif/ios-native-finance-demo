@@ -12,6 +12,7 @@ struct BillLineItem: Identifiable, Equatable, Sendable {
     var quantity: Int
     var unitPriceText: String
     var lineTotalText: String
+    var lineTotalOverrideText = ""
     var isSelected: Bool
     private let initialQuantity: Int
     private let initialUnitPriceText: String
@@ -37,6 +38,14 @@ struct BillLineItem: Identifiable, Equatable, Sendable {
 
     func total(in currency: LedgerCurrency) -> Money? {
         let multiplier = Int64(max(quantity, 1))
+
+        if !lineTotalOverrideText.isEmpty {
+            guard let lineTotal = Money.parse(lineTotalOverrideText, currency: currency),
+                  lineTotal.minorUnits > 0 else {
+                return nil
+            }
+            return lineTotal
+        }
 
         if quantity == initialQuantity,
            unitPriceText == initialUnitPriceText,
@@ -538,6 +547,7 @@ struct BillScannerView: View {
             .sheet(isPresented: $isPresentingTransactionEditor) {
                 TransactionEditor(
                     store: store,
+                    initialAmount: pendingTotal,
                     initialBillTotal: pendingTotal,
                     initialNote: transactionNote,
                     initialAttachmentData: attachmentData,
@@ -648,8 +658,13 @@ struct BillScannerView: View {
 
             CurrencyInputField("Unit price", text: item.unitPriceText, currency: currency)
 
+            CurrencyInputField("Item total override", text: item.lineTotalOverrideText, currency: currency)
+            Text("Use this when the billed total differs from unit price × quantity.")
+                .font(.caption)
+                .foregroundStyle(PocketLedgerTheme.textTertiary)
+
             HStack {
-                Text("Line total")
+                Text("Current total")
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
                 Spacer()
                 Text(total?.formatted ?? "Enter a price")
