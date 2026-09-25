@@ -1496,7 +1496,75 @@ private final class XLSXWorksheetDelegate: NSObject, XMLParserDelegate {
     }
 }
 
+private func financeImportLookupKey(_ name: String) -> String {
+    name.folding(options: [.caseInsensitive], locale: nil)
+}
+
 enum FinanceImportBuilder {
+    private struct AccountLookup {
+        private var accountsByName: [String: [Account]] = [:]
+        private var accountsByID: [UUID: Account] = [:]
+
+        init(_ accounts: [Account]) {
+            for account in accounts {
+                insert(account)
+            }
+        }
+
+        mutating func insert(_ account: Account) {
+            accountsByName[financeImportLookupKey(account.name), default: []].append(account)
+            if accountsByID[account.id] == nil {
+                accountsByID[account.id] = account
+            }
+        }
+
+        func first(named name: String, currency: LedgerCurrency? = nil) -> Account? {
+            accountsByName[financeImportLookupKey(name)]?.first {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+                    && (currency == nil || $0.currency == currency)
+            }
+        }
+
+        func account(id: UUID) -> Account? {
+            accountsByID[id]
+        }
+    }
+
+    private struct CategoryLookupKey: Hashable {
+        let parentID: UUID?
+        let name: String
+    }
+
+    private struct CategoryLookup {
+        private var categoriesByParentAndName: [CategoryLookupKey: [LedgerCategory]] = [:]
+
+        init(_ categories: [LedgerCategory]) {
+            for category in categories {
+                insert(category)
+            }
+        }
+
+        mutating func insert(_ category: LedgerCategory) {
+            let key = CategoryLookupKey(
+                parentID: category.parentID,
+                name: financeImportLookupKey(category.name)
+            )
+            categoriesByParentAndName[key, default: []].append(category)
+        }
+
+        func first(
+            named name: String,
+            parentID: UUID?,
+            excludingArchived: Bool = false
+        ) -> LedgerCategory? {
+            let key = CategoryLookupKey(parentID: parentID, name: financeImportLookupKey(name))
+            return categoriesByParentAndName[key]?.first {
+                $0.name.caseInsensitiveCompare(name) == .orderedSame
+                    && (!excludingArchived || !$0.isArchived)
+            }
+        }
+    }
+
     static func accountImportCandidates(
         table: ImportedTable,
         mapping: [ImportField: String?]
@@ -1564,6 +1632,9 @@ enum FinanceImportBuilder {
         var importedAccounts: [Account] = []
         var importedCategories: [LedgerCategory] = []
         var importedExchangeRates: [ExchangeRate] = []
+        var accountLookup = AccountLookup(existing.accounts)
+        var categoryLookup = CategoryLookup(existing.categories)
+        var availableExchangeRates = existing.exchangeRates
         var importedTransactions: [LedgerTransaction] = []
         var warnings: [String] = []
         var skippedRows = 0
@@ -1602,7 +1673,7 @@ enum FinanceImportBuilder {
                 let knownSourceAccount = matchingAccount(
                     named: accountName,
                     defaultID: options.defaultAccountID,
-                    in: existing.accounts + importedAccounts
+                    in: accountLookup
                 )
                 let preferredCurrency = explicitCurrency
                     ?? knownSourceAccount?.currency
@@ -1626,7 +1697,7 @@ enum FinanceImportBuilder {
                         ?? parseAccountType(accountName)
                         ?? accountSuggestion(for: accountName, in: options.accountSuggestions)?.type,
                     options: options,
-                    existing: existing,
+                    accountLookup: &accountLookup,
                     imported: &importedAccounts
                 )
                 let currency = account.currency
@@ -1661,7 +1732,7 @@ enum FinanceImportBuilder {
                     value(for: .category, in: row, table: table, mapping: mapping),
                     kind: kind,
                     options: options,
-                    existing: existing,
+                    categoryLookup: &categoryLookup,
                     imported: &importedCategories
                 )
                 let noteValue = value(for: .note, in: row, table: table, mapping: mapping)
@@ -1678,7 +1749,7 @@ enum FinanceImportBuilder {
                         amount,
                         accountCurrency: currency,
                         reportingAmount: reportingAmount,
-                        using: existing.exchangeRates + importedExchangeRates
+                        using: availableExchangeRates
                     )
                     outflows = [MoneyMovement(accountID: account.id, money: amount)]
                 case .income:
@@ -1687,7 +1758,7 @@ enum FinanceImportBuilder {
                         amount,
                         accountCurrency: currency,
                         reportingAmount: reportingAmount,
-                        using: existing.exchangeRates + importedExchangeRates
+                        using: availableExchangeRates
                     )
                     inflows = [MoneyMovement(accountID: account.id, money: amount)]
                 case .transfer:
@@ -1704,7 +1775,7 @@ enum FinanceImportBuilder {
                     let knownDestinationAccount = matchingAccount(
                         named: destinationName,
                         defaultID: options.defaultDestinationAccountID,
-                        in: existing.accounts + importedAccounts
+                        in: accountLookup
                     )
                     let destinationCurrency = knownDestinationAccount?.currency
                         ?? explicitDestinationCurrency
@@ -1725,18 +1796,17 @@ enum FinanceImportBuilder {
                             in: options.accountSuggestions
                         )?.type,
                         options: options,
-                        existing: existing,
+                        accountLookup: &accountLookup,
                         imported: &importedAccounts
                     )
                     let destinationMoneyCurrency = destination.currency
-                    let availableRates = existing.exchangeRates + importedExchangeRates
                     let destinationAmount: Money
 
                     if currency == destinationMoneyCurrency {
                         amount = try convertedAmount(
                             importedAmount,
                             to: currency,
-                            using: availableRates
+                            using: availableExchangeRates
                         )
                         if destinationAmountValue.isEmpty {
                             destinationAmount = amount
@@ -1753,7 +1823,7 @@ enum FinanceImportBuilder {
                             destinationAmount = try convertedAmount(
                                 parsedDestinationAmount,
                                 to: destinationMoneyCurrency,
-                                using: availableRates
+                                using: availableExchangeRates
                             )
                         }
                     } else if !destinationAmountValue.isEmpty {
@@ -1769,7 +1839,7 @@ enum FinanceImportBuilder {
                         amount = try convertedAmount(
                             importedAmount,
                             to: currency,
-                            using: availableRates
+                            using: availableExchangeRates
                         )
                         destinationAmount = parsedDestinationAmount
                         exchangeRate = inferredExchangeRate(from: amount, to: destinationAmount)
@@ -1777,7 +1847,7 @@ enum FinanceImportBuilder {
                         guard let rate = storedExchangeRate(
                             from: currency,
                             to: destinationMoneyCurrency,
-                            in: availableRates
+                            in: availableExchangeRates
                         ) else {
                             throw FinanceImportError.row(
                                 "No exchange rate is available to convert the imported destination amount from \(destinationMoneyCurrency.rawValue) to \(currency.rawValue)."
@@ -1799,7 +1869,7 @@ enum FinanceImportBuilder {
                         guard let rate = storedExchangeRate(
                             from: currency,
                             to: destinationMoneyCurrency,
-                            in: availableRates
+                            in: availableExchangeRates
                         ) else {
                             throw FinanceImportError.row(
                                 "No exchange rate is available to convert the imported source amount from \(currency.rawValue) to \(destinationMoneyCurrency.rawValue)."
@@ -1808,7 +1878,7 @@ enum FinanceImportBuilder {
                         amount = try convertedAmount(
                             importedAmount,
                             to: currency,
-                            using: availableRates
+                            using: availableExchangeRates
                         )
                         guard let convertedDestinationAmount = convertedAmount(
                             amount,
@@ -1846,7 +1916,14 @@ enum FinanceImportBuilder {
                             exchangeRate.quoteCurrency
                         ])
                     }
+                    if availableExchangeRates.count > existing.exchangeRates.count {
+                        availableExchangeRates.removeSubrange(
+                            existing.exchangeRates.count..<availableExchangeRates.endIndex
+                        )
+                    }
+                    availableExchangeRates.append(contentsOf: importedExchangeRates)
                     importedExchangeRates.append(exchangeRate)
+                    availableExchangeRates.append(exchangeRate)
                 }
 
                 importedTransactions.append(
@@ -1900,14 +1977,14 @@ enum FinanceImportBuilder {
     private static func matchingAccount(
         named rawName: String,
         defaultID: UUID?,
-        in accounts: [Account]
+        in accounts: AccountLookup
     ) -> Account? {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty {
-            return accounts.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+            return accounts.first(named: name)
         }
         guard let defaultID else { return nil }
-        return accounts.first { $0.id == defaultID }
+        return accounts.account(id: defaultID)
     }
 
     private static func storedExchangeRate(
@@ -2024,27 +2101,20 @@ enum FinanceImportBuilder {
         explicitCurrency: LedgerCurrency?,
         type: AccountType?,
         options: ImportOptions,
-        existing: FinanceData,
+        accountLookup: inout AccountLookup,
         imported: inout [Account]
     ) throws -> Account {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty, let defaultAccountID = options.defaultAccountID,
-           let account = (existing.accounts + imported).first(where: { $0.id == defaultAccountID }) {
+           let account = accountLookup.account(id: defaultAccountID) {
             return account
         }
 
         if !name.isEmpty {
-            let candidates = existing.accounts + imported
-            if let account = candidates.first(where: {
-                $0.name.caseInsensitiveCompare(name) == .orderedSame
-                    && explicitCurrency != nil
-                    && $0.currency == currency
-            }) {
+            if explicitCurrency != nil, let account = accountLookup.first(named: name, currency: currency) {
                 return account
             }
-            if let account = candidates.first(where: {
-                $0.name.caseInsensitiveCompare(name) == .orderedSame
-            }) {
+            if let account = accountLookup.first(named: name) {
                 return account
             }
         }
@@ -2060,6 +2130,7 @@ enum FinanceImportBuilder {
             openingBalance: Money(currency: currency, minorUnits: 0)
         )
         imported.append(account)
+        accountLookup.insert(account)
         return account
     }
 
@@ -2069,12 +2140,12 @@ enum FinanceImportBuilder {
         explicitCurrency: LedgerCurrency?,
         type: AccountType?,
         options: ImportOptions,
-        existing: FinanceData,
+        accountLookup: inout AccountLookup,
         imported: inout [Account]
     ) throws -> Account {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty, let defaultAccountID = options.defaultDestinationAccountID,
-           let account = (existing.accounts + imported).first(where: { $0.id == defaultAccountID }) {
+           let account = accountLookup.account(id: defaultAccountID) {
             return account
         }
         return try resolveAccount(
@@ -2091,7 +2162,7 @@ enum FinanceImportBuilder {
                 createMissingCategories: options.createMissingCategories,
                 accountSuggestions: options.accountSuggestions
             ),
-            existing: existing,
+            accountLookup: &accountLookup,
             imported: &imported
         )
     }
@@ -2100,7 +2171,7 @@ enum FinanceImportBuilder {
         _ rawValue: String,
         kind: TransactionKind,
         options: ImportOptions,
-        existing: FinanceData,
+        categoryLookup: inout CategoryLookup,
         imported: inout [LedgerCategory]
     ) throws -> UUID? {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2108,7 +2179,7 @@ enum FinanceImportBuilder {
             return defaultCategoryID(
                 for: kind,
                 options: options,
-                existing: existing,
+                categoryLookup: &categoryLookup,
                 imported: &imported
             )
         }
@@ -2121,16 +2192,14 @@ enum FinanceImportBuilder {
             return defaultCategoryID(
                 for: kind,
                 options: options,
-                existing: existing,
+                categoryLookup: &categoryLookup,
                 imported: &imported
             )
         }
 
         var parentID: UUID?
         for part in parts {
-            if let category = (existing.categories + imported).first(where: {
-                $0.parentID == parentID && $0.name.caseInsensitiveCompare(part) == .orderedSame
-            }) {
+            if let category = categoryLookup.first(named: part, parentID: parentID) {
                 parentID = category.id
                 continue
             }
@@ -2147,6 +2216,7 @@ enum FinanceImportBuilder {
                 includeInTotals: includeInTotals
             )
             imported.append(category)
+            categoryLookup.insert(category)
             parentID = category.id
         }
         return parentID
@@ -2155,22 +2225,19 @@ enum FinanceImportBuilder {
     private static func defaultCategoryID(
         for kind: TransactionKind,
         options: ImportOptions,
-        existing: FinanceData,
+        categoryLookup: inout CategoryLookup,
         imported: inout [LedgerCategory]
     ) -> UUID? {
         guard kind == .expense else { return nil }
 
-        if let other = (existing.categories + imported).first(where: {
-            $0.parentID == nil
-                && !$0.isArchived
-                && $0.name.caseInsensitiveCompare("Other") == .orderedSame
-        }) {
+        if let other = categoryLookup.first(named: "Other", parentID: nil, excludingArchived: true) {
             return other.id
         }
 
         guard options.createMissingCategories else { return nil }
         let other = LedgerCategory(name: "Other")
         imported.append(other)
+        categoryLookup.insert(other)
         return other.id
     }
 
