@@ -308,26 +308,11 @@ struct TransactionsView: View {
                 ForEach(listSnapshot.groupedTransactions) { day in
                     Section {
                         ForEach(Array(day.transactions.enumerated()), id: \.element.id) { entry in
-                            transactionRow(for: entry.element)
-                                .listRowInsets(
-                                    EdgeInsets(
-                                        top: 0,
-                                        leading: PocketLedgerTheme.screenHorizontalPadding * 2,
-                                        bottom: 0,
-                                        trailing: PocketLedgerTheme.screenHorizontalPadding * 2
-                                    )
-                                )
-                                .listRowBackground(
-                                    ledgerGroupedRowBackground(
-                                        isFirst: entry.offset == 0,
-                                        isLast: entry.offset == day.transactions.count - 1
-                                    )
-                                )
-                                .listRowSeparatorTint(PocketLedgerTheme.divider)
-                                .listRowSeparator(
-                                    entry.offset == day.transactions.count - 1 ? .hidden : .visible,
-                                    edges: .bottom
-                                )
+                            transactionListRow(
+                                for: entry.element,
+                                index: entry.offset,
+                                count: day.transactions.count
+                            )
                         }
                     } header: {
                         dayHeader(day)
@@ -520,6 +505,27 @@ struct TransactionsView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+    }
+
+    private func transactionListRow(
+        for transaction: LedgerTransaction,
+        index: Int,
+        count: Int
+    ) -> some View {
+        transactionRow(for: transaction)
+            .listRowInsets(
+                EdgeInsets(
+                    top: 0,
+                    leading: PocketLedgerTheme.screenHorizontalPadding * 2,
+                    bottom: 0,
+                    trailing: PocketLedgerTheme.screenHorizontalPadding * 2
+                )
+            )
+            .listRowBackground(
+                ledgerGroupedRowBackground(isFirst: index == 0, isLast: index == count - 1)
+            )
+            .listRowSeparatorTint(PocketLedgerTheme.divider)
+            .listRowSeparator(index == count - 1 ? .hidden : .visible, edges: .bottom)
     }
 
     private func transactionRow(for transaction: LedgerTransaction) -> some View {

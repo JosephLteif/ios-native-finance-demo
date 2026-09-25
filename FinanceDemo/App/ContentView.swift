@@ -290,7 +290,7 @@ enum AddAction: Identifiable {
 }
 
 @MainActor
-private struct AddTransactionToolbar: ToolbarContent {
+struct AddTransactionToolbar: ToolbarContent {
     @ObservedObject var store: LedgerStore
     let onAction: (AddAction) -> Void
     var systemImage = "plus"

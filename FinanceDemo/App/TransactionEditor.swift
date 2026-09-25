@@ -1,4 +1,5 @@
 import Foundation
+import AppIntents
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -354,7 +355,7 @@ struct TransactionEditor: View {
             .alert("Transaction not saved", isPresented: errorPresented) {
                 Button("OK") { errorMessage = nil }
             } message: {
-                Text(errorMessage ?? "")
+                Text(verbatim: errorMessage ?? "")
             }
             .sheet(item: $previewAttachment) { attachment in
                 NavigationStack {

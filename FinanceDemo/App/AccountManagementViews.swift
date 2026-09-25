@@ -350,7 +350,7 @@ struct AccountsView: View {
     }
 }
 
-private func ledgerGroupedRowBackground(isFirst: Bool, isLast: Bool) -> some View {
+func ledgerGroupedRowBackground(isFirst: Bool, isLast: Bool) -> some View {
     UnevenRoundedRectangle(
         cornerRadii: RectangleCornerRadii(
             topLeading: isFirst ? 18 : 0,
