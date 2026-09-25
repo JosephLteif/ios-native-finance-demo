@@ -25,6 +25,65 @@ final class FinanceIntentSearchRouter: ObservableObject {
     }
 }
 
+private struct FinanceTransactionIntentSearchIndex {
+    private let accountNamesByID: [UUID: [String]]
+    private let categoriesByID: [UUID: LedgerCategory]
+
+    init(data: FinanceData) {
+        var accountNamesByID: [UUID: [String]] = [:]
+        for account in data.accounts {
+            accountNamesByID[account.id, default: []].append(account.name)
+        }
+        self.accountNamesByID = accountNamesByID
+
+        var categoriesByID: [UUID: LedgerCategory] = [:]
+        for category in data.categories {
+            if categoriesByID[category.id] == nil {
+                categoriesByID[category.id] = category
+            }
+        }
+        self.categoriesByID = categoriesByID
+    }
+
+    func matches(_ transaction: LedgerTransaction, query: String) -> Bool {
+        if transaction.note.localizedCaseInsensitiveContains(query)
+            || transaction.kind.displayName.localizedCaseInsensitiveContains(query)
+            || transaction.date.formatted(date: .abbreviated, time: .omitted)
+                .localizedCaseInsensitiveContains(query)
+            || financeIntentMovementSummary(for: transaction).localizedCaseInsensitiveContains(query) {
+            return true
+        }
+
+        let category = transaction.categoryID.map { categoryPath(for: $0) } ?? "Uncategorized"
+        if category.localizedCaseInsensitiveContains(query) {
+            return true
+        }
+
+        let accountIDs = Set((transaction.outflows + transaction.inflows).map(\.accountID))
+        let accountNames = accountIDs
+            .flatMap { accountNamesByID[$0] ?? [] }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            .joined(separator: ", ")
+        return accountNames.localizedCaseInsensitiveContains(query)
+    }
+
+    private func categoryPath(for categoryID: UUID) -> String {
+        var names: [String] = []
+        var currentID: UUID? = categoryID
+        var visited: Set<UUID> = []
+
+        while let id = currentID,
+              !visited.contains(id),
+              let category = categoriesByID[id] {
+            visited.insert(id)
+            names.insert(category.name, at: 0)
+            currentID = category.parentID
+        }
+
+        return names.isEmpty ? "Uncategorized" : names.joined(separator: " / ")
+    }
+}
+
 struct FinanceTransactionIntentValueQuery: IntentValueQuery {
     func values(for input: StringSearchCriteria) async throws -> [FinanceTransactionEntity] {
         let query = input.term.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -36,12 +95,14 @@ struct FinanceTransactionIntentValueQuery: IntentValueQuery {
         let data = storage.load()
         guard !storage.isCorrupted else { return [] }
 
+        let searchIndex = FinanceTransactionIntentSearchIndex(data: data)
         return Array(
             data.transactions
                 .sorted { $0.date > $1.date }
-                .map { FinanceTransactionEntity(transaction: $0, data: data) }
-                .filter { $0.matchesSearch(query) }
+                .lazy
+                .filter { searchIndex.matches($0, query: query) }
                 .prefix(25)
+                .map { FinanceTransactionEntity(transaction: $0, data: data) }
         )
     }
 }

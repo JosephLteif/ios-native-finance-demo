@@ -317,7 +317,7 @@ actor FinanceIntentIndexing {
     }
 }
 
-private func financeIntentMovementSummary(for transaction: LedgerTransaction) -> String {
+func financeIntentMovementSummary(for transaction: LedgerTransaction) -> String {
     let outflowText = transaction.outflows.map { $0.money.formatted }.joined(separator: " + ")
     let inflowText = transaction.inflows.map { $0.money.formatted }.joined(separator: " + ")
 
