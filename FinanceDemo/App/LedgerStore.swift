@@ -71,12 +71,25 @@ final class LedgerStore: ObservableObject {
 
     var attentionItems: [FinanceAttentionItem] {
         var items: [FinanceAttentionItem] = []
+        var uncategorizedCount = 0
+        var missingRateCount = 0
 
-        let uncategorizedCount = data.transactions.filter {
-            $0.kind == .expense
-                && $0.categoryID == nil
-                && transactionHasIncludedAccount($0)
-        }.count
+        for transaction in data.transactions {
+            if transaction.kind == .expense,
+               transaction.categoryID == nil,
+               transactionHasIncludedAccount(transaction) {
+                uncategorizedCount += 1
+            }
+
+            guard transaction.kind == .transfer, transaction.exchangeRate == nil else {
+                continue
+            }
+            let currencies = Set((transaction.outflows + transaction.inflows).map { $0.money.currency })
+            if currencies.count > 1 {
+                missingRateCount += 1
+            }
+        }
+
         if uncategorizedCount > 0 {
             items.append(
                 FinanceAttentionItem(
@@ -91,13 +104,6 @@ final class LedgerStore: ObservableObject {
             )
         }
 
-        let missingRateCount = data.transactions.filter { transaction in
-            guard transaction.kind == .transfer, transaction.exchangeRate == nil else {
-                return false
-            }
-            let currencies = Set((transaction.outflows + transaction.inflows).map { $0.money.currency })
-            return currencies.count > 1
-        }.count
         if missingRateCount > 0 {
             items.append(
                 FinanceAttentionItem(
