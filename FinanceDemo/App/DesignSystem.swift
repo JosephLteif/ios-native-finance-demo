@@ -234,10 +234,134 @@ struct PocketIcon: View {
     }
 }
 
+struct ProtectedAmountText: View {
+    let value: String
+    let isRevealed: Bool
+
+    var body: some View {
+        Text(value)
+            .blur(radius: isRevealed ? 0 : 8)
+            .privacySensitive()
+            .accessibilityLabel(isRevealed ? value : "Hidden balance")
+    }
+}
+
+@MainActor
+struct BalanceVisibilityControl: View {
+    @ObservedObject var security: AppSecurityService
+    @Binding var isRevealed: Bool
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isAuthenticating = false
+    @State private var isShowingBiometryUnavailable = false
+    @State private var requestID: UUID?
+
+    var body: some View {
+        Button(action: toggle) {
+            Label(
+                isRevealed ? "Hide" : "Reveal",
+                systemImage: isRevealed
+                    ? "eye.slash"
+                    : (security.availableBiometry?.systemImage ?? "faceid")
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(PocketLedgerTheme.accent)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(PocketLedgerTheme.surfaceElevated, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(isAuthenticating)
+        .accessibilityLabel(isRevealed ? "Hide balance amounts" : "Reveal balance amounts")
+        .accessibilityHint("Requires \(security.availableBiometry?.displayName ?? "Face ID")")
+        .alert("Biometrics unavailable", isPresented: $isShowingBiometryUnavailable) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Set up Face ID or Touch ID on this device to reveal balance amounts.")
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { conceal() }
+        }
+        .onChange(of: isRevealed) { _, revealed in
+            if !revealed && isAuthenticating {
+                requestID = nil
+                isAuthenticating = false
+            }
+        }
+    }
+
+    private func toggle() {
+        guard !isAuthenticating else { return }
+        guard !isRevealed else {
+            conceal()
+            return
+        }
+        guard security.availableBiometry != nil else {
+            isShowingBiometryUnavailable = true
+            return
+        }
+
+        let requestID = UUID()
+        self.requestID = requestID
+        isAuthenticating = true
+        Task {
+            let authenticated = await security.authenticateToRevealBalances()
+            guard self.requestID == requestID else { return }
+            isAuthenticating = false
+            isRevealed = authenticated
+        }
+    }
+
+    private func conceal() {
+        requestID = nil
+        isAuthenticating = false
+        isRevealed = false
+    }
+}
+
+struct CurrencySelectionMenu: View {
+    @Binding var currency: LedgerCurrency
+    let currencies: [LedgerCurrency]
+
+    init(currency: Binding<LedgerCurrency>, currencies: [LedgerCurrency] = LedgerCurrency.allCases) {
+        _currency = currency
+        self.currencies = LedgerCurrency.allCases.filter {
+            currencies.contains($0) || $0 == currency.wrappedValue
+        }
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(currencies) { option in
+                Button {
+                    currency = option
+                } label: {
+                    if option == currency {
+                        Label(option.rawValue, systemImage: "checkmark")
+                    } else {
+                        Text(option.rawValue)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(currency.rawValue)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("Currency")
+        .accessibilityValue(Text(currency.rawValue))
+    }
+}
+
 struct CurrencyInputField: View {
     private let title: String
     @Binding private var text: String
-    private let currency: LedgerCurrency
+    @Binding private var currency: LedgerCurrency
+    private let selectableCurrencies: [LedgerCurrency]
     @FocusState private var isFocused: Bool
 
     init(
@@ -247,7 +371,22 @@ struct CurrencyInputField: View {
     ) {
         self.title = title
         _text = text
-        self.currency = currency
+        _currency = .constant(currency)
+        selectableCurrencies = [currency]
+    }
+
+    init(
+        _ title: String,
+        text: Binding<String>,
+        currency: Binding<LedgerCurrency>,
+        selectableCurrencies: [LedgerCurrency] = LedgerCurrency.allCases
+    ) {
+        self.title = title
+        _text = text
+        _currency = currency
+        self.selectableCurrencies = LedgerCurrency.allCases.filter {
+            selectableCurrencies.contains($0) || $0 == currency.wrappedValue
+        }
     }
 
     var body: some View {
@@ -257,9 +396,13 @@ struct CurrencyInputField: View {
                 .monospacedDigit()
                 .focused($isFocused)
 
-            Text(currency.rawValue)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            if selectableCurrencies.count > 1 {
+                CurrencySelectionMenu(currency: $currency, currencies: selectableCurrencies)
+            } else {
+                Text(currency.rawValue)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .onAppear(perform: formatText)
         .onChange(of: isFocused) { _, focused in

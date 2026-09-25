@@ -187,10 +187,7 @@ private struct BudgetEditor: View {
                             includeUncategorized: false
                         )
                     }
-                    Picker("Currency", selection: $currency) {
-                        ForEach(LedgerCurrency.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    CurrencyInputField("Monthly limit", text: $amount, currency: currency)
+                    CurrencyInputField("Monthly limit", text: $amount, currency: $currency)
                     Toggle("Rollover unused amount", isOn: $rollover)
                 }
             }

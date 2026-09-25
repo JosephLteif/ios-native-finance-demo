@@ -653,19 +653,23 @@ struct ExchangeRate: Codable, Equatable, Identifiable {
     }
 
     var summary: String {
-        let number = NSDecimalNumber(decimal: quoteUnitsPerBaseUnit).stringValue
+        let number = Self.formattedValue(quoteUnitsPerBaseUnit)
         return "1 \(baseCurrency.rawValue) = \(number) \(quoteCurrency.rawValue)"
     }
 
     var displaySummary: String {
+        summary
+    }
+
+    static func formattedValue(_ value: Decimal) -> String {
         let formatter = NumberFormatter()
+        formatter.locale = .current
         formatter.numberStyle = .decimal
-        formatter.usesSignificantDigits = true
-        formatter.minimumSignificantDigits = 1
-        formatter.maximumSignificantDigits = 7
-        let value = formatter.string(from: NSDecimalNumber(decimal: quoteUnitsPerBaseUnit))
-            ?? NSDecimalNumber(decimal: quoteUnitsPerBaseUnit).stringValue
-        return "1 \(baseCurrency.rawValue) = \(value) \(quoteCurrency.rawValue)"
+        formatter.usesGroupingSeparator = true
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSDecimalNumber(decimal: value))
+            ?? NSDecimalNumber(decimal: value).stringValue
     }
 }
 

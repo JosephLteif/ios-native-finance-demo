@@ -212,7 +212,7 @@ private struct ExchangeRateEditor: View {
             Text("1 \(from.rawValue)")
                 .foregroundStyle(PocketLedgerTheme.textSecondary)
             Spacer(minLength: 6)
-            Text("= \(NSDecimalNumber(decimal: amount).stringValue) \(to.rawValue)")
+            Text("= \(ExchangeRate.formattedValue(amount)) \(to.rawValue)")
                 .fontWeight(.semibold)
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)

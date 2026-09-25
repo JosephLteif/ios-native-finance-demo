@@ -164,9 +164,6 @@ struct DashboardView: View {
     @State private var dashboardPreferences = DashboardPreferences.load()
     @State private var isBalanceScopeExpanded = false
     @State private var areBalancesRevealed = false
-    @State private var isAuthenticatingBalances = false
-    @State private var isShowingBiometryUnavailable = false
-    @State private var balanceRevealRequestID: UUID?
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
@@ -225,11 +222,6 @@ struct DashboardView: View {
             }
             .sheet(item: $transactionToTemplate) { transaction in
                 TemplateNameEditor(store: store, transaction: transaction)
-            }
-            .alert("Biometrics unavailable", isPresented: $isShowingBiometryUnavailable) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("Set up Face ID or Touch ID on this device to reveal balance amounts.")
             }
             .onAppear(perform: refreshSnapshot)
             .onChange(of: store.ledgerRevision) { _, _ in
@@ -425,7 +417,7 @@ struct DashboardView: View {
                 Spacer()
                 balanceVisibilityControl
                 NavigationLink {
-                    AccountsView(store: store)
+                    AccountsView(store: store, security: security)
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
@@ -498,57 +490,14 @@ struct DashboardView: View {
     }
 
     private var balanceVisibilityControl: some View {
-        Button(action: toggleBalanceVisibility) {
-            Label(
-                areBalancesRevealed ? "Hide" : "Reveal",
-                systemImage: areBalancesRevealed
-                    ? "eye.slash"
-                    : (security.availableBiometry?.systemImage ?? "faceid")
-            )
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(PocketLedgerTheme.accent)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(PocketLedgerTheme.surfaceElevated, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(isAuthenticatingBalances)
-        .accessibilityLabel(areBalancesRevealed ? "Hide balance amounts" : "Reveal balance amounts")
-        .accessibilityHint("Requires \(security.availableBiometry?.displayName ?? "Face ID")")
+        BalanceVisibilityControl(security: security, isRevealed: $areBalancesRevealed)
     }
 
     private func protectedBalanceText(_ value: String) -> some View {
-        Text(value)
-            .blur(radius: areBalancesRevealed ? 0 : 8)
-            .privacySensitive()
-            .accessibilityLabel(areBalancesRevealed ? value : "Hidden balance")
-    }
-
-    private func toggleBalanceVisibility() {
-        guard !isAuthenticatingBalances else { return }
-        guard !areBalancesRevealed else {
-            concealBalances()
-            return
-        }
-        guard security.availableBiometry != nil else {
-            isShowingBiometryUnavailable = true
-            return
-        }
-
-        let requestID = UUID()
-        balanceRevealRequestID = requestID
-        isAuthenticatingBalances = true
-        Task {
-            let authenticated = await security.authenticateToRevealBalances()
-            guard balanceRevealRequestID == requestID else { return }
-            isAuthenticatingBalances = false
-            areBalancesRevealed = authenticated
-        }
+        ProtectedAmountText(value: value, isRevealed: areBalancesRevealed)
     }
 
     private func concealBalances() {
-        balanceRevealRequestID = nil
-        isAuthenticatingBalances = false
         areBalancesRevealed = false
     }
 

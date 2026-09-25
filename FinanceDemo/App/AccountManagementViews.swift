@@ -4,10 +4,13 @@ import SwiftUI
 @MainActor
 struct AccountsView: View {
     @ObservedObject var store: LedgerStore
+    @ObservedObject var security: AppSecurityService
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isPresentingAccount = false
     @State private var editingAccount: Account?
     @State private var isArchivedAccountsExpanded = false
     @State private var expandedPositionCurrency: LedgerCurrency?
+    @State private var areBalancesRevealed = false
 
     var body: some View {
         List {
@@ -74,6 +77,10 @@ struct AccountsView: View {
                 isArchivedAccountsExpanded = false
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { areBalancesRevealed = false }
+        }
+        .onDisappear { areBalancesRevealed = false }
     }
 
     private var accountTypeTotalsSummary: some View {
@@ -81,12 +88,16 @@ struct AccountsView: View {
         let includedAccounts = activeAccounts.filter(\.includeInTotals)
 
         return VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Account totals by type")
-                    .font(.title3.weight(.bold))
-                Text("Included balances stay in their account currency")
-                    .font(.caption)
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Account totals by type")
+                        .font(.title3.weight(.bold))
+                    Text("Included balances stay in their account currency")
+                        .font(.caption)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
+                Spacer(minLength: 8)
+                BalanceVisibilityControl(security: security, isRevealed: $areBalancesRevealed)
             }
 
             if includedAccounts.isEmpty {
@@ -122,7 +133,10 @@ struct AccountsView: View {
                                         Text(currency.rawValue)
                                             .font(.caption2.weight(.bold))
                                             .foregroundStyle(PocketLedgerTheme.textTertiary)
-                                        Text(Money(currency: currency, minorUnits: total).formatted)
+                                        ProtectedAmountText(
+                                            value: Money(currency: currency, minorUnits: total).formatted,
+                                            isRevealed: areBalancesRevealed
+                                        )
                                             .font(.caption.weight(.semibold).monospacedDigit())
                                             .foregroundStyle(PocketLedgerTheme.textPrimary)
                                             .lineLimit(1)
@@ -185,7 +199,10 @@ struct AccountsView: View {
 
                                 Spacer(minLength: 8)
 
-                                Text(store.netWorth(for: currency).formatted)
+                                ProtectedAmountText(
+                                    value: store.netWorth(for: currency).formatted,
+                                    isRevealed: areBalancesRevealed
+                                )
                                     .font(.headline.weight(.semibold).monospacedDigit())
                                     .foregroundStyle(PocketLedgerTheme.textPrimary)
                                     .lineLimit(1)
@@ -213,7 +230,7 @@ struct AccountsView: View {
 
             Spacer()
 
-            Text(value.formatted)
+            ProtectedAmountText(value: value.formatted, isRevealed: areBalancesRevealed)
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(tint)
                 .lineLimit(1)
@@ -233,9 +250,13 @@ struct AccountsView: View {
                 let account = entry.element
                 HStack(spacing: 4) {
                     NavigationLink {
-                        AccountDetailView(store: store, accountID: account.id)
+                        AccountDetailView(store: store, security: security, accountID: account.id)
                     } label: {
-                        AccountRow(account: account, balance: store.balance(for: account))
+                        AccountRow(
+                            account: account,
+                            balance: store.balance(for: account),
+                            areBalancesRevealed: areBalancesRevealed
+                        )
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -448,6 +469,7 @@ func ledgerGroupedRowBackground(isFirst: Bool, isLast: Bool) -> some View {
 private struct AccountRow: View {
     let account: Account
     let balance: Money
+    let areBalancesRevealed: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -479,7 +501,7 @@ private struct AccountRow: View {
 
             Spacer()
 
-            Text(balance.formatted)
+            ProtectedAmountText(value: balance.formatted, isRevealed: areBalancesRevealed)
                 .font(.subheadline.weight(.semibold).monospacedDigit())
                 .foregroundStyle(account.type == .loan || !account.includeInTotals
                     ? PocketLedgerTheme.warning
@@ -537,11 +559,6 @@ struct AccountEditor: View {
                                 .tag(accountType)
                         }
                     }
-                    Picker("Currency", selection: $currency) {
-                        ForEach(LedgerCurrency.allCases) { currency in
-                            Text(currency.rawValue).tag(currency)
-                        }
-                    }
                     if hasActivity {
                         Text("Changing currency updates this account's opening balance and all related transactions. Amounts keep their displayed numeric value; no exchange-rate conversion is applied.")
                             .font(.footnote)
@@ -554,7 +571,7 @@ struct AccountEditor: View {
                 }
 
                 Section("Opening balance") {
-                    CurrencyInputField("Amount", text: $openingBalance, currency: currency)
+                    CurrencyInputField("Amount", text: $openingBalance, currency: $currency)
                     Text("The amount is stored in the account's own currency.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)

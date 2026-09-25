@@ -18,43 +18,37 @@ private struct MovementLineEditor: View {
     let allowsArchivedAccount: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            CurrencyInputField(amountPlaceholder, text: $line.amount, currency: line.currency)
+        let availableCurrencies = LedgerCurrency.allCases.filter { currency in
+            store.activeAccounts.contains { $0.currency == currency }
+                || (allowsArchivedAccount && store.account(with: line.accountID)?.currency == currency)
+        }
+
+        return VStack(alignment: .leading, spacing: 8) {
+            CurrencyInputField(
+                amountPlaceholder,
+                text: $line.amount,
+                currency: Binding(
+                    get: { line.currency },
+                    set: { currency in
+                        line.currency = currency
+                        if let account = store.activeAccounts.first(where: { $0.currency == currency }) {
+                            line.accountID = account.id
+                        }
+                    }
+                ),
+                selectableCurrencies: availableCurrencies
+            )
 
             Picker("Account", selection: $line.accountID) {
                 ForEach(store.data.accounts.filter { account in
-                    !account.isArchived || (allowsArchivedAccount && account.id == line.accountID)
+                    account.currency == line.currency
+                        && (!account.isArchived || (allowsArchivedAccount && account.id == line.accountID))
                 }) { account in
                     Text("\(account.name) (\(account.currency.rawValue))")
                         .tag(account.id)
                 }
             }
             .pickerStyle(.menu)
-
-            HStack {
-                Text("Currency")
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-                Spacer()
-                Menu {
-                    ForEach(LedgerCurrency.allCases) { currency in
-                        Button {
-                            line.currency = currency
-                        } label: {
-                            if currency == line.currency {
-                                Label(currency.rawValue, systemImage: "checkmark")
-                            } else {
-                                Text(currency.rawValue)
-                            }
-                        }
-                    }
-                } label: {
-                    Label(line.currency.rawValue, systemImage: "chevron.up.chevron.down")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Payment currency")
-                .accessibilityValue(Text(line.currency.rawValue))
-            }
         }
     }
 }
@@ -576,31 +570,7 @@ struct TransactionEditor: View {
             Text("Bill total")
                 .font(.subheadline.weight(.semibold))
 
-            HStack {
-                Text("Bill currency")
-                    .foregroundStyle(PocketLedgerTheme.textSecondary)
-                Spacer()
-                Menu {
-                    ForEach(LedgerCurrency.allCases) { currency in
-                        Button {
-                            dueCurrency = currency
-                        } label: {
-                            if currency == dueCurrency {
-                                Label(currency.rawValue, systemImage: "checkmark")
-                            } else {
-                                Text(currency.rawValue)
-                            }
-                        }
-                    }
-                } label: {
-                    Label(dueCurrency.rawValue, systemImage: "chevron.up.chevron.down")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Bill total currency")
-                .accessibilityValue(Text(dueCurrency.rawValue))
-            }
-            CurrencyInputField("Total due (optional)", text: $amountDue, currency: dueCurrency)
+            CurrencyInputField("Total due (optional)", text: $amountDue, currency: $dueCurrency)
         }
     }
 

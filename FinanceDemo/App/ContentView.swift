@@ -137,7 +137,7 @@ struct ContentView: View {
 
             Tab(value: AppTab.search, role: .search) {
                 NavigationStack {
-                    GlobalSearchView(store: store, searchText: $searchText)
+                    GlobalSearchView(store: store, security: security, searchText: $searchText)
                         .searchable(
                             text: $searchText,
                             isPresented: $isSearchPresented,
@@ -173,7 +173,7 @@ struct ContentView: View {
                 value: AppTab.accounts
             ) {
                 NavigationStack {
-                    AccountsView(store: store)
+                    AccountsView(store: store, security: security)
                         .toolbar {
                             AddTransactionToolbar(
                                 store: store,

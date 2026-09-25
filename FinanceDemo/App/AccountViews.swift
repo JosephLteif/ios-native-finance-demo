@@ -84,14 +84,17 @@ private struct AccountDetailSnapshot {
 @MainActor
 struct AccountDetailView: View {
     @ObservedObject var store: LedgerStore
+    @ObservedObject var security: AppSecurityService
     let accountID: UUID
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isPresentingAccountEditor = false
     @State private var isPresentingBalanceEditor = false
     @State private var editingTransaction: LedgerTransaction?
     @State private var transactionToTemplate: LedgerTransaction?
     @State private var transactionPage = 0
     @State private var snapshot = AccountDetailSnapshot.empty
+    @State private var areBalancesRevealed = false
 
     private let transactionsPerPage = 25
 
@@ -138,6 +141,10 @@ struct AccountDetailView: View {
                 refreshSnapshot()
             }
             .onChange(of: store.ledgerRevision) { _, _ in refreshSnapshot() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { areBalancesRevealed = false }
+            }
+            .onDisappear { areBalancesRevealed = false }
     }
 
     @ViewBuilder
@@ -167,13 +174,15 @@ struct AccountDetailView: View {
                             title: "Money in",
                             value: Money(currency: account.currency, minorUnits: snapshot.incoming).formatted,
                             systemImage: "arrow.down.left",
-                            tint: PocketLedgerTheme.income
+                            tint: PocketLedgerTheme.income,
+                            protectsValue: true
                         )
                         accountMetric(
                             title: "Money out",
                             value: Money(currency: account.currency, minorUnits: snapshot.outgoing).formatted,
                             systemImage: "arrow.up.right",
-                            tint: PocketLedgerTheme.warning
+                            tint: PocketLedgerTheme.warning,
+                            protectsValue: true
                         )
                     }
 
@@ -306,12 +315,16 @@ struct AccountDetailView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
                 Spacer()
+                BalanceVisibilityControl(security: security, isRevealed: $areBalancesRevealed)
                 Text(account.currency.rawValue)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(PocketLedgerTheme.accent)
             }
 
-            Text(store.balance(for: account).formatted)
+            ProtectedAmountText(
+                value: store.balance(for: account).formatted,
+                isRevealed: areBalancesRevealed
+            )
                 .font(.largeTitle.weight(.bold).monospacedDigit())
                 .monospacedDigit()
                 .lineLimit(2)
@@ -319,11 +332,18 @@ struct AccountDetailView: View {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.circle")
                 if let reconciliation = store.reconciliation(for: account.id) {
-                    Text(
-                        reconciliation.difference.minorUnits == 0
-                            ? "Reconciled \(reconciliation.lastReconciledAt.formatted(.dateTime.month(.abbreviated).day()))"
-                            : "Adjusted by \(Money(currency: account.currency, minorUnits: Swift.abs(reconciliation.difference.minorUnits)).formatted)"
-                    )
+                    if reconciliation.difference.minorUnits == 0 {
+                        Text("Reconciled \(reconciliation.lastReconciledAt.formatted(.dateTime.month(.abbreviated).day()))")
+                    } else {
+                        Text("Adjusted by")
+                        ProtectedAmountText(
+                            value: Money(
+                                currency: account.currency,
+                                minorUnits: Swift.abs(reconciliation.difference.minorUnits)
+                            ).formatted,
+                            isRevealed: areBalancesRevealed
+                        )
+                    }
                 } else {
                     Text("Not reconciled yet")
                 }
@@ -345,13 +365,25 @@ struct AccountDetailView: View {
         .pocketGroupedSurface(cornerRadius: 22)
     }
 
-    private func accountMetric(title: String, value: String, systemImage: String, tint: Color) -> some View {
+    private func accountMetric(
+        title: String,
+        value: String,
+        systemImage: String,
+        tint: Color,
+        protectsValue: Bool = false
+    ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Image(systemName: systemImage)
                 .foregroundStyle(tint)
-            Text(value)
-                .font(.subheadline.weight(.semibold).monospacedDigit())
-                .lineLimit(2)
+            Group {
+                if protectsValue {
+                    ProtectedAmountText(value: value, isRevealed: areBalancesRevealed)
+                } else {
+                    Text(value)
+                }
+            }
+            .font(.subheadline.weight(.semibold).monospacedDigit())
+            .lineLimit(2)
             Text(title.uppercased())
                 .font(.caption2.weight(.bold))
                 .tracking(0.4)
@@ -462,9 +494,8 @@ private struct AccountBalanceEditor: View {
         NavigationStack {
             Form {
                 Section("Current balance") {
-                    LabeledContent("Now", value: store.balance(for: account).formatted)
-
-                    CurrencyInputField("New balance", text: $balanceText, currency: account.currency)
+                    CurrencyInputField("Current balance", text: $balanceText, currency: account.currency)
+                        .font(.title2.weight(.semibold).monospacedDigit())
 
                     Toggle("Count as transaction", isOn: $recordAsTransaction)
 

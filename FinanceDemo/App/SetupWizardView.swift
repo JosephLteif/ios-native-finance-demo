@@ -33,12 +33,7 @@ struct SetupWizardView: View {
                             Label(type.displayName, systemImage: type.systemImage).tag(type)
                         }
                     }
-                    Picker("Currency", selection: $currency) {
-                        ForEach(LedgerCurrency.allCases) { currency in
-                            Text("\(currency.rawValue) · \(currency.displayName)").tag(currency)
-                        }
-                    }
-                    CurrencyInputField("Opening balance", text: $openingBalance, currency: currency)
+                    CurrencyInputField("Opening balance", text: $openingBalance, currency: $currency)
                 }
 
                 Section("Categories") {

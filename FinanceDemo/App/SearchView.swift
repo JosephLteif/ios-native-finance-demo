@@ -104,12 +104,15 @@ private struct GlobalSearchSnapshot {
 @MainActor
 struct GlobalSearchView: View {
     @ObservedObject var store: LedgerStore
+    @ObservedObject var security: AppSecurityService
     @Binding var searchText: String
+    @Environment(\.scenePhase) private var scenePhase
     @State private var results = GlobalSearchSnapshot.empty
     @State private var transactionDocuments: [GlobalSearchTransactionDocument] = []
     @State private var transactionDocumentsRevision: Int?
     @State private var editingTransaction: LedgerTransaction?
     @State private var transactionToTemplate: LedgerTransaction?
+    @State private var areBalancesRevealed = false
 
     private var query: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -139,12 +142,25 @@ struct GlobalSearchView: View {
                         .padding(.top, 18)
                     } else {
                         if !results.accounts.isEmpty {
+                            HStack {
+                                Spacer()
+                                BalanceVisibilityControl(
+                                    security: security,
+                                    isRevealed: $areBalancesRevealed
+                                )
+                            }
+                            .padding(.horizontal, 4)
+
                             resultsSection(title: "Accounts", count: results.accounts.count) {
                                 ForEach(results.accounts) { account in
                                     NavigationLink {
-                                        AccountDetailView(store: store, accountID: account.id)
+                                        AccountDetailView(store: store, security: security, accountID: account.id)
                                     } label: {
-                                        SearchAccountRow(account: account, balance: store.balance(for: account))
+                                        SearchAccountRow(
+                                            account: account,
+                                            balance: store.balance(for: account),
+                                            areBalancesRevealed: areBalancesRevealed
+                                        )
                                     }
                                     .buttonStyle(.plain)
                                     if account.id != results.accounts.last?.id {
@@ -228,6 +244,10 @@ struct GlobalSearchView: View {
         .sheet(item: $transactionToTemplate) { transaction in
             TemplateNameEditor(store: store, transaction: transaction)
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { areBalancesRevealed = false }
+        }
+        .onDisappear { areBalancesRevealed = false }
     }
 
     private func resultsSection<Content: View>(
@@ -312,6 +332,7 @@ private extension GlobalSearchSnapshot {
 private struct SearchAccountRow: View {
     let account: Account
     let balance: Money
+    let areBalancesRevealed: Bool
 
     var body: some View {
         HStack(spacing: 12) {
@@ -332,7 +353,7 @@ private struct SearchAccountRow: View {
             }
 
             Spacer(minLength: 8)
-            Text(balance.formatted)
+            ProtectedAmountText(value: balance.formatted, isRevealed: areBalancesRevealed)
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(PocketLedgerTheme.textPrimary)
                 .lineLimit(1)

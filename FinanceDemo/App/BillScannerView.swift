@@ -76,6 +76,11 @@ private struct BillScanResult: Sendable {
     let statusMessage: String
 }
 
+private struct BillTransactionEditorRequest: Identifiable {
+    let id = UUID()
+    let total: Money?
+}
+
 private enum BillScannerError: LocalizedError, Sendable {
     case invalidImage
 
@@ -431,8 +436,8 @@ struct BillScannerView: View {
     @State private var isShowingCamera = false
     @State private var isShowingDocumentImporter = false
     @State private var isShowingAccountEditor = false
-    @State private var isPresentingTransactionEditor = false
-    @State private var pendingTotal: Money?
+    @State private var transactionEditorRequest: BillTransactionEditorRequest?
+    @FocusState private var focusedLineTotalID: UUID?
     @State private var attachmentData: Data?
     @State private var attachmentFileName = "receipt.jpg"
     @State private var attachmentContentType = "image/jpeg"
@@ -528,6 +533,10 @@ struct BillScannerView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { focusedLineTotalID = nil }
+                }
             }
             .onChange(of: selectedPhoto) { _, item in
                 guard let item else { return }
@@ -544,17 +553,18 @@ struct BillScannerView: View {
                     handleImage(image)
                 }
             }
-            .sheet(isPresented: $isPresentingTransactionEditor) {
+            .sheet(item: $transactionEditorRequest) { request in
                 TransactionEditor(
                     store: store,
-                    initialAmount: pendingTotal,
-                    initialBillTotal: pendingTotal,
+                    initialAmount: request.total,
+                    initialBillTotal: request.total,
                     initialNote: transactionNote,
                     initialAttachmentData: attachmentData,
                     initialAttachmentFileName: attachmentFileName,
                     initialAttachmentContentType: attachmentContentType,
                     initialReceiptItems: persistedReceiptItems
                 )
+                .id(request.id)
             }
             .sheet(isPresented: $isShowingAccountEditor) {
                 AccountEditor(store: store, initialCurrency: currency)
@@ -616,13 +626,6 @@ struct BillScannerView: View {
                 }
 
                 Spacer()
-
-                Picker("Currency", selection: $currency) {
-                    ForEach(LedgerCurrency.allCases) { currency in
-                        Text(currency.rawValue).tag(currency)
-                    }
-                }
-                .labelsHidden()
             }
 
             ForEach($lineItems) { $item in
@@ -656,20 +659,42 @@ struct BillScannerView: View {
                     .font(.subheadline)
             }
 
-            CurrencyInputField("Unit price", text: item.unitPriceText, currency: currency)
-
-            CurrencyInputField("Item total override", text: item.lineTotalOverrideText, currency: currency)
-            Text("Use this when the billed total differs from unit price × quantity.")
-                .font(.caption)
-                .foregroundStyle(PocketLedgerTheme.textTertiary)
+            CurrencyInputField("Unit price", text: item.unitPriceText, currency: $currency)
 
             HStack {
                 Text("Current total")
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
                 Spacer()
-                Text(total?.formatted ?? "Enter a price")
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(total == nil ? PocketLedgerTheme.textTertiary : PocketLedgerTheme.textPrimary)
+                if focusedLineTotalID == item.wrappedValue.id {
+                    TextField("Enter total", text: item.lineTotalOverrideText)
+                        .keyboardType(.decimalPad)
+                        .focused($focusedLineTotalID, equals: item.wrappedValue.id)
+                        .multilineTextAlignment(.trailing)
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .frame(minWidth: 80, maxWidth: 150)
+                        .onChange(of: currency) { _, newCurrency in
+                            item.wrappedValue.lineTotalOverrideText = newCurrency.formattedInput(
+                                item.wrappedValue.lineTotalOverrideText
+                            )
+                        }
+                } else {
+                    Button {
+                        if item.wrappedValue.lineTotalOverrideText.isEmpty, let total {
+                            let units = Decimal(total.minorUnits) / Decimal(total.currency.minorUnitScale)
+                            item.wrappedValue.lineTotalOverrideText = currency.formattedInput(
+                                NSDecimalNumber(decimal: units).stringValue
+                            )
+                        }
+                        focusedLineTotalID = item.wrappedValue.id
+                    } label: {
+                        Text(total?.formatted ?? "Enter a price")
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(total == nil ? PocketLedgerTheme.textTertiary : PocketLedgerTheme.textPrimary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Edit item total")
+                }
+                CurrencySelectionMenu(currency: $currency)
             }
         }
         .padding(14)
@@ -832,8 +857,7 @@ struct BillScannerView: View {
             recognizedText = ""
             lineItems = []
             scanStatusMessage = "PDF ready. Add the transaction details, then review the attachment before saving."
-            pendingTotal = nil
-            isPresentingTransactionEditor = true
+            transactionEditorRequest = BillTransactionEditorRequest(total: nil)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -866,8 +890,7 @@ struct BillScannerView: View {
             return
         }
 
-        pendingTotal = total
-        isPresentingTransactionEditor = true
+        transactionEditorRequest = BillTransactionEditorRequest(total: total)
     }
 }
 
