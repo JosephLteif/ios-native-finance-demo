@@ -63,13 +63,17 @@ struct ExchangeRatesView: View {
                                     .foregroundStyle(.tertiary)
                             }
                             .foregroundStyle(PocketLedgerTheme.textPrimary)
+                            .frame(minHeight: 68)
                         }
                         .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            PocketCircularSwipeAction(
+                                title: "Delete",
+                                systemImage: "trash",
+                                tint: .red,
+                                role: .destructive
+                            ) {
                                 store.deleteExchangeRate(rate)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
                             }
                         }
                     }

@@ -27,8 +27,14 @@ struct TransactionAttachmentRows: View {
                 }
                 .font(.footnote.weight(.semibold))
             }
+            .frame(minHeight: 68)
             .swipeActions {
-                Button("Delete", systemImage: "trash", role: .destructive) {
+                PocketCircularSwipeAction(
+                    title: "Delete",
+                    systemImage: "trash",
+                    tint: .red,
+                    role: .destructive
+                ) {
                     onDelete(attachment)
                 }
             }

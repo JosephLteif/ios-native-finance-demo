@@ -274,6 +274,25 @@ final class AppSecurityService: ObservableObject {
         }
     }
 
+    func authenticateToRevealBalances() async -> Bool {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+            return false
+        }
+
+        isBiometricPromptActive = true
+        defer { isBiometricPromptActive = false }
+        do {
+            return try await context.evaluatePolicy(
+                .deviceOwnerAuthenticationWithBiometrics,
+                localizedReason: "Reveal your Pocket Ledger balances."
+            )
+        } catch {
+            return false
+        }
+    }
+
     private func resetPasscodeRetryState() {
         guard var record = passcodeRecord,
               (record.failedAttempts ?? 0) > 0 || record.blockedUntil != nil else {

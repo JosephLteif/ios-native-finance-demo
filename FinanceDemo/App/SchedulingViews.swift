@@ -25,6 +25,7 @@ struct ScheduledTransactionsView: View {
 
     @State private var editorRoute: ScheduledEditorRoute?
     @State private var scheduleToDelete: ScheduledTransaction?
+    @State private var isShowingDeleteConfirmation = false
     @State private var reminderStatus: String?
     @State private var isRequestingReminderPermission = false
     @AppStorage(NotificationService.globalReminderKey)
@@ -95,6 +96,24 @@ struct ScheduledTransactionsView: View {
                 initialTiming: .scheduled,
                 scheduledTransaction: route.schedule
             )
+        }
+        .confirmationDialog(
+            "Delete scheduled transaction?",
+            isPresented: $isShowingDeleteConfirmation,
+            titleVisibility: .visible,
+            presenting: scheduleToDelete
+        ) { schedule in
+            Button("Delete", role: .destructive) {
+                _ = store.deleteScheduledTransaction(id: schedule.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("This scheduled transaction will be removed.")
+        }
+        .onChange(of: isShowingDeleteConfirmation) { _, isPresented in
+            if !isPresented {
+                scheduleToDelete = nil
+            }
         }
         .onChange(of: globalReminderRawValue) { _, _ in
             Task {
@@ -358,9 +377,14 @@ struct ScheduledTransactionsView: View {
                             _ = store.skipNextScheduledTransaction(id: schedule.id)
                         }
                     }
-                    Button("Delete schedule", systemImage: "trash", role: .destructive) {
+                    Button(role: .destructive) {
                         scheduleToDelete = schedule
+                        isShowingDeleteConfirmation = true
+                    } label: {
+                        Label("Delete schedule", systemImage: "trash")
+                            .foregroundStyle(.red)
                     }
+                    .tint(.red)
                 } label: {
                     Label("More", systemImage: "ellipsis")
                         .lineLimit(1)
@@ -378,55 +402,50 @@ struct ScheduledTransactionsView: View {
         }
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
             if schedule.isEnabled {
-                Button("Record now", systemImage: "checkmark.circle") {
+                PocketCircularSwipeAction(
+                    title: "Record now",
+                    systemImage: "checkmark.circle",
+                    tint: PocketLedgerTheme.positive
+                ) {
                     _ = store.recordScheduledTransactionNow(id: schedule.id)
                 }
-                .tint(PocketLedgerTheme.positive)
 
-                Button("Skip next", systemImage: "forward.end") {
+                PocketCircularSwipeAction(
+                    title: "Skip next",
+                    systemImage: "forward.end",
+                    tint: PocketLedgerTheme.textSecondary
+                ) {
                     _ = store.skipNextScheduledTransaction(id: schedule.id)
                 }
-                .tint(PocketLedgerTheme.textSecondary)
             } else if !isCompletedOneTime(schedule) {
-                Button("Enable", systemImage: "play.circle") {
+                PocketCircularSwipeAction(
+                    title: "Enable",
+                    systemImage: "play.circle",
+                    tint: PocketLedgerTheme.positive
+                ) {
                     _ = store.setScheduledTransactionEnabled(id: schedule.id, isEnabled: true)
                 }
-                .tint(PocketLedgerTheme.positive)
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button("Edit", systemImage: "pencil") {
+            PocketCircularSwipeAction(
+                title: "Edit",
+                systemImage: "pencil",
+                tint: .yellow,
+                iconColor: .black
+            ) {
                 editorRoute = .edit(schedule)
             }
-            .tint(PocketLedgerTheme.accent)
 
-            Button(role: .destructive) {
+            PocketCircularSwipeAction(
+                title: "Delete",
+                systemImage: "trash",
+                tint: .red,
+                role: .destructive
+            ) {
                 scheduleToDelete = schedule
-            } label: {
-                Label("Delete", systemImage: "trash")
+                isShowingDeleteConfirmation = true
             }
-        }
-        .confirmationDialog(
-            "Delete scheduled transaction?",
-            isPresented: Binding(
-                get: { scheduleToDelete?.id == schedule.id },
-                set: { isPresented in
-                    if !isPresented, scheduleToDelete?.id == schedule.id {
-                        scheduleToDelete = nil
-                    }
-                }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                _ = store.deleteScheduledTransaction(id: schedule.id)
-                scheduleToDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                scheduleToDelete = nil
-            }
-        } message: {
-            Text("This scheduled transaction will be removed.")
         }
     }
 

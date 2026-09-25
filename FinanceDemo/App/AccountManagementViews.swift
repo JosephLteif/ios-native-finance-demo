@@ -16,6 +16,11 @@ struct AccountsView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
+            accountTypeTotalsSummary
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+
             globalPositionSummary
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
                 .listRowBackground(Color.clear)
@@ -69,6 +74,69 @@ struct AccountsView: View {
                 isArchivedAccountsExpanded = false
             }
         }
+    }
+
+    private var accountTypeTotalsSummary: some View {
+        let activeAccounts = store.activeAccounts
+        let includedAccounts = activeAccounts.filter(\.includeInTotals)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Account totals by type")
+                    .font(.title3.weight(.bold))
+                Text("Included balances stay in their account currency")
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+            }
+
+            if includedAccounts.isEmpty {
+                Text(activeAccounts.isEmpty
+                     ? "Add an account to see totals by type."
+                     : "No accounts are currently included in totals.")
+                    .font(.subheadline)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    .padding(.vertical, 6)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(AccountType.allCases.filter { type in
+                        includedAccounts.contains { $0.type == type }
+                    }) { type in
+                        let typeAccounts = includedAccounts.filter { $0.type == type }
+                        HStack(alignment: .top, spacing: 8) {
+                            Label(type.displayName, systemImage: type.systemImage)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(PocketLedgerTheme.textSecondary)
+                                .frame(width: 112, alignment: .leading)
+
+                            Spacer(minLength: 4)
+
+                            VStack(alignment: .trailing, spacing: 5) {
+                                ForEach(LedgerCurrency.allCases.filter { currency in
+                                    typeAccounts.contains { $0.currency == currency }
+                                }) { currency in
+                                    let currencyAccounts = typeAccounts.filter { $0.currency == currency }
+                                    let total = currencyAccounts.reduce(Int64.zero) { total, account in
+                                        total + store.balance(for: account).minorUnits
+                                    }
+                                    HStack(spacing: 6) {
+                                        Text(currency.rawValue)
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(PocketLedgerTheme.textTertiary)
+                                        Text(Money(currency: currency, minorUnits: total).formatted)
+                                            .font(.caption.weight(.semibold).monospacedDigit())
+                                            .foregroundStyle(PocketLedgerTheme.textPrimary)
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.7)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 5)
+                    }
+                }
+            }
+        }
+        .pocketCard()
     }
 
     private var globalPositionSummary: some View {
@@ -196,25 +264,33 @@ struct AccountsView: View {
                     return store.moveAccount(accountID: draggedID, beforeAccountID: account.id)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button("Edit", systemImage: "pencil") {
+                    PocketCircularSwipeAction(
+                        title: "Edit",
+                        systemImage: "pencil",
+                        tint: .yellow,
+                        iconColor: .black
+                    ) {
                         presentAccount(account)
                     }
-                    Button("Archive", systemImage: "archivebox") {
+                    PocketCircularSwipeAction(
+                        title: "Archive",
+                        systemImage: "archivebox",
+                        tint: PocketLedgerTheme.warning
+                    ) {
                         _ = store.setAccountArchived(accountID: account.id, isArchived: true)
                     }
-                    .tint(PocketLedgerTheme.warning)
                 }
                 .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                    Button(
-                        account.includeInTotals ? "Exclude" : "Include",
-                        systemImage: account.includeInTotals ? "eye.slash" : "eye"
+                    PocketCircularSwipeAction(
+                        title: account.includeInTotals ? "Exclude" : "Include",
+                        systemImage: account.includeInTotals ? "eye.slash" : "eye",
+                        tint: account.includeInTotals ? PocketLedgerTheme.textSecondary : PocketLedgerTheme.positive
                     ) {
                         _ = store.setAccountIncludedInTotals(
                             accountID: account.id,
                             included: !account.includeInTotals
                         )
                     }
-                    .tint(account.includeInTotals ? PocketLedgerTheme.textSecondary : PocketLedgerTheme.positive)
                 }
                 .listRowInsets(
                     EdgeInsets(
@@ -283,11 +359,15 @@ struct AccountsView: View {
                         .font(.subheadline.weight(.semibold))
                         .buttonStyle(.borderless)
                     }
+                    .frame(minHeight: 68)
                     .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                        Button("Restore", systemImage: "arrow.uturn.backward") {
+                        PocketCircularSwipeAction(
+                            title: "Restore",
+                            systemImage: "arrow.uturn.backward",
+                            tint: PocketLedgerTheme.accent
+                        ) {
                             _ = store.setAccountArchived(accountID: account.id, isArchived: false)
                         }
-                        .tint(PocketLedgerTheme.accent)
                     }
                     .listRowInsets(
                         EdgeInsets(
@@ -405,7 +485,7 @@ private struct AccountRow: View {
                     ? PocketLedgerTheme.warning
                     : PocketLedgerTheme.textPrimary)
         }
-        .padding(.vertical, 11)
+        .frame(minHeight: 68)
     }
 }
 

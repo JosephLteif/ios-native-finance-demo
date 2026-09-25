@@ -127,6 +127,7 @@ struct ContentView: View {
             ) {
                 DashboardView(
                     store: store,
+                    security: security,
                     onAddExpense: { addAction = .expense },
                     onShowTransactions: { selectedTabBinding.wrappedValue = .transactions },
                     onAddAction: { addAction = $0 }

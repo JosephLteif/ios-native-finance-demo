@@ -924,18 +924,37 @@ struct TransactionRow: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if allowsActions {
-                Button("Delete", systemImage: "trash", role: .destructive) {
+                PocketCircularSwipeAction(
+                    title: "Delete",
+                    systemImage: "trash",
+                    tint: .red,
+                    role: .destructive
+                ) {
                     isShowingDeleteConfirmation = true
                 }
-                Button("Edit", systemImage: "pencil", action: onEdit)
+                PocketCircularSwipeAction(
+                    title: "Edit",
+                    systemImage: "pencil",
+                    tint: .yellow,
+                    iconColor: .black,
+                    action: onEdit
+                )
             }
         }
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
             if allowsActions {
-                Button("Duplicate", systemImage: "plus.square.on.square", action: onDuplicate)
-                    .tint(PocketLedgerTheme.accent)
-                Button("Template", systemImage: "rectangle.stack.badge.plus", action: onSaveTemplate)
-                    .tint(PocketLedgerTheme.positive)
+                PocketCircularSwipeAction(
+                    title: "Duplicate",
+                    systemImage: "plus.square.on.square",
+                    tint: PocketLedgerTheme.accent,
+                    action: onDuplicate
+                )
+                PocketCircularSwipeAction(
+                    title: "Template",
+                    systemImage: "rectangle.stack.badge.plus",
+                    tint: PocketLedgerTheme.positive,
+                    action: onSaveTemplate
+                )
             }
         }
         .confirmationDialog(
@@ -969,7 +988,13 @@ struct TransactionRow: View {
                 scrollSwipeAction("Delete", systemImage: "trash", tint: .red) {
                     isShowingDeleteConfirmation = true
                 }
-                scrollSwipeAction("Edit", systemImage: "pencil", tint: PocketLedgerTheme.accent, action: onEdit)
+                scrollSwipeAction(
+                    "Edit",
+                    systemImage: "pencil",
+                    tint: .yellow,
+                    iconColor: .black,
+                    action: onEdit
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -988,6 +1013,7 @@ struct TransactionRow: View {
         _ title: String,
         systemImage: String,
         tint: Color,
+        iconColor: Color = .white,
         action: @escaping () -> Void
     ) -> some View {
         Button {
@@ -997,14 +1023,17 @@ struct TransactionRow: View {
             VStack(spacing: 4) {
                 Image(systemName: systemImage)
                     .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 48, height: 48)
+                    .background(tint, in: Circle())
                 Text(title)
                     .font(.caption2.weight(.semibold))
                     .lineLimit(1)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
             .frame(width: 72)
             .frame(maxHeight: .infinity)
-            .foregroundStyle(.white)
-            .background(tint)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
@@ -1109,6 +1138,7 @@ struct TransactionRow: View {
                 .lineLimit(2)
         }
         .padding(.vertical, 11)
+        .frame(minHeight: 72)
         .contentShape(Rectangle())
     }
 

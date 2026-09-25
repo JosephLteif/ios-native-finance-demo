@@ -302,6 +302,29 @@ struct PocketGlassContainer<Content: View>: View {
     }
 }
 
+struct PocketCircularSwipeAction: View {
+    let title: String
+    let systemImage: String
+    let tint: Color
+    var iconColor: Color = .white
+    var role: ButtonRole? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(iconColor)
+                .frame(width: 54, height: 54)
+                .background(tint, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .tint(.clear)
+        .accessibilityLabel(title)
+    }
+}
+
 extension View {
     @ViewBuilder
     func pocketSwipeActionsContainer() -> some View {

@@ -152,15 +152,21 @@ private enum DashboardSheet: Identifiable {
 @MainActor
 struct DashboardView: View {
     @ObservedObject var store: LedgerStore
+    @ObservedObject var security: AppSecurityService
     let onAddExpense: () -> Void
     let onShowTransactions: () -> Void
     let onAddAction: (AddAction) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var presentedSheet: DashboardSheet?
     @State private var transactionToTemplate: LedgerTransaction?
     @State private var snapshot = DashboardSnapshot.empty
     @State private var dashboardPreferences = DashboardPreferences.load()
     @State private var isBalanceScopeExpanded = false
+    @State private var areBalancesRevealed = false
+    @State private var isAuthenticatingBalances = false
+    @State private var isShowingBiometryUnavailable = false
+    @State private var balanceRevealRequestID: UUID?
     @AppStorage(PocketLedgerTheme.colorThemeKey) private var selectedColorTheme = PocketLedgerColorTheme.ocean.rawValue
     @AppStorage(PocketLedgerTheme.appearanceModeKey) private var selectedAppearanceMode = PocketLedgerAppearanceMode.system.rawValue
 
@@ -220,6 +226,11 @@ struct DashboardView: View {
             .sheet(item: $transactionToTemplate) { transaction in
                 TemplateNameEditor(store: store, transaction: transaction)
             }
+            .alert("Biometrics unavailable", isPresented: $isShowingBiometryUnavailable) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Set up Face ID or Touch ID on this device to reveal balance amounts.")
+            }
             .onAppear(perform: refreshSnapshot)
             .onChange(of: store.ledgerRevision) { _, _ in
                 withAnimation(PocketLedgerMotion.expressive(reduceMotion: reduceMotion)) {
@@ -227,6 +238,12 @@ struct DashboardView: View {
                 }
             }
             .onChange(of: dashboardPreferences) { _, preferences in preferences.save() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background {
+                    concealBalances()
+                }
+            }
+            .onDisappear(perform: concealBalances)
         }
     }
 
@@ -299,10 +316,7 @@ struct DashboardView: View {
 
                 Spacer()
 
-                Text("SEPARATE CURRENCIES")
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.8)
-                    .foregroundStyle(PocketLedgerTheme.textTertiary)
+                balanceVisibilityControl
             }
 
             VStack(spacing: 0) {
@@ -337,7 +351,7 @@ struct DashboardView: View {
             Spacer(minLength: 12)
 
             let balance = snapshot.availableBalances[currency] ?? Money(currency: currency, minorUnits: 0)
-            Text(balance.formatted)
+            protectedBalanceText(balance.formatted)
                 .font(.title3.weight(.bold).monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
@@ -409,6 +423,7 @@ struct DashboardView: View {
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
                 }
                 Spacer()
+                balanceVisibilityControl
                 NavigationLink {
                     AccountsView(store: store)
                 } label: {
@@ -452,7 +467,7 @@ struct DashboardView: View {
                                         .font(.subheadline)
                                         .lineLimit(1)
                                     Spacer()
-                                    Text(store.ledgerIndex.balance(for: account).formatted)
+                                    protectedBalanceText(store.ledgerIndex.balance(for: account).formatted)
                                         .font(.subheadline.weight(.semibold).monospacedDigit())
                                         .foregroundStyle(account.includeInTotals ? PocketLedgerTheme.textPrimary : PocketLedgerTheme.textTertiary)
                                 }
@@ -480,6 +495,61 @@ struct DashboardView: View {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
         }
+    }
+
+    private var balanceVisibilityControl: some View {
+        Button(action: toggleBalanceVisibility) {
+            Label(
+                areBalancesRevealed ? "Hide" : "Reveal",
+                systemImage: areBalancesRevealed
+                    ? "eye.slash"
+                    : (security.availableBiometry?.systemImage ?? "faceid")
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(PocketLedgerTheme.accent)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(PocketLedgerTheme.surfaceElevated, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(isAuthenticatingBalances)
+        .accessibilityLabel(areBalancesRevealed ? "Hide balance amounts" : "Reveal balance amounts")
+        .accessibilityHint("Requires \(security.availableBiometry?.displayName ?? "Face ID")")
+    }
+
+    private func protectedBalanceText(_ value: String) -> some View {
+        Text(value)
+            .blur(radius: areBalancesRevealed ? 0 : 8)
+            .privacySensitive()
+            .accessibilityLabel(areBalancesRevealed ? value : "Hidden balance")
+    }
+
+    private func toggleBalanceVisibility() {
+        guard !isAuthenticatingBalances else { return }
+        guard !areBalancesRevealed else {
+            concealBalances()
+            return
+        }
+        guard security.availableBiometry != nil else {
+            isShowingBiometryUnavailable = true
+            return
+        }
+
+        let requestID = UUID()
+        balanceRevealRequestID = requestID
+        isAuthenticatingBalances = true
+        Task {
+            let authenticated = await security.authenticateToRevealBalances()
+            guard balanceRevealRequestID == requestID else { return }
+            isAuthenticatingBalances = false
+            areBalancesRevealed = authenticated
+        }
+    }
+
+    private func concealBalances() {
+        balanceRevealRequestID = nil
+        isAuthenticatingBalances = false
+        areBalancesRevealed = false
     }
 
     private func scopeMetric(title: String, value: String, tint: Color) -> some View {
