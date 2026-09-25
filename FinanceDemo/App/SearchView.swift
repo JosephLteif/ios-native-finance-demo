@@ -18,6 +18,10 @@ enum FinanceSearch {
     }
 
     static func matches(_ transaction: LedgerTransaction, query: String, index: LedgerIndex) -> Bool {
+        searchableText(for: transaction, index: index).localizedCaseInsensitiveContains(query)
+    }
+
+    static func searchableText(for transaction: LedgerTransaction, index: LedgerIndex) -> String {
         let movements = transaction.outflows + transaction.inflows
         var searchable = [
             transaction.note,
@@ -45,8 +49,13 @@ enum FinanceSearch {
             searchable.append(change.actual.formatted)
         }
 
-        return searchable.joined(separator: " ").localizedCaseInsensitiveContains(query)
+        return searchable.joined(separator: " ")
     }
+}
+
+private struct GlobalSearchTransactionDocument {
+    let transaction: LedgerTransaction
+    let searchableText: String
 }
 
 private struct GlobalSearchSnapshot {
@@ -66,6 +75,7 @@ private struct GlobalSearchSnapshot {
         query: String,
         accounts: [Account],
         categories: [LedgerCategory],
+        transactionDocuments: [GlobalSearchTransactionDocument],
         index: LedgerIndex,
         transactionLimit: Int = 25
     ) -> GlobalSearchSnapshot {
@@ -74,14 +84,10 @@ private struct GlobalSearchSnapshot {
 
         var matchingTransactions: [LedgerTransaction] = []
         var transactionCount = 0
-        for transaction in index.sortedTransactions where FinanceSearch.matches(
-            transaction,
-            query: query,
-            index: index
-        ) {
+        for document in transactionDocuments where document.searchableText.localizedCaseInsensitiveContains(query) {
             transactionCount += 1
             if matchingTransactions.count < transactionLimit {
-                matchingTransactions.append(transaction)
+                matchingTransactions.append(document.transaction)
             }
         }
         return GlobalSearchSnapshot(
@@ -100,6 +106,8 @@ struct GlobalSearchView: View {
     @ObservedObject var store: LedgerStore
     @Binding var searchText: String
     @State private var results = GlobalSearchSnapshot.empty
+    @State private var transactionDocuments: [GlobalSearchTransactionDocument] = []
+    @State private var transactionDocumentsRevision: Int?
     @State private var editingTransaction: LedgerTransaction?
     @State private var transactionToTemplate: LedgerTransaction?
 
@@ -260,11 +268,24 @@ struct GlobalSearchView: View {
         }
         guard !Task.isCancelled else { return }
 
+        let index = store.ledgerIndex
+        let revision = store.ledgerRevision
+        if transactionDocumentsRevision != revision {
+            transactionDocuments = index.sortedTransactions.map { transaction in
+                GlobalSearchTransactionDocument(
+                    transaction: transaction,
+                    searchableText: FinanceSearch.searchableText(for: transaction, index: index)
+                )
+            }
+            transactionDocumentsRevision = revision
+        }
+
         results = GlobalSearchSnapshot.make(
             query: query,
             accounts: store.data.accounts,
             categories: store.data.categories,
-            index: store.ledgerIndex
+            transactionDocuments: transactionDocuments,
+            index: index
         )
     }
 
