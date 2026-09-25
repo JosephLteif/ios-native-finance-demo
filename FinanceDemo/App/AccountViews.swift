@@ -243,7 +243,6 @@ struct AccountDetailView: View {
             .padding(.top, 12)
             .padding(.bottom, 24)
         }
-        .pocketSwipeActionsContainer()
         .onChange(of: transactionPage) { _, _ in refreshSnapshot() }
     }
 

@@ -580,7 +580,6 @@ private struct DashboardView: View {
                     .padding(.bottom, 24)
                 }
             }
-            .pocketSwipeActionsContainer()
             .pocketScreen()
             .accessibilityIdentifier("dashboard-\(selectedColorTheme)")
             .preferredColorScheme(
@@ -2436,9 +2435,7 @@ struct TransactionRow: View {
     }
 
     private var usesCustomScrollSwipeFallback: Bool {
-        guard usesScrollSwipeActions && allowsActions else { return false }
-        if #available(iOS 27, *) { return false }
-        return true
+        usesScrollSwipeActions && allowsActions
     }
 
     private var scrollSwipeActions: some View {

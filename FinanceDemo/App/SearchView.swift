@@ -203,7 +203,6 @@ struct GlobalSearchView: View {
                 .padding(.bottom, 24)
             }
         }
-        .pocketSwipeActionsContainer()
         .pocketScreen()
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.large)

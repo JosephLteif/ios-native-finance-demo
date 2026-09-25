@@ -303,15 +303,6 @@ struct PocketGlassContainer<Content: View>: View {
 }
 
 extension View {
-    @ViewBuilder
-    func pocketSwipeActionsContainer() -> some View {
-        if #available(iOS 27, *) {
-            self.swipeActionsContainer()
-        } else {
-            self
-        }
-    }
-
     func pocketScreen() -> some View {
         self
             .scrollEdgeEffectStyle(.soft, for: .vertical)
