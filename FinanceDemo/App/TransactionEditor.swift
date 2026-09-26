@@ -10,12 +10,78 @@ private struct MovementDraft: Identifiable, Equatable {
     var amount: String
 }
 
+enum FinanceTransactionDefaults {
+    static func primaryAccount(
+        in accounts: [Account],
+        sourceAccountID: UUID?,
+        scheduledAccountID: UUID?,
+        rememberedAccountID: UUID?,
+        preferredCurrency: LedgerCurrency?
+    ) -> Account? {
+        if let id = sourceAccountID ?? scheduledAccountID,
+           let account = accounts.first(where: { $0.id == id }) {
+            return account
+        }
+        if let rememberedAccountID,
+           let account = accounts.first(where: { $0.id == rememberedAccountID && !$0.isArchived }) {
+            return account
+        }
+        return accounts.first { account in
+            !account.isArchived && (preferredCurrency == nil || account.currency == preferredCurrency)
+        }
+    }
+
+    static func categoryID(
+        sourceTransaction: LedgerTransaction?,
+        scheduledTransaction: ScheduledTransaction?,
+        rememberedCategoryID: UUID?,
+        activeCategories: [LedgerCategory]
+    ) -> UUID? {
+        if let sourceTransaction { return sourceTransaction.categoryID }
+        if let scheduledTransaction { return scheduledTransaction.categoryID }
+        return rememberedCategoryID.flatMap { id in activeCategories.first(where: { $0.id == id })?.id }
+            ?? activeCategories.first(where: { $0.parentID != nil })?.id
+            ?? activeCategories.first?.id
+    }
+}
+
+private struct PendingAttachmentReplacement: Equatable {
+    let data: Data
+    let fileName: String
+    let contentType: String
+}
+
+private struct TransactionEditorSnapshot: Equatable {
+    let templateName: String
+    let note: String
+    let date: Date
+    let kind: TransactionKind
+    let timing: TransactionTiming
+    let scheduleFrequency: ScheduleFrequency
+    let monthlyRule: ScheduleMonthlyRule
+    let scheduleEnabled: Bool
+    let categoryID: UUID?
+    let dueCurrency: LedgerCurrency
+    let amountDue: String
+    let outflows: [MovementDraft]
+    let inflows: [MovementDraft]
+    let requestedChange: String
+    let useCustomRate: Bool
+    let rateBase: LedgerCurrency
+    let rateQuote: LedgerCurrency
+    let rateText: String
+    let attachmentIDs: [UUID]
+    let deletedAttachmentIDs: Set<UUID>
+    let attachmentReplacements: [UUID: PendingAttachmentReplacement]
+}
+
 @MainActor
 private struct MovementLineEditor: View {
     @ObservedObject var store: LedgerStore
     @Binding var line: MovementDraft
     let amountPlaceholder: String
     let allowsArchivedAccount: Bool
+    var focusAmountOnAppear = false
 
     var body: some View {
         let availableCurrencies = LedgerCurrency.allCases.filter { currency in
@@ -36,7 +102,8 @@ private struct MovementLineEditor: View {
                         }
                     }
                 ),
-                selectableCurrencies: availableCurrencies
+                selectableCurrencies: availableCurrencies,
+                focusOnAppear: focusAmountOnAppear
             )
 
             Picker("Account", selection: $line.accountID) {
@@ -61,6 +128,7 @@ struct TransactionEditor: View {
     @ObservedObject var store: LedgerStore
     @Environment(\.dismiss) private var dismiss
     @State private var note = ""
+    @State private var templateName = ""
     @State private var date = Date.now
     @State private var kind: TransactionKind = .expense
     @State private var timing: TransactionTiming = .now
@@ -82,6 +150,10 @@ struct TransactionEditor: View {
     @State private var previewAttachment: LedgerAttachment?
     @State private var isShowingAttachmentImporter = false
     @State private var replacingAttachmentID: UUID?
+    @State private var attachmentIDsPendingDeletion: Set<UUID> = []
+    @State private var attachmentReplacements: [UUID: PendingAttachmentReplacement] = [:]
+    @State private var originalEditorSnapshot: TransactionEditorSnapshot?
+    @State private var isShowingDiscardConfirmation = false
     @State private var errorMessage: String?
     @State private var isShowingMoreDetails = false
     @State private var saveFeedbackTrigger = 0
@@ -92,6 +164,8 @@ struct TransactionEditor: View {
     private let editingScheduleRecurrenceDay: Int?
     private let editingScheduleReminderTiming: ScheduledReminderTiming?
     private let editingTransactionID: UUID?
+    private let editingTemplateID: UUID?
+    private let isCreatingTemplate: Bool
     private let initialAttachmentData: Data?
     private let initialAttachmentFileName: String?
     private let initialAttachmentContentType: String?
@@ -109,13 +183,17 @@ struct TransactionEditor: View {
         transaction: LedgerTransaction? = nil,
         prefilledTransaction: LedgerTransaction? = nil,
         template: LedgerTemplate? = nil,
+        editingTemplate: LedgerTemplate? = nil,
+        createTemplate: Bool = false,
         initialAttachmentData: Data? = nil,
         initialAttachmentFileName: String? = nil,
         initialAttachmentContentType: String? = nil,
         initialReceiptItems: [LedgerReceiptLineItem] = []
     ) {
         _store = ObservedObject(wrappedValue: store)
-        let sourceTransaction = transaction ?? prefilledTransaction ?? template?.transactionTemplate
+        let sourceTransaction = transaction ?? prefilledTransaction
+            ?? editingTemplate?.transactionTemplate
+            ?? template?.transactionTemplate
         let rememberedAccount = UserDefaults.standard.string(forKey: Self.lastAccountKey)
             .flatMap(UUID.init(uuidString:))
             .flatMap { id in store.activeAccounts.first(where: { $0.id == id }) }
@@ -125,10 +203,17 @@ struct TransactionEditor: View {
             ?? scheduledTransaction?.inflows.first?.money.currency
             ?? initialAmount?.currency
             ?? rememberedAccount?.currency
-        let firstAccount = store.activeAccounts.first { account in
-            guard let preferredCurrency else { return true }
-            return account.currency == preferredCurrency
-        } ?? rememberedAccount ?? store.activeAccounts.first
+        let existingAccountID = sourceTransaction?.outflows.first?.accountID
+            ?? sourceTransaction?.inflows.first?.accountID
+            ?? scheduledTransaction?.outflows.first?.accountID
+            ?? scheduledTransaction?.inflows.first?.accountID
+        let firstAccount = FinanceTransactionDefaults.primaryAccount(
+            in: store.data.accounts,
+            sourceAccountID: sourceTransaction == nil ? nil : existingAccountID,
+            scheduledAccountID: scheduledTransaction == nil ? nil : existingAccountID,
+            rememberedAccountID: rememberedAccount?.id,
+            preferredCurrency: preferredCurrency
+        )
         let firstAccountID = firstAccount?.id ?? UUID()
         let resolvedInitialKind = sourceTransaction?.kind ?? scheduledTransaction?.kind ?? initialKind
         let initialDestinationAccount = store.activeAccounts.first { account in
@@ -159,13 +244,16 @@ struct TransactionEditor: View {
         let initialSavedRate = sourceTransaction?.exchangeRate
             ?? scheduledTransaction?.exchangeRate
             ?? store.exchangeRate(base: initialRateBase, quote: initialRateQuote)
-        let sourceCategoryID = sourceTransaction?.categoryID
-        let initialCategoryID = transaction != nil
-            ? sourceCategoryID
-            : sourceCategoryID.flatMap { id in
-                store.activeCategories.contains { $0.id == id } ? id : nil
-            }
+        let rememberedCategoryID = UserDefaults.standard.string(forKey: Self.lastCategoryKey)
+            .flatMap(UUID.init(uuidString:))
+        let initialCategoryID = FinanceTransactionDefaults.categoryID(
+            sourceTransaction: sourceTransaction,
+            scheduledTransaction: scheduledTransaction,
+            rememberedCategoryID: rememberedCategoryID,
+            activeCategories: store.activeCategories
+        )
         _note = State(initialValue: sourceTransaction?.note ?? scheduledTransaction?.note ?? initialNote ?? "")
+        _templateName = State(initialValue: editingTemplate?.name ?? "")
         _date = State(initialValue: transaction?.date ?? scheduledTransaction?.nextRunDate ?? .now)
         _kind = State(initialValue: resolvedInitialKind)
         _timing = State(initialValue: transaction == nil && scheduledTransaction == nil ? initialTiming : transaction == nil ? .scheduled : .now)
@@ -241,12 +329,6 @@ struct TransactionEditor: View {
         _attachmentIDs = State(initialValue: transaction?.attachmentIDs ?? [])
         _categoryID = State(
             initialValue: initialCategoryID
-                ?? scheduledTransaction?.categoryID
-                ?? UserDefaults.standard.string(forKey: Self.lastCategoryKey)
-                    .flatMap(UUID.init(uuidString:))
-                    .flatMap { id in store.activeCategories.first(where: { $0.id == id })?.id }
-                ?? store.activeCategories.first(where: { $0.parentID != nil })?.id
-                ?? store.activeCategories.first?.id
         )
         editingScheduleID = scheduledTransaction?.id
         editingScheduleLastRunDate = scheduledTransaction?.lastRunDate
@@ -255,6 +337,8 @@ struct TransactionEditor: View {
         editingScheduleRecurrenceDay = scheduledTransaction?.recurrenceDay
         editingScheduleReminderTiming = scheduledTransaction?.reminderTiming
         editingTransactionID = transaction?.id
+        editingTemplateID = editingTemplate?.id
+        isCreatingTemplate = createTemplate
         self.initialAttachmentData = initialAttachmentData
         self.initialAttachmentFileName = initialAttachmentFileName
         self.initialAttachmentContentType = initialAttachmentContentType
@@ -275,6 +359,12 @@ struct TransactionEditor: View {
                     Text("Transaction type")
                 }
 
+                if isTemplateEditor {
+                    Section("Template") {
+                        TextField("Template name", text: $templateName)
+                    }
+                }
+
                 if kind == .expense {
                     expensePaymentsSection
                     detailsSection
@@ -288,6 +378,14 @@ struct TransactionEditor: View {
                     receivingMovementSection
                     exchangeRateSection
                 }
+
+                if let saveValidationMessage {
+                    Section {
+                        Label(saveValidationMessage, systemImage: "info.circle")
+                            .font(.footnote)
+                            .foregroundStyle(PocketLedgerTheme.textSecondary)
+                    }
+                }
             }
             .onAppear {
                 if kind == .transfer && inflows.isEmpty {
@@ -295,6 +393,9 @@ struct TransactionEditor: View {
                 }
                 synchronizeRatePair()
                 synchronizeAutomaticTransferAmount()
+                if originalEditorSnapshot == nil {
+                    originalEditorSnapshot = editorSnapshot
+                }
             }
             .onChange(of: kind) { _, newKind in
                 handleKindChange(newKind)
@@ -333,13 +434,14 @@ struct TransactionEditor: View {
                 guard useCustomRate else { return }
                 synchronizeAutomaticTransferAmount()
             }
+            .interactiveDismissDisabled(hasUnsavedChanges)
             .pocketListSurface()
             .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.inline)
             .sensoryFeedback(.success, trigger: saveFeedbackTrigger)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel", action: cancel)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(saveButtonTitle, action: save)
@@ -350,6 +452,16 @@ struct TransactionEditor: View {
                 Button("OK") { errorMessage = nil }
             } message: {
                 Text(verbatim: errorMessage ?? "")
+            }
+            .confirmationDialog(
+                "Discard changes?",
+                isPresented: $isShowingDiscardConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard changes", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            } message: {
+                Text("Your transaction and receipt changes have not been saved.")
             }
             .sheet(item: $previewAttachment) { attachment in
                 NavigationStack {
@@ -464,7 +576,8 @@ struct TransactionEditor: View {
                             store: store,
                             line: $outflows[index],
                             amountPlaceholder: index == 0 ? "Amount" : "Amount for this payment",
-                            allowsArchivedAccount: allowsArchivedMovementAccounts
+                            allowsArchivedAccount: allowsArchivedMovementAccounts,
+                            focusAmountOnAppear: index == 0 && outflows[index].amount.isEmpty
                         )
                     }
                     .padding(.vertical, 4)
@@ -713,6 +826,12 @@ struct TransactionEditor: View {
                     onReplace: { beginReplacingAttachment($0) },
                     onDelete: { deleteAttachment($0) }
                 )
+                .disabled(replacingAttachmentID != nil)
+                if replacingAttachmentID != nil {
+                    Label("Reading replacement…", systemImage: "hourglass")
+                        .font(.footnote)
+                        .foregroundStyle(PocketLedgerTheme.textSecondary)
+                }
             }
         } else if let initialAttachmentFileName {
             Section("Receipt attachment") {
@@ -725,7 +844,11 @@ struct TransactionEditor: View {
     }
 
     private var allowsArchivedMovementAccounts: Bool {
-        editingTransactionID != nil || editingScheduleID != nil
+        editingTransactionID != nil || editingScheduleID != nil || editingTemplateID != nil
+    }
+
+    private var isTemplateEditor: Bool {
+        editingTemplateID != nil || isCreatingTemplate
     }
 
     private var monthlyScheduleDescription: String {
@@ -931,6 +1054,9 @@ struct TransactionEditor: View {
     }
 
     private var navigationTitle: String {
+        if isTemplateEditor {
+            return editingTemplateID == nil ? "New template" : "Edit template"
+        }
         if isEditingScheduledTransaction {
             return "Edit schedule"
         }
@@ -941,6 +1067,9 @@ struct TransactionEditor: View {
     }
 
     private var saveButtonTitle: String {
+        if isTemplateEditor {
+            return "Save template"
+        }
         if timing == .scheduled {
             return isEditingScheduledTransaction ? "Update" : "Schedule"
         }
@@ -948,7 +1077,7 @@ struct TransactionEditor: View {
     }
 
     private var attachments: [LedgerAttachment] {
-        attachmentIDs.compactMap { id in
+        attachmentIDs.filter { !attachmentIDsPendingDeletion.contains($0) }.compactMap { id in
             store.data.attachments.first(where: { $0.id == id })
         }
     }
@@ -969,27 +1098,35 @@ struct TransactionEditor: View {
     }
 
     private func replaceAttachment(_ result: Result<[URL], Error>) {
-        defer { replacingAttachmentID = nil }
+        guard let attachmentID = replacingAttachmentID else { return }
         do {
-            guard let attachmentID = replacingAttachmentID,
-                  let url = try result.get().first else { return }
-            let hasSecurityScope = url.startAccessingSecurityScopedResource()
-            defer {
-                if hasSecurityScope { url.stopAccessingSecurityScopedResource() }
-            }
-            let data = try Data(contentsOf: url)
-            let contentType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
-                ?? "application/octet-stream"
-            guard store.replaceAttachment(
-                id: attachmentID,
-                data: data,
-                fileName: url.lastPathComponent,
-                contentType: contentType
-            ) else {
-                errorMessage = store.lastActionStatus ?? "The attachment could not be replaced."
+            guard let url = try result.get().first else {
+                replacingAttachmentID = nil
                 return
             }
+            let hasSecurityScope = url.startAccessingSecurityScopedResource()
+            let contentType = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType
+                ?? "application/octet-stream"
+            Task {
+                defer {
+                    if hasSecurityScope { url.stopAccessingSecurityScopedResource() }
+                    replacingAttachmentID = nil
+                }
+                do {
+                    let data = try await Task.detached(priority: .userInitiated) {
+                        try Data(contentsOf: url)
+                    }.value
+                    attachmentReplacements[attachmentID] = PendingAttachmentReplacement(
+                        data: data,
+                        fileName: url.lastPathComponent,
+                        contentType: contentType
+                    )
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
         } catch {
+            replacingAttachmentID = nil
             errorMessage = error.localizedDescription
         }
     }
@@ -1294,20 +1431,24 @@ struct TransactionEditor: View {
         parseMovements(inflows)
     }
 
-    private var canSave: Bool {
-        guard let parsedOutflows,
-              let parsedInflows,
-              !parsedOutflows.isEmpty || !parsedInflows.isEmpty else {
-            return false
+    private var saveValidationMessage: String? {
+        if isTemplateEditor,
+           templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Enter a name for this template."
+        }
+        guard let parsedOutflows, let parsedInflows else {
+            return "Enter a valid positive amount for every account line."
         }
 
         switch kind {
         case .expense:
-            guard !parsedOutflows.isEmpty else { return false }
+            guard !parsedOutflows.isEmpty else { return "Add a payment amount to save this expense." }
         case .income:
-            guard !parsedInflows.isEmpty else { return false }
+            guard !parsedInflows.isEmpty else { return "Add an amount and receiving account to save this income." }
         case .transfer:
-            guard !parsedOutflows.isEmpty, !parsedInflows.isEmpty else { return false }
+            guard !parsedOutflows.isEmpty, !parsedInflows.isEmpty else {
+                return "Add valid sending and receiving amounts to save this transfer."
+            }
         }
 
         if kind == .expense,
@@ -1316,7 +1457,7 @@ struct TransactionEditor: View {
             guard parsedInflows.count == 1,
                   let requested = Money.parse(requestedChange, currency: inflows[0].currency),
                   requested.minorUnits >= 0 else {
-                return false
+                 return "Enter a valid nonnegative amount for expected change."
             }
         }
 
@@ -1324,15 +1465,58 @@ struct TransactionEditor: View {
             guard kind == .expense,
                   let due = Money.parse(amountDue, currency: dueCurrency),
                   due.minorUnits > 0 else {
-                return false
+                 return "Enter a bill total greater than zero."
             }
         }
 
         if selectedCurrencies.count > 1 {
-            guard appliedExchangeRate != nil else { return false }
+            guard appliedExchangeRate != nil else { return "Enter a valid exchange rate for these currencies." }
         }
 
-        return true
+        return nil
+    }
+
+    private var canSave: Bool {
+        saveValidationMessage == nil && replacingAttachmentID == nil
+    }
+
+    private var editorSnapshot: TransactionEditorSnapshot {
+        TransactionEditorSnapshot(
+            templateName: templateName,
+            note: note,
+            date: date,
+            kind: kind,
+            timing: timing,
+            scheduleFrequency: scheduleFrequency,
+            monthlyRule: monthlyRule,
+            scheduleEnabled: scheduleEnabled,
+            categoryID: categoryID,
+            dueCurrency: dueCurrency,
+            amountDue: amountDue,
+            outflows: outflows,
+            inflows: inflows,
+            requestedChange: requestedChange,
+            useCustomRate: useCustomRate,
+            rateBase: rateBase,
+            rateQuote: rateQuote,
+            rateText: rateText,
+            attachmentIDs: attachmentIDs,
+            deletedAttachmentIDs: attachmentIDsPendingDeletion,
+            attachmentReplacements: attachmentReplacements
+        )
+    }
+
+    private var hasUnsavedChanges: Bool {
+        guard let originalEditorSnapshot else { return false }
+        return editorSnapshot != originalEditorSnapshot
+    }
+
+    private func cancel() {
+        if hasUnsavedChanges {
+            isShowingDiscardConfirmation = true
+        } else {
+            dismiss()
+        }
     }
 
     private var errorPresented: Binding<Bool> {
@@ -1412,7 +1596,8 @@ struct TransactionEditor: View {
             return
         }
 
-        var newlySavedAttachment: LedgerAttachment?
+        var createdAttachments: [LedgerAttachment] = []
+        var savedAttachmentIDs = attachmentIDs.filter { !attachmentIDsPendingDeletion.contains($0) }
         if timing != .scheduled,
            editingTransactionID == nil,
            let initialAttachmentData,
@@ -1428,8 +1613,23 @@ struct TransactionEditor: View {
                 errorMessage = store.lastActionStatus ?? "The receipt could not be attached."
                 return
             }
-            newlySavedAttachment = attachment
-            attachmentIDs.append(attachment.id)
+            createdAttachments.append(attachment)
+            savedAttachmentIDs.append(attachment.id)
+        }
+
+        for (replacedID, replacement) in attachmentReplacements {
+            guard let idIndex = savedAttachmentIDs.firstIndex(of: replacedID),
+                  let attachment = store.addAttachment(
+                    data: replacement.data,
+                    fileName: replacement.fileName,
+                    contentType: replacement.contentType
+                  ) else {
+                createdAttachments.forEach { _ = store.deleteAttachment(id: $0.id) }
+                errorMessage = store.lastActionStatus ?? "The receipt replacement could not be saved."
+                return
+            }
+            createdAttachments.append(attachment)
+            savedAttachmentIDs[idIndex] = attachment.id
         }
 
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1444,10 +1644,39 @@ struct TransactionEditor: View {
             inflows: parsedInflows,
             exchangeRate: exchangeRate,
             changeAdjustment: changeAdjustment,
-            attachmentIDs: attachmentIDs
+            attachmentIDs: savedAttachmentIDs
         )
 
-        if timing == .scheduled {
+        if isTemplateEditor {
+            let saved: Bool
+            if let editingTemplateID {
+                guard var template = store.data.templates.first(where: { $0.id == editingTemplateID }) else {
+                    errorMessage = "Template not found."
+                    return
+                }
+                template.name = templateName.trimmingCharacters(in: .whitespacesAndNewlines)
+                template.note = transaction.note
+                template.kind = transaction.kind
+                template.categoryID = transaction.categoryID
+                template.amountDue = transaction.amountDue
+                template.outflows = transaction.outflows
+                template.inflows = transaction.inflows
+                template.exchangeRate = transaction.exchangeRate
+                template.changeAdjustment = transaction.changeAdjustment
+                saved = store.updateTemplate(template)
+            } else {
+                saved = store.addTemplate(
+                    LedgerTemplate(
+                        name: templateName.trimmingCharacters(in: .whitespacesAndNewlines),
+                        transaction: transaction
+                    )
+                )
+            }
+            guard saved else {
+                errorMessage = store.lastActionStatus ?? "The template could not be saved."
+                return
+            }
+        } else if timing == .scheduled {
             let dateChanged = editingScheduleNextRunDate.map {
                 !Calendar.current.isDate(date, inSameDayAs: $0)
             } ?? false
@@ -1493,26 +1722,31 @@ struct TransactionEditor: View {
                 saved = store.updateTransaction(transaction)
             }
             guard saved else {
-                if let newlySavedAttachment {
-                    _ = store.deleteAttachment(id: newlySavedAttachment.id)
-                }
+                createdAttachments.forEach { _ = store.deleteAttachment(id: $0.id) }
                 errorMessage = store.lastActionStatus ?? "The transaction could not be saved."
                 return
             }
         }
 
-        if let accountID = (parsedOutflows.first ?? parsedInflows.first)?.accountID {
-            UserDefaults.standard.set(accountID.uuidString, forKey: Self.lastAccountKey)
+        let replacedAttachmentIDs = Set(attachmentReplacements.keys)
+        for id in attachmentIDsPendingDeletion.union(replacedAttachmentIDs) {
+            _ = store.deleteAttachment(id: id)
         }
-        if let categoryID, kind == .expense {
-            UserDefaults.standard.set(categoryID.uuidString, forKey: Self.lastCategoryKey)
+
+        if !isTemplateEditor {
+            if let accountID = (parsedOutflows.first ?? parsedInflows.first)?.accountID {
+                UserDefaults.standard.set(accountID.uuidString, forKey: Self.lastAccountKey)
+            }
+            if let categoryID, kind == .expense {
+                UserDefaults.standard.set(categoryID.uuidString, forKey: Self.lastCategoryKey)
+            }
         }
         saveFeedbackTrigger += 1
         dismiss()
     }
 
     private func deleteAttachment(_ attachment: LedgerAttachment) {
-        guard store.deleteAttachment(id: attachment.id) else { return }
-        attachmentIDs.removeAll { $0 == attachment.id }
+        attachmentIDsPendingDeletion.insert(attachment.id)
+        attachmentReplacements.removeValue(forKey: attachment.id)
     }
 }

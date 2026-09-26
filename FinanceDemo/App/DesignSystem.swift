@@ -362,6 +362,7 @@ struct CurrencyInputField: View {
     @Binding private var text: String
     @Binding private var currency: LedgerCurrency
     private let selectableCurrencies: [LedgerCurrency]
+    private let focusOnAppear: Bool
     @FocusState private var isFocused: Bool
 
     init(
@@ -373,13 +374,15 @@ struct CurrencyInputField: View {
         _text = text
         _currency = .constant(currency)
         selectableCurrencies = [currency]
+        focusOnAppear = false
     }
 
     init(
         _ title: String,
         text: Binding<String>,
         currency: Binding<LedgerCurrency>,
-        selectableCurrencies: [LedgerCurrency] = LedgerCurrency.allCases
+        selectableCurrencies: [LedgerCurrency] = LedgerCurrency.allCases,
+        focusOnAppear: Bool = false
     ) {
         self.title = title
         _text = text
@@ -387,6 +390,7 @@ struct CurrencyInputField: View {
         self.selectableCurrencies = LedgerCurrency.allCases.filter {
             selectableCurrencies.contains($0) || $0 == currency.wrappedValue
         }
+        self.focusOnAppear = focusOnAppear
     }
 
     var body: some View {
@@ -404,7 +408,10 @@ struct CurrencyInputField: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .onAppear(perform: formatText)
+        .onAppear {
+            formatText()
+            if focusOnAppear { isFocused = true }
+        }
         .onChange(of: isFocused) { _, focused in
             if !focused {
                 formatText()

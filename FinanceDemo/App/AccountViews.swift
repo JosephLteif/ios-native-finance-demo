@@ -163,27 +163,13 @@ struct AccountDetailView: View {
                     balanceCard(account)
                     totalsScopeCard(account)
 
-                    HStack(spacing: 10) {
-                        accountMetric(
-                            title: "Transactions",
-                            value: "\(snapshot.transactions.count)",
-                            systemImage: "arrow.left.arrow.right",
-                            tint: PocketLedgerTheme.accent
-                        )
-                        accountMetric(
-                            title: "Money in",
-                            value: Money(currency: account.currency, minorUnits: snapshot.incoming).formatted,
-                            systemImage: "arrow.down.left",
-                            tint: PocketLedgerTheme.income,
-                            protectsValue: true
-                        )
-                        accountMetric(
-                            title: "Money out",
-                            value: Money(currency: account.currency, minorUnits: snapshot.outgoing).formatted,
-                            systemImage: "arrow.up.right",
-                            tint: PocketLedgerTheme.warning,
-                            protectsValue: true
-                        )
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 10) {
+                            accountActivityMetrics(account: account, snapshot: snapshot)
+                        }
+                        VStack(spacing: 10) {
+                            accountActivityMetrics(account: account, snapshot: snapshot)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
@@ -306,6 +292,30 @@ struct AccountDetailView: View {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(PocketLedgerTheme.divider, lineWidth: 1)
         }
+    }
+
+    @ViewBuilder
+    private func accountActivityMetrics(account: Account, snapshot: AccountDetailSnapshot) -> some View {
+        accountMetric(
+            title: "Transactions",
+            value: "\(snapshot.transactions.count)",
+            systemImage: "arrow.left.arrow.right",
+            tint: PocketLedgerTheme.accent
+        )
+        accountMetric(
+            title: "Money in",
+            value: Money(currency: account.currency, minorUnits: snapshot.incoming).formatted,
+            systemImage: "arrow.down.left",
+            tint: PocketLedgerTheme.income,
+            protectsValue: true
+        )
+        accountMetric(
+            title: "Money out",
+            value: Money(currency: account.currency, minorUnits: snapshot.outgoing).formatted,
+            systemImage: "arrow.up.right",
+            tint: PocketLedgerTheme.warning,
+            protectsValue: true
+        )
     }
 
     private func balanceCard(_ account: Account) -> some View {

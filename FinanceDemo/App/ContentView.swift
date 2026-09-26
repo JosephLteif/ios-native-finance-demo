@@ -298,9 +298,19 @@ struct AddTransactionToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
+            Button {
+                onAction(.expense)
+            } label: {
+                Image(systemName: systemImage)
+            }
+            .accessibilityLabel("Add expense")
+            .accessibilityHint("Opens a new expense")
+            .accessibilityIdentifier("add-transaction-button")
+        }
+
+        ToolbarItem(placement: .primaryAction) {
             Menu {
-                Section("Quick add") {
-                    Button("Expense", systemImage: "arrow.up.right") { onAction(.expense) }
+                Section("Add transaction") {
                     Button("Income", systemImage: "arrow.down.left") { onAction(.income) }
                     Button("Transfer", systemImage: "arrow.left.arrow.right") { onAction(.transfer) }
                 }
@@ -330,11 +340,10 @@ struct AddTransactionToolbar: ToolbarContent {
                     }
                 }
             } label: {
-                Image(systemName: systemImage)
+                Image(systemName: "ellipsis.circle")
             }
-            .accessibilityLabel("Add")
-            .accessibilityHint("Choose what to add")
-            .accessibilityIdentifier("add-transaction-button")
+            .accessibilityLabel("More transaction actions")
+            .accessibilityIdentifier("more-transaction-actions")
         }
     }
 }

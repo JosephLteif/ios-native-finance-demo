@@ -4,7 +4,9 @@ import SwiftUI
 struct TemplatesView: View {
     @ObservedObject var store: LedgerStore
     @State private var templateToUse: LedgerTemplate?
+    @State private var templateToEdit: LedgerTemplate?
     @State private var templateToDelete: LedgerTemplate?
+    @State private var isCreatingTemplate = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -26,6 +28,11 @@ struct TemplatesView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(PocketLedgerTheme.textSecondary)
                                 .multilineTextAlignment(.center)
+                            Button("Create template", systemImage: "plus") {
+                                isCreatingTemplate = true
+                            }
+                            .buttonStyle(.glassProminent)
+                            .tint(PocketLedgerTheme.accent)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 42)
@@ -45,6 +52,12 @@ struct TemplatesView: View {
         .toolbar(.visible, for: .navigationBar)
         .sheet(item: $templateToUse) { template in
             TransactionEditor(store: store, template: template)
+        }
+        .sheet(item: $templateToEdit) { template in
+            TransactionEditor(store: store, editingTemplate: template)
+        }
+        .sheet(isPresented: $isCreatingTemplate) {
+            TransactionEditor(store: store, createTemplate: true)
         }
         .confirmationDialog("Delete template?", isPresented: Binding(
             get: { templateToDelete != nil },
@@ -77,11 +90,13 @@ struct TemplatesView: View {
                     .foregroundStyle(PocketLedgerTheme.accent)
             }
 
-            HStack {
-                Button("Use template") { templateToUse = template }
-                .buttonStyle(.glassProminent)
+            HStack(spacing: 8) {
+                Button("Edit", systemImage: "pencil") { templateToEdit = template }
+                    .buttonStyle(.bordered)
+                Button("Use", systemImage: "arrow.turn.down.right") { templateToUse = template }
+                    .buttonStyle(.glassProminent)
                     .tint(PocketLedgerTheme.accent)
-                Spacer()
+                    .frame(maxWidth: .infinity)
                 Button(role: .destructive) { templateToDelete = template } label: {
                     Image(systemName: "trash")
                 }

@@ -54,7 +54,7 @@ enum TransactionPeriod: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-private enum TransactionQuickFilter: String, CaseIterable, Identifiable {
+enum TransactionQuickFilter: String, CaseIterable, Identifiable {
     case none
     case thisMonth
     case uncategorized
@@ -79,20 +79,21 @@ private enum TransactionQuickFilter: String, CaseIterable, Identifiable {
     }
 }
 
-private struct TransactionDay: Identifiable {
+struct TransactionDay: Identifiable {
     let date: Date
     let transactions: [LedgerTransaction]
 
     var id: Date { date }
 }
 
-private struct TransactionListSnapshot {
+struct TransactionListSnapshot {
     let filteredTransactions: [LedgerTransaction]
     let pageTransactions: [LedgerTransaction]
     let groupedTransactions: [TransactionDay]
     let pageCount: Int
     let displayedPage: Int
     let expenseTotals: [LedgerCurrency: Int64]
+    let incomeTotals: [LedgerCurrency: Int64]
 
     static var empty: TransactionListSnapshot {
         TransactionListSnapshot(
@@ -101,7 +102,8 @@ private struct TransactionListSnapshot {
             groupedTransactions: [],
             pageCount: 1,
             displayedPage: 0,
-            expenseTotals: [:]
+            expenseTotals: [:],
+            incomeTotals: [:]
         )
     }
 
@@ -165,13 +167,25 @@ private struct TransactionListSnapshot {
             }
         }
 
+        var incomeTotals: [LedgerCurrency: Int64] = [:]
+        for transaction in filteredTransactions where transaction.kind == .income {
+            for currency in LedgerCurrency.allCases {
+                incomeTotals[currency, default: 0] += index.movementTotal(
+                    transaction.inflows,
+                    currency: currency,
+                    exchangeRate: transaction.exchangeRate
+                )
+            }
+        }
+
         return TransactionListSnapshot(
             filteredTransactions: filteredTransactions,
             pageTransactions: [],
             groupedTransactions: [],
             pageCount: 1,
             displayedPage: 0,
-            expenseTotals: expenseTotals
+            expenseTotals: expenseTotals,
+            incomeTotals: incomeTotals
         ).showingPage(page, pageSize: pageSize, calendar: calendar)
     }
 
@@ -197,7 +211,8 @@ private struct TransactionListSnapshot {
             groupedTransactions: groupedTransactions,
             pageCount: pageCount,
             displayedPage: displayedPage,
-            expenseTotals: expenseTotals
+            expenseTotals: expenseTotals,
+            incomeTotals: incomeTotals
         )
     }
 }
@@ -212,7 +227,7 @@ struct TransactionsView: View {
     @State private var selectedFilter: TransactionFilter
     @State private var selectedPeriod: TransactionPeriod
     @State private var selectedQuickFilter: TransactionQuickFilter
-    private let searchText: String
+    @State private var searchText: String
     @State private var customStartDate: Date
     @State private var customEndDate: Date
     @State private var transactionPage = 0
@@ -250,7 +265,7 @@ struct TransactionsView: View {
                 ? .uncategorized
                 : hasExplicitContext ? .none : persistedQuickFilter
         )
-        self.searchText = initialSearch
+        _searchText = State(initialValue: initialSearch)
         let calendar = Calendar.current
         let start = calendar.date(byAdding: .day, value: -30, to: .now) ?? .now
         _customStartDate = State(initialValue: start)
@@ -286,9 +301,11 @@ struct TransactionsView: View {
                     Image(systemName: "list.bullet.rectangle.portrait")
                         .font(.title2)
                         .foregroundStyle(PocketLedgerTheme.textTertiary)
-                    Text("No transactions yet")
+                    Text(store.data.transactions.isEmpty ? "No transactions yet" : "No matching transactions")
                         .font(.headline)
-                    Text("Start with a quick expense from the plus button.")
+                    Text(store.data.transactions.isEmpty
+                        ? "Start with a quick expense from the plus button."
+                        : "Try changing your filters or search.")
                         .font(.subheadline)
                         .foregroundStyle(PocketLedgerTheme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -299,11 +316,21 @@ struct TransactionsView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
-                Button("Add expense", systemImage: "plus", action: onAddExpense)
-                    .buttonStyle(.glassProminent)
+                if store.data.transactions.isEmpty {
+                    Button("Add expense", systemImage: "plus", action: onAddExpense)
+                        .buttonStyle(.glassProminent)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                } else {
+                    Button("Clear filters and search", systemImage: "xmark.circle") {
+                        clearFiltersAndSearch()
+                    }
+                    .buttonStyle(.bordered)
                     .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
+                }
             } else {
                 ForEach(listSnapshot.groupedTransactions) { day in
                     Section {
@@ -401,10 +428,14 @@ struct TransactionsView: View {
             transactionPage = 0
             refreshListSnapshot()
         }
-        .onChange(of: transactionPage) { _, _ in refreshListPage() }
-        .onChange(of: store.ledgerRevision) { _, _ in
+        .onChange(of: searchText) { _, _ in
             transactionPage = 0
             refreshListSnapshot()
+        }
+        .onChange(of: transactionPage) { _, _ in refreshListPage() }
+        .onChange(of: store.ledgerRevision) { _, _ in
+            refreshListSnapshot()
+            transactionPage = listSnapshot.displayedPage
         }
         .sheet(isPresented: $isPresentingBillScanner) {
             BillScannerView(store: store)
@@ -722,6 +753,17 @@ struct TransactionsView: View {
         )
     }
 
+    private func clearFiltersAndSearch() {
+        selectedFilter = .all
+        selectedPeriod = .all
+        selectedQuickFilter = .none
+        searchText = ""
+        customStartDate = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
+        customEndDate = .now
+        transactionPage = 0
+        refreshListSnapshot()
+    }
+
     @ViewBuilder
     private var transactionPagination: some View {
         if listSnapshot.pageCount > 1 {
@@ -752,7 +794,20 @@ struct TransactionsView: View {
     }
 
     private var transactionsSummary: some View {
-        let expenses = listSnapshot.expenseTotals
+        let totals: [(String, [LedgerCurrency: Int64], Color)]
+        switch selectedFilter {
+        case .income:
+            totals = [("received", listSnapshot.incomeTotals, PocketLedgerTheme.income)]
+        case .transfer:
+            totals = []
+        case .all:
+            totals = [
+                ("spent", listSnapshot.expenseTotals, PocketLedgerTheme.warning),
+                ("received", listSnapshot.incomeTotals, PocketLedgerTheme.income)
+            ]
+        case .expense, .uncategorized:
+            totals = [("spent", listSnapshot.expenseTotals, PocketLedgerTheme.warning)]
+        }
 
         return VStack(alignment: .leading, spacing: 13) {
             HStack {
@@ -771,19 +826,29 @@ struct TransactionsView: View {
                     .foregroundStyle(PocketLedgerTheme.textSecondary)
             }
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
-                ForEach(LedgerCurrency.allCases) { currency in
-                    transactionSummaryMetric(
-                        title: "\(currency.rawValue) spent",
-                        value: Money(currency: currency, minorUnits: expenses[currency] ?? 0).formatted
-                    )
+            if selectedFilter == .transfer {
+                Text("Transfers move money between accounts and are excluded from income and expense totals.")
+                    .font(.caption)
+                    .foregroundStyle(PocketLedgerTheme.textSecondary)
+            } else {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
+                    ForEach(totals.indices, id: \.self) { totalIndex in
+                        let total = totals[totalIndex]
+                        ForEach(LedgerCurrency.allCases) { currency in
+                            transactionSummaryMetric(
+                                title: "\(currency.rawValue) \(total.0)",
+                                value: Money(currency: currency, minorUnits: total.1[currency] ?? 0).formatted,
+                                tint: total.2
+                            )
+                        }
+                    }
                 }
             }
         }
         .pocketCard()
     }
 
-    private func transactionSummaryMetric(title: String, value: String) -> some View {
+    private func transactionSummaryMetric(title: String, value: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title.uppercased())
                 .font(.caption2.weight(.bold))
@@ -791,7 +856,7 @@ struct TransactionsView: View {
                 .foregroundStyle(PocketLedgerTheme.textTertiary)
             Text(value)
                 .font(.subheadline.weight(.semibold).monospacedDigit())
-                .foregroundStyle(PocketLedgerTheme.warning)
+                .foregroundStyle(tint)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
         }

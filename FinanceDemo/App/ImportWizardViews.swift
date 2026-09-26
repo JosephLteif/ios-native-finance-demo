@@ -36,6 +36,90 @@ enum ImportWizardCategoryBulkKind: String, Identifiable {
     var id: String { rawValue }
 }
 
+struct ImportPreparationInputs: Equatable {
+    let draftID: UUID
+    let tableID: String
+    let mapping: [ImportField: String?]
+    let defaultKind: TransactionKind
+    let defaultCurrency: LedgerCurrency
+    let defaultAccountID: UUID?
+    let defaultDestinationAccountID: UUID?
+    let createMissingAccounts: Bool
+    let createMissingCategories: Bool
+    let ledgerRevision: Int
+
+    init(draft: ImportDraft, ledgerRevision: Int) {
+        draftID = draft.id
+        tableID = draft.selectedTableID
+        mapping = draft.mapping
+        defaultKind = draft.defaultKind
+        defaultCurrency = draft.defaultCurrency
+        defaultAccountID = draft.defaultAccountID
+        defaultDestinationAccountID = draft.defaultDestinationAccountID
+        createMissingAccounts = draft.createMissingAccounts
+        createMissingCategories = draft.createMissingCategories
+        self.ledgerRevision = ledgerRevision
+    }
+
+    func matches(_ draft: ImportDraft, ledgerRevision: Int) -> Bool {
+        self == ImportPreparationInputs(draft: draft, ledgerRevision: ledgerRevision)
+    }
+}
+
+private struct ImportBuildInput: @unchecked Sendable {
+    let table: ImportedTable
+    let mapping: [ImportField: String?]
+    let options: ImportOptions
+    let existing: FinanceData
+    let rememberedRules: ImportStoredRules
+}
+
+private struct ImportCandidateInput: @unchecked Sendable {
+    let table: ImportedTable
+    let mapping: [ImportField: String?]
+}
+
+private struct ImportCandidateOutput: @unchecked Sendable {
+    let candidates: [ImportAccountCandidate]
+}
+
+private struct ImportBuildOutput: @unchecked Sendable {
+    let result: Result<FinanceImportResult, Error>
+}
+
+private struct DuplicateCheckOutput: @unchecked Sendable {
+    let ids: Set<UUID>
+}
+
+private struct DuplicateCheckInput: @unchecked Sendable {
+    let importedData: FinanceData
+    let existingData: FinanceData
+}
+
+private func applyRememberedAccountRules(to data: inout FinanceData, rules: ImportStoredRules) {
+    for index in data.accounts.indices {
+        guard let rule = ImportRuleStore.accountRule(for: data.accounts[index].name, in: rules) else {
+            continue
+        }
+        if let type = rule.type {
+            data.accounts[index].type = type
+        }
+        if let currency = rule.currency, currency != data.accounts[index].currency {
+            data = FinanceAccountCurrencyMigration.migrating(
+                data,
+                accountID: data.accounts[index].id,
+                from: data.accounts[index].currency,
+                to: currency,
+                preserveMovementCurrencies: true
+            )
+        }
+        if let isArchived = rule.isArchived,
+           let accountIndex = data.accounts.firstIndex(where: { $0.id == data.accounts[index].id }) {
+            data.accounts[accountIndex].isArchived = isArchived
+        }
+    }
+}
+
 @MainActor
 struct ImportWizardView: View {
     @ObservedObject var store: LedgerStore
@@ -45,6 +129,11 @@ struct ImportWizardView: View {
     @State private var draft: ImportDraft
     @State private var presentedSheet: ImportWizardSheet?
     @State private var isPreparing = false
+    @State private var preparationTask: Task<Void, Never>?
+    @State private var candidateTask: Task<ImportCandidateOutput, Never>?
+    @State private var importBuildTask: Task<ImportBuildOutput, Never>?
+    @State private var duplicateCheckTask: Task<DuplicateCheckOutput, Never>?
+    @State private var preparationToken = UUID()
     @State private var isShowingFinalConfirmation = false
     @State private var errorMessage: String?
     @State private var rememberRules = false
@@ -73,12 +162,13 @@ struct ImportWizardView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .cancellationAction) {
                     Button("Cancel", role: .cancel) {
+                        cancelPreparation()
                         draft.discard()
                         dismiss()
                     }
                     if draft.step != .source {
                         Button("Back") {
-                            draft.step = previousStep
+                            goBack()
                         }
                     }
                 }
@@ -125,6 +215,7 @@ struct ImportWizardView: View {
             }
         }
         .accessibilityIdentifier("importWizard")
+        .onDisappear(perform: cancelPreparation)
         .sheet(item: $presentedSheet) { sheet in
             NavigationStack {
                 sheetContent(for: sheet)
@@ -263,18 +354,42 @@ struct ImportWizardView: View {
         isPreparing = true
         let table = draft.selectedTable
         let mapping = draft.mapping
-        let candidates = FinanceImportBuilder.accountImportCandidates(table: table, mapping: mapping)
         let currentDraft = draft
+        let inputs = ImportPreparationInputs(draft: draft, ledgerRevision: store.ledgerRevision)
+        preparationToken = UUID()
+        let token = preparationToken
 
-        Task { @MainActor in
+        preparationTask = Task { @MainActor in
+            defer {
+                if preparationToken == token {
+                    isPreparing = false
+                    preparationTask = nil
+                }
+            }
+            let candidateInput = ImportCandidateInput(table: table, mapping: mapping)
+            candidateTask = Task.detached(priority: .userInitiated) {
+                ImportCandidateOutput(candidates: FinanceImportBuilder.accountImportCandidates(
+                    table: candidateInput.table,
+                    mapping: candidateInput.mapping
+                ))
+            }
+            guard let candidateTask else { return }
+            let candidates = await candidateTask.value.candidates
+            self.candidateTask = nil
+            guard !Task.isCancelled, preparationToken == token else { return }
+            guard inputs.matches(draft, ledgerRevision: store.ledgerRevision) else {
+                discardStalePreparation()
+                return
+            }
             let accountMapping: FoundationModelService.AccountMappingResult
             if ProcessInfo.processInfo.arguments.contains("-ImportWizardUITest") {
                 accountMapping = FoundationModelService.AccountMappingResult(suggestions: [:], warning: nil)
             } else {
                 accountMapping = await FoundationModelService.classifyImportAccounts(candidates)
             }
-            guard !Task.isCancelled else {
-                isPreparing = false
+            guard !Task.isCancelled, preparationToken == token else { return }
+            guard inputs.matches(draft, ledgerRevision: store.ledgerRevision) else {
+                discardStalePreparation()
                 return
             }
 
@@ -298,15 +413,46 @@ struct ImportWizardView: View {
                 accountSuggestions: suggestions
             )
 
+            let buildInput = ImportBuildInput(
+                table: table,
+                mapping: mapping,
+                options: options,
+                existing: store.data,
+                rememberedRules: currentDraft.rememberedRules
+            )
+            importBuildTask = Task.detached(priority: .userInitiated) {
+                do {
+                    var built = try FinanceImportBuilder.build(
+                        table: buildInput.table,
+                        mapping: buildInput.mapping,
+                        options: buildInput.options,
+                        existing: buildInput.existing
+                    )
+                    var importedData = built.data
+                    applyRememberedAccountRules(to: &importedData, rules: buildInput.rememberedRules)
+                    built = FinanceImportResult(
+                        data: importedData,
+                        importedRows: built.importedRows,
+                        skippedRows: built.skippedRows,
+                        warnings: built.warnings
+                    )
+                    return ImportBuildOutput(result: .success(built))
+                } catch {
+                    return ImportBuildOutput(result: .failure(error))
+                }
+            }
+            guard let importBuildTask else { return }
+            let buildOutput = await importBuildTask.value
+            self.importBuildTask = nil
+            guard !Task.isCancelled, preparationToken == token else { return }
+            guard inputs.matches(draft, ledgerRevision: store.ledgerRevision) else {
+                discardStalePreparation()
+                return
+            }
+
             do {
-                let built = try FinanceImportBuilder.build(
-                    table: table,
-                    mapping: mapping,
-                    options: options,
-                    existing: store.data
-                )
+                let built = try buildOutput.result.get()
                 var importedData = built.data
-                applyRememberedAccountRules(to: &importedData)
                 var warnings = built.warnings
                 if let warning = accountMapping.warning {
                     warnings.insert(warning, at: 0)
@@ -319,42 +465,56 @@ struct ImportWizardView: View {
                 )
                 draft.result = result
                 draft.importedData = importedData
-                draft.duplicateTransactionIDs = FinanceImportReview.duplicateTransactionIDs(
-                    in: importedData,
-                    existing: store.data
+                let duplicateInput = DuplicateCheckInput(
+                    importedData: importedData,
+                    existingData: store.data
                 )
+                duplicateCheckTask = Task.detached(priority: .userInitiated) {
+                    DuplicateCheckOutput(ids: FinanceImportReview.duplicateTransactionIDs(
+                        in: duplicateInput.importedData,
+                        existing: duplicateInput.existingData
+                    ))
+                }
+                guard let duplicateCheckTask else { return }
+                let duplicateOutput = await duplicateCheckTask.value
+                self.duplicateCheckTask = nil
+                guard !Task.isCancelled, preparationToken == token else { return }
+                guard inputs.matches(draft, ledgerRevision: store.ledgerRevision) else {
+                    discardStalePreparation()
+                    return
+                }
+                draft.duplicateTransactionIDs = duplicateOutput.ids
                 draft.step = .organize
             } catch {
                 errorMessage = error.localizedDescription
             }
-            isPreparing = false
         }
     }
 
-    private func applyRememberedAccountRules(to data: inout FinanceData) {
-        for index in data.accounts.indices {
-            guard let rule = ImportRuleStore.accountRule(
-                for: data.accounts[index].name,
-                in: draft.rememberedRules
-            ) else { continue }
-            if let type = rule.type {
-                data.accounts[index].type = type
-            }
-            if let currency = rule.currency, currency != data.accounts[index].currency {
-                data = FinanceAccountCurrencyMigration.migrating(
-                    data,
-                    accountID: data.accounts[index].id,
-                    from: data.accounts[index].currency,
-                    to: currency,
-                    preserveMovementCurrencies: true
-                )
-            }
-            if let isArchived = rule.isArchived {
-                if let accountIndex = data.accounts.firstIndex(where: { $0.id == data.accounts[index].id }) {
-                    data.accounts[accountIndex].isArchived = isArchived
-                }
-            }
+    private func goBack() {
+        cancelPreparation()
+        if draft.step == .organize {
+            draft.discardPreparedResults()
         }
+        draft.step = previousStep
+    }
+
+    private func cancelPreparation() {
+        preparationToken = UUID()
+        preparationTask?.cancel()
+        preparationTask = nil
+        candidateTask?.cancel()
+        candidateTask = nil
+        importBuildTask?.cancel()
+        importBuildTask = nil
+        duplicateCheckTask?.cancel()
+        duplicateCheckTask = nil
+        isPreparing = false
+    }
+
+    private func discardStalePreparation() {
+        draft.discardPreparedResults()
+        errorMessage = "Import settings or ledger data changed. Tap Next to prepare again."
     }
 
     private func updateImportedAccount(_ updated: Account) {

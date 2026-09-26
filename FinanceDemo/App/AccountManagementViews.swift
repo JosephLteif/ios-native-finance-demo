@@ -9,6 +9,7 @@ struct AccountsView: View {
     @State private var isPresentingAccount = false
     @State private var editingAccount: Account?
     @State private var isArchivedAccountsExpanded = false
+    @State private var isAccountSummaryExpanded = false
     @State private var expandedPositionCurrency: LedgerCurrency?
     @State private var areBalancesRevealed = false
 
@@ -19,12 +20,17 @@ struct AccountsView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
 
-            accountTypeTotalsSummary
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-
-            globalPositionSummary
+            DisclosureGroup(isExpanded: $isAccountSummaryExpanded) {
+                VStack(spacing: 12) {
+                    accountTypeTotalsSummary
+                    globalPositionSummary
+                }
+                .padding(.top, 8)
+            } label: {
+                Label("Account overview", systemImage: "chart.pie")
+                    .font(.headline)
+                    .foregroundStyle(PocketLedgerTheme.textPrimary)
+            }
                 .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)

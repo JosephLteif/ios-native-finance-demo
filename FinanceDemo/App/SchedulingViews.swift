@@ -27,6 +27,8 @@ struct ScheduledTransactionsView: View {
     @State private var scheduleToDelete: ScheduledTransaction?
     @State private var isShowingDeleteConfirmation = false
     @State private var reminderStatus: String?
+    @State private var recordStatus: String?
+    @State private var recordUndoReceipt: ScheduleRecordUndoReceipt?
     @State private var isRequestingReminderPermission = false
     @AppStorage(NotificationService.globalReminderKey)
     private var globalReminderRawValue = ScheduledReminderTiming.oneDayBefore.rawValue
@@ -79,6 +81,33 @@ struct ScheduledTransactionsView: View {
         .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
         .pocketScreen()
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let recordStatus {
+                HStack(spacing: 12) {
+                    Text(recordStatus)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(PocketLedgerTheme.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if recordUndoReceipt != nil {
+                        Button("Undo", action: undoRecordedSchedule)
+                            .font(.footnote.weight(.semibold))
+                    }
+                    Button {
+                        self.recordStatus = nil
+                        recordUndoReceipt = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.bold))
+                    }
+                    .accessibilityLabel("Dismiss schedule status")
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+            }
+        }
         .navigationTitle("Scheduled")
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.visible, for: .navigationBar)
@@ -346,7 +375,7 @@ struct ScheduledTransactionsView: View {
             HStack(spacing: 10) {
                 if schedule.isEnabled {
                     Button {
-                        _ = store.recordScheduledTransactionNow(id: schedule.id)
+                        recordNow(id: schedule.id)
                     } label: {
                         Label("Record", systemImage: "checkmark.circle")
                             .lineLimit(1)
@@ -407,7 +436,7 @@ struct ScheduledTransactionsView: View {
                     systemImage: "checkmark.circle",
                     tint: PocketLedgerTheme.positive
                 ) {
-                    _ = store.recordScheduledTransactionNow(id: schedule.id)
+                    recordNow(id: schedule.id)
                 }
 
                 PocketCircularSwipeAction(
@@ -447,6 +476,24 @@ struct ScheduledTransactionsView: View {
                 isShowingDeleteConfirmation = true
             }
         }
+    }
+
+    private func recordNow(id: UUID) {
+        guard let receipt = store.recordScheduledTransactionNow(id: id) else {
+            recordUndoReceipt = nil
+            recordStatus = store.lastActionStatus ?? "The scheduled transaction could not be recorded."
+            return
+        }
+        recordUndoReceipt = receipt
+        recordStatus = store.lastActionStatus ?? "Scheduled transaction recorded."
+    }
+
+    private func undoRecordedSchedule() {
+        guard let receipt = recordUndoReceipt else { return }
+        let didUndo = store.undoScheduledTransactionRecord(receipt)
+        recordUndoReceipt = nil
+        recordStatus = store.lastActionStatus
+            ?? (didUndo ? "Scheduled transaction undone." : "Undo is no longer available.")
     }
 
     private func timingText(for schedule: ScheduledTransaction) -> String {
