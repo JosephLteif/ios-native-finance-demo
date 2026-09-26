@@ -120,18 +120,12 @@ struct WatchExpenseView: View {
                 }
             }
         }
-        .navigationTitle("Expense")
+        .navigationTitle(commandToCorrect == nil ? "Expense" : "Review expense")
         .sensoryFeedback(.success, trigger: saveFeedbackTrigger)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
                     dismiss()
-                }
-            }
-            ToolbarItem(placement: .principal) {
-                if commandToCorrect != nil {
-                    Text("Review expense")
-                        .font(.headline)
                 }
             }
         }

@@ -171,7 +171,7 @@ private struct WatchPendingExpensesView: View {
         List {
             if !failedExpenses.isEmpty {
                 Section("Needs attention") {
-                    ForEach(failedExpenses) { command in
+                    ForEach(failedExpenses, id: \.id) { command in
                         NavigationLink {
                             WatchExpenseView(store: store, commandToCorrect: command)
                         } label: {
