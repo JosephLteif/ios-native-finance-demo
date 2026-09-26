@@ -2024,7 +2024,7 @@ final class FinanceModelTests: XCTestCase {
         )
         let rememberedAccount = Account(
             name: "Travel card",
-            type: .bank,
+            type: .bankAccount,
             currency: .usd,
             openingBalance: Money(currency: .usd, minorUnits: 0)
         )
